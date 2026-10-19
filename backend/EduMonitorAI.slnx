@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="EduMonitor.Api/EduMonitor.Api.csproj" />
+  <Project Path="EduMonitor.Core/EduMonitor.Core.csproj" />
+  <Project Path="EduMonitor.Infrastructure/EduMonitor.Infrastructure.csproj" />
+  <Project Path="EduMonitor.Tests/EduMonitor.Tests.csproj" />
+</Solution>
