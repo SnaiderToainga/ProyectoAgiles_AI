@@ -1,4 +1,5 @@
 ﻿using EduMonitor.Core.Entities;
+using EduMonitor.Core.Entities.Auth;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduMonitor.Infrastructure.Data;
@@ -17,113 +18,72 @@ public class EduMonitorDbContext : DbContext
     public DbSet<Calificacion> Calificaciones => Set<Calificacion>();
     public DbSet<LogSincronizacion> LogsSincronizacion => Set<LogSincronizacion>();
 
+    // Tablas de Seguridad y Auditoría (AuthDB)
+    public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<LogAcceso> LogsAcceso => Set<LogAcceso>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // Docente
-        modelBuilder.Entity<Docente>(entity =>
+        // Mapeo Usuarios
+        modelBuilder.Entity<Usuario>(entity =>
         {
-            entity.ToTable("Docentes");
-            entity.HasKey(d => d.Id);
-            entity.Property(d => d.Nombre).IsRequired().HasMaxLength(150);
-            entity.Property(d => d.Correo).IsRequired().HasMaxLength(150);
-            entity.HasIndex(d => d.Correo).IsUnique();
-            entity.Property(d => d.ClaveHash).IsRequired().HasMaxLength(256);
-            entity.Property(d => d.Rol).IsRequired().HasMaxLength(50);
+            entity.ToTable("Usuarios");
+            entity.HasKey(u => u.Id);
+            entity.Property(u => u.Email).IsRequired().HasMaxLength(150);
+            entity.HasIndex(u => u.Email).IsUnique();
+            entity.Property(u => u.Username).IsRequired().HasMaxLength(100);
+            entity.Property(u => u.NombreCompleto).IsRequired().HasMaxLength(150);
+            entity.Property(u => u.Rol).IsRequired().HasMaxLength(50);
         });
 
-        // Curso
-        modelBuilder.Entity<Curso>(entity =>
+        // Mapeo LogsAcceso
+        modelBuilder.Entity<LogAcceso>(entity =>
         {
-            entity.ToTable("Cursos");
-            entity.HasKey(c => c.Id);
-            entity.Property(c => c.Nombre).IsRequired().HasMaxLength(200);
-            entity.Property(c => c.Periodo).IsRequired().HasMaxLength(50);
-            entity.HasIndex(c => c.MoodleCourseId);
-
-            entity.HasOne(c => c.Docente)
-                  .WithMany(d => d.Cursos)
-                  .HasForeignKey(c => c.DocenteId)
-                  .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        // Estudiante
-        modelBuilder.Entity<Estudiante>(entity =>
-        {
-            entity.ToTable("Estudiantes");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Nombres).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.Apellidos).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.Correo).IsRequired().HasMaxLength(150);
-            entity.HasIndex(e => e.MoodleUserId).IsUnique();
-        });
-
-        // Matricula
-        modelBuilder.Entity<Matricula>(entity =>
-        {
-            entity.ToTable("Matriculas");
-            entity.HasKey(m => m.Id);
-            entity.HasIndex(m => new { m.EstudianteId, m.CursoId }).IsUnique();
-
-            entity.HasOne(m => m.Estudiante)
-                  .WithMany(e => e.Matriculas)
-                  .HasForeignKey(m => m.EstudianteId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(m => m.Curso)
-                  .WithMany(c => c.Matriculas)
-                  .HasForeignKey(m => m.CursoId)
-                  .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // ItemEvaluacion
-        modelBuilder.Entity<ItemEvaluacion>(entity =>
-        {
-            entity.ToTable("ItemsEvaluacion");
-            entity.HasKey(i => i.Id);
-            entity.Property(i => i.Nombre).IsRequired().HasMaxLength(200);
-            entity.Property(i => i.CalificacionMaxima).HasPrecision(5, 2);
-            entity.Property(i => i.Tipo).HasConversion<int>();
-            entity.HasIndex(i => new { i.CursoId, i.MoodleItemId });
-
-            entity.HasOne(i => i.Curso)
-                  .WithMany(c => c.ItemsEvaluacion)
-                  .HasForeignKey(i => i.CursoId)
-                  .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // Calificacion (Nota nullable para distinguir SinEntrega de 0.0)
-        modelBuilder.Entity<Calificacion>(entity =>
-        {
-            entity.ToTable("Calificaciones");
-            entity.HasKey(c => c.Id);
-            entity.Property(c => c.Nota).IsRequired(false).HasPrecision(5, 2);
-            entity.Property(c => c.Estado).HasConversion<int>().IsRequired();
-            entity.HasIndex(c => new { c.ItemEvaluacionId, c.EstudianteId }).IsUnique();
-
-            entity.HasOne(c => c.ItemEvaluacion)
-                  .WithMany(i => i.Calificaciones)
-                  .HasForeignKey(c => c.ItemEvaluacionId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(c => c.Estudiante)
-                  .WithMany(e => e.Calificaciones)
-                  .HasForeignKey(c => c.EstudianteId)
-                  .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        // LogSincronizacion
-        modelBuilder.Entity<LogSincronizacion>(entity =>
-        {
-            entity.ToTable("LogsSincronizacion");
+            entity.ToTable("LogsAcceso");
             entity.HasKey(l => l.Id);
-            entity.Property(l => l.MensajeError).HasMaxLength(1000);
-
-            entity.HasOne(l => l.Curso)
-                  .WithMany(c => c.LogsSincronizacion)
-                  .HasForeignKey(l => l.CursoId)
-                  .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(l => l.Detalle).HasMaxLength(500);
+            entity.Property(l => l.IpOrigen).HasMaxLength(50);
         });
+
+        // Datos Semilla oficiales de la FISEI (Password por defecto: Admin123!)
+        string defaultHash = "E4A5C1B2D3E4F5A6B7C8D9E0F1A2B3C4-1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B";
+
+        modelBuilder.Entity<Usuario>().HasData(
+            new Usuario
+            {
+                Id = 1,
+                Username = "dproano",
+                Email = "d.proano@uta.edu.ec",
+                NombreCompleto = "Ing. Diego Proaño",
+                PasswordHash = defaultHash,
+                Rol = "Docente",
+                Status = 1,
+                IntentosFallidos = 0
+            },
+            new Usuario
+            {
+                Id = 2,
+                Username = "stoainga",
+                Email = "s.toainga@uta.edu.ec",
+                NombreCompleto = "Toainga Snaider Alexander",
+                PasswordHash = defaultHash,
+                Rol = "Administrador",
+                Status = 1,
+                IntentosFallidos = 0
+            },
+            new Usuario
+            {
+                Id = 3,
+                Username = "pruebabloqueo",
+                Email = "prueba.bloqueo@uta.edu.ec",
+                NombreCompleto = "Usuario Prueba Bloqueado",
+                PasswordHash = defaultHash,
+                Rol = "Docente",
+                Status = 0, // Inicia bloqueado para demostrar CA-01.3
+                IntentosFallidos = 3
+            }
+        );
     }
 }
