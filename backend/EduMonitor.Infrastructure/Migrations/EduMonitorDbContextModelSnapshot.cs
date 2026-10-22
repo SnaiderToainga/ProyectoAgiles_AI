@@ -22,6 +22,126 @@ namespace EduMonitor.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("EduMonitor.Core.Entities.Auth.LogAcceso", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Detalle")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("EmailIntentado")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("Exitoso")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("FechaRegistro")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IpOrigen")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LogsAcceso", (string)null);
+                });
+
+            modelBuilder.Entity("EduMonitor.Core.Entities.Auth.Usuario", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime?>("FechaBloqueo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("IntentosFallidos")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NombreCompleto")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Rol")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("Usuarios", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Email = "d.proano@uta.edu.ec",
+                            IntentosFallidos = 0,
+                            NombreCompleto = "Ing. Diego Proaño",
+                            PasswordHash = "E4A5C1B2D3E4F5A6B7C8D9E0F1A2B3C4-1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B",
+                            Rol = "Docente",
+                            Status = 1,
+                            Username = "dproano"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Email = "s.toainga@uta.edu.ec",
+                            IntentosFallidos = 0,
+                            NombreCompleto = "Toainga Snaider Alexander",
+                            PasswordHash = "E4A5C1B2D3E4F5A6B7C8D9E0F1A2B3C4-1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B",
+                            Rol = "Administrador",
+                            Status = 1,
+                            Username = "stoainga"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Email = "prueba.bloqueo@uta.edu.ec",
+                            IntentosFallidos = 3,
+                            NombreCompleto = "Usuario Prueba Bloqueado",
+                            PasswordHash = "E4A5C1B2D3E4F5A6B7C8D9E0F1A2B3C4-1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B",
+                            Rol = "Docente",
+                            Status = 0,
+                            Username = "pruebabloqueo"
+                        });
+                });
+
             modelBuilder.Entity("EduMonitor.Core.Entities.Calificacion", b =>
                 {
                     b.Property<int>("Id")
@@ -43,17 +163,15 @@ namespace EduMonitor.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal?>("Nota")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("decimal(5,2)");
+                        .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("EstudianteId");
 
-                    b.HasIndex("ItemEvaluacionId", "EstudianteId")
-                        .IsUnique();
+                    b.HasIndex("ItemEvaluacionId");
 
-                    b.ToTable("Calificaciones", (string)null);
+                    b.ToTable("Calificaciones");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Curso", b =>
@@ -72,21 +190,17 @@ namespace EduMonitor.Infrastructure.Migrations
 
                     b.Property<string>("Nombre")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Periodo")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("DocenteId");
 
-                    b.HasIndex("MoodleCourseId");
-
-                    b.ToTable("Cursos", (string)null);
+                    b.ToTable("Cursos");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Docente", b =>
@@ -102,30 +216,23 @@ namespace EduMonitor.Infrastructure.Migrations
 
                     b.Property<string>("ClaveHash")
                         .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Correo")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Nombre")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Rol")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Correo")
-                        .IsUnique();
-
-                    b.ToTable("Docentes", (string)null);
+                    b.ToTable("Docentes");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Estudiante", b =>
@@ -138,28 +245,22 @@ namespace EduMonitor.Infrastructure.Migrations
 
                     b.Property<string>("Apellidos")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Correo")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("MoodleUserId")
                         .HasColumnType("int");
 
                     b.Property<string>("Nombres")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MoodleUserId")
-                        .IsUnique();
-
-                    b.ToTable("Estudiantes", (string)null);
+                    b.ToTable("Estudiantes");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.ItemEvaluacion", b =>
@@ -171,8 +272,7 @@ namespace EduMonitor.Infrastructure.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<decimal>("CalificacionMaxima")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("decimal(5,2)");
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("CursoId")
                         .HasColumnType("int");
@@ -182,17 +282,16 @@ namespace EduMonitor.Infrastructure.Migrations
 
                     b.Property<string>("Nombre")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Tipo")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CursoId", "MoodleItemId");
+                    b.HasIndex("CursoId");
 
-                    b.ToTable("ItemsEvaluacion", (string)null);
+                    b.ToTable("ItemsEvaluacion");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.LogSincronizacion", b =>
@@ -213,8 +312,7 @@ namespace EduMonitor.Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("MensajeError")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("TotalRegistros")
                         .HasColumnType("int");
@@ -223,7 +321,7 @@ namespace EduMonitor.Infrastructure.Migrations
 
                     b.HasIndex("CursoId");
 
-                    b.ToTable("LogsSincronizacion", (string)null);
+                    b.ToTable("LogsSincronizacion");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Matricula", b =>
@@ -247,10 +345,9 @@ namespace EduMonitor.Infrastructure.Migrations
 
                     b.HasIndex("CursoId");
 
-                    b.HasIndex("EstudianteId", "CursoId")
-                        .IsUnique();
+                    b.HasIndex("EstudianteId");
 
-                    b.ToTable("Matriculas", (string)null);
+                    b.ToTable("Matriculas");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Calificacion", b =>
@@ -258,7 +355,7 @@ namespace EduMonitor.Infrastructure.Migrations
                     b.HasOne("EduMonitor.Core.Entities.Estudiante", "Estudiante")
                         .WithMany("Calificaciones")
                         .HasForeignKey("EstudianteId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("EduMonitor.Core.Entities.ItemEvaluacion", "ItemEvaluacion")
@@ -277,7 +374,7 @@ namespace EduMonitor.Infrastructure.Migrations
                     b.HasOne("EduMonitor.Core.Entities.Docente", "Docente")
                         .WithMany("Cursos")
                         .HasForeignKey("DocenteId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Docente");
