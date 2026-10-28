@@ -1,6 +1,7 @@
-﻿using EduMonitor.Core.DTOs.Auth;
+using EduMonitor.Core.DTOs.Auth;
 using EduMonitor.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace EduMonitor.Api.Controllers;
 
@@ -34,6 +35,7 @@ public class AuthController : ControllerBase
         return Ok(resultado);
     }
 
+    [Authorize(Roles="Administrador")]
     [HttpGet("auditoria")]
     public async Task<IActionResult> ObtenerAuditoria()
     {
@@ -41,6 +43,7 @@ public class AuthController : ControllerBase
         return Ok(logs);
     }
 
+    [Authorize(Roles="Administrador")]
     [HttpPut("desbloquear/{usuarioId}")]
     public async Task<IActionResult> DesbloquearCuenta(int usuarioId)
     {

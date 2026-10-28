@@ -50,6 +50,7 @@ builder.Services.AddControllers();
 var app = builder.Build();
 
 // Inicializador de contraseñas reales con Salt PBKDF2
+if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Development:ResetExamplePasswords"))
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<EduMonitorDbContext>();
