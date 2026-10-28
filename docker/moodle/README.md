@@ -68,27 +68,26 @@ para ocultar el fallo. Las actualizaciones de versión/esquema requieren un proc
 
 ## Evidencias y estado real
 
-27 de octubre de 2026, America/Guayaquil:
+Verificación completada el 27 de octubre de 2026, America/Guayaquil.
 
-| Tarea | Archivos | Estado |
-|---|---|---|
-| T-03.1 | compose.yaml, Dockerfile, config.php | Implementado; imágenes/digests verificados, Compose válido; build/runtime pendiente |
-| T-03.2 | scripts/provision.php | Aprovisionamiento idempotente implementado; ejecución contra Moodle pendiente |
-| T-03.3 | provision.php, Test-Persistence.ps1 | Servicio/token y prueba preparados; consulta REST real pendiente |
-| T-03.4 | volúmenes, healthchecks, Test-Persistence.ps1 | Reinicio/persistencia implementados como prueba; ejecución pendiente |
+| Tarea | Resultado |
+|---|---|
+| T-03.1 | Imagen construida; Moodle y MariaDB healthy |
+| T-03.2 | 2 cursos, 1 docente y 3 estudiantes; 4 participantes por curso |
+| T-03.3 | Token local y consultas REST reales aprobadas; integración por Gateway aprobada |
+| T-03.4 | Test-Persistence.ps1 aprobado tras reiniciar contenedores sin borrar volúmenes |
 
-Instalados y firmados: LocalDB, WSL, Docker Desktop. VirtualMachinePlatform terminó con código
-3010 (reinicio necesario). Docker CLI funciona, pero el motor no pudo iniciar en esta sesión.
-No se reinició Windows. Validación realizada: `docker compose config --quiet`, `php -n -l`
-sobre los tres PHP y `bash -n` sobre entrypoint, todos correctos. No se confunden estas revisiones
-con un despliegue funcional: faltan build, aprovisionamiento, REST y persistencia tras reiniciar Windows.
+Se corrigió el test PowerShell para distinguir respuestas de lista de objetos de error.
+Los ítems manuales usan update_final_grade; las notas del piloto se inicializan solo si faltan.
+Repetir la ingesta conserva 6 matrículas, 6 ítems Moodle y 18 notas: seis 0, seis 8/10
+(original 80/100) y seis null. Los borradores conservan su clasificación al reimportarlos.
+Docker y WSL2 quedaron operativos tras el reinicio autorizado de Windows.
 
 ## PR sugerido (no publicado)
 
-Título: `feat(moodle): preparar entorno Docker y aprovisionamiento piloto del Sprint 1`
+Título: `feat(moodle): añadir entorno Docker y aprovisionamiento piloto del Sprint 1`
 
-Descripción: Añade Moodle 4.5.10 desde fuente oficial, PHP y MariaDB fijados por digest, volúmenes
-propios y healthchecks. Incluye creación idempotente de cursos, usuarios y matrículas ficticias,
-servicio REST restringido y secretos locales ignorados. Añade prueba de consulta REST y persistencia
-tras reinicio sin borrar volúmenes. Compose y sintaxis validados; ejecución completa pendiente del
-reinicio de Windows necesario para habilitar el motor Docker.
+Descripción: Añade Moodle 4.5.10 desde fuente oficial, PHP y MariaDB fijados por digest,
+volúmenes propios, healthchecks y aprovisionamiento repetible de cursos, usuarios y notas.
+Servicio REST restringido con secretos locales ignorados. Validado con build real,
+consultas REST, sincronización a SQL Server por Gateway y persistencia tras restart.

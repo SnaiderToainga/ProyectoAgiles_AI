@@ -52,8 +52,12 @@ foreach (['SOF-401'=>'Metodologías Ágiles', 'SOF-402'=>'Estructuras de Datos']
             $item = new grade_item(['courseid'=>$course->id, 'itemtype'=>'manual', 'itemname'=>$name,
                 'idnumber'=>$idnumber, 'gradetype'=>GRADE_TYPE_VALUE, 'grademin'=>0, 'grademax'=>100], false);
             $item->insert('edumonitor-local');
-            $item->update_raw_grade($students[0]->id, 0, 'edumonitor-local');
-            $item->update_raw_grade($students[1]->id, 80, 'edumonitor-local');
+
+
+        }
+        foreach ([0=>0, 1=>80] as $index=>$value) {
+            $grade = grade_grade::fetch(['itemid'=>$item->id, 'userid'=>$students[$index]->id]);
+            if (!$grade || $grade->finalgrade === null) {$item->update_final_grade($students[$index]->id, $value, 'edumonitor-local');}
         }
     }
     grade_regrade_final_grades($course->id);
