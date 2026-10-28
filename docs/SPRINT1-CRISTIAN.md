@@ -123,7 +123,7 @@ fueron generados automáticamente por el reloj UTC de EF (28 de octubre); no se 
 | T-04.2 | ItemEvaluacion, EvaluacionTema, Calificacion, MoodleSyncService | Validación temática, borradores, nota 0/null y escala probados |
 | T-04.3 | Migrations, AcademicoSeeder, DevSetup | SQL revisado y aplicado en bases nuevas; seeds repetidos sin duplicados |
 | HU-02 endpoints | AcademicoController, Gateway existente | Login, catálogo, alta de tema/evaluación reales a través de YARP |
-| HU-03 ingesta | MoodleService, MoodleSyncService | Importaciones y fallos probados con Moodle simulado; integración Moodle real pendiente |
+| HU-03 ingesta | MoodleService, MoodleSyncService | Importaciones y fallos probados con Moodle simulado; integración Moodle real verificada |
 
 - Base antes de cambios: 4 pruebas existentes aprobadas.
 - Resultado final de tests automatizados: 23 aprobadas, 0 fallidas (SQLite relacional en memoria,
@@ -134,8 +134,8 @@ fueron generados automáticamente por el reloj UTC de EF (28 de octubre); no se 
   sin JWT=401, auditoría con Docente=403, evaluación sin temas=400.
 - Avisos preexistentes NU1902/NU1903 en System.Security.Cryptography.Pkcs 9.0.11 siguen presentes;
   corresponden a dependencias previas y deben actualizarse coordinadamente con el equipo.
-- Docker instalado; motor pendiente de activación de VirtualMachinePlatform tras reiniciar Windows.
-  No se afirma consulta real ni persistencia de Moodle hasta ejecutarlas después del reinicio.
+- Docker y Moodle activos: REST real y persistencia tras restart aprobados. Importaciones repetidas conservan 2 cursos, 3 estudiantes, 6 matrículas, 6 ítems Moodle y 18 calificaciones: 6 ceros, 6 notas 8/10 (original 80/100) y 6 null. Clasificación temática conservada al reimportar.
+- Verificación SQL reproducible: con EDUMONITOR_DEMO_PASSWORD configurada, ejecutar `dotnet run --project backend/EduMonitor.DevSetup -- --verify`. Solo consulta las bases locales del piloto.
 
 ## PR sugerido (no publicado)
 
@@ -148,5 +148,5 @@ explícitamente. Incluye endpoints protegidos, importación transaccional idempo
 normalización trazable y borradores pendientes de clasificación. Conserva cálculo ponderado y Gateway.
 
 Validación: 23 tests aprobados; migraciones y seeds en LocalDB nueva; recorrido real por Gateway.
-Pendiente: integración contra contenedores Moodle después del reinicio requerido por Windows.
+Pendiente: ningún bloqueo de ejecución local. Moodle REST y persistencia verificados después del reinicio.
 La migración histórica requiere prevalidación antes de aplicarse sobre datos del equipo.

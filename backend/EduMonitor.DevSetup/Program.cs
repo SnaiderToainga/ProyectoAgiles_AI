@@ -19,6 +19,14 @@ foreach(var (connection,name) in new[]{(authString,"EduMonitorAuth_Cristian_Spri
 }
 await using var auth=new EduMonitorDbContext(new DbContextOptionsBuilder<EduMonitorDbContext>().UseSqlServer(authString).Options);
 await using var academic=new AcademicoDbContext(new DbContextOptionsBuilder<AcademicoDbContext>().UseSqlServer(academicString).Options);
+if(args.Contains("--verify"))
+{
+    var counts = new[] {await academic.Cursos.CountAsync(), await academic.Estudiantes.CountAsync(), await academic.Matriculas.CountAsync(), await academic.ItemsEvaluacion.CountAsync(i=>i.MoodleItemId>0), await academic.Calificaciones.CountAsync(), await academic.Calificaciones.CountAsync(g=>g.Nota==0), await academic.Calificaciones.CountAsync(g=>g.Nota==8), await academic.Calificaciones.CountAsync(g=>g.Nota==null)};
+    if(!counts.SequenceEqual(new[]{2,3,6,6,18,6,6,6}))throw new InvalidOperationException("Conteos piloto inesperados: " + string.Join(",",counts));
+    if(await academic.Calificaciones.AnyAsync(g=>g.Nota==8 && g.NotaMoodle!=80))throw new InvalidOperationException("Conversión no trazable.");
+    Console.WriteLine("SQL real verificado: 2 cursos, 3 estudiantes, 6 matrículas, 6 ítems Moodle, 18 notas (6 cero, 6 ocho, 6 null), sin duplicados.");
+    return;
+}
 await auth.Database.MigrateAsync();await academic.Database.MigrateAsync();
 const string email="docente.sprint1@example.invalid";
 var user=await auth.Usuarios.SingleOrDefaultAsync(u=>u.Email==email);
