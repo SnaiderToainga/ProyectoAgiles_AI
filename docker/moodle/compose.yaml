@@ -1,0 +1,41 @@
+name: edumonitor-cristian-sprint1
+services:
+  mariadb:
+    image: mariadb:10.6.24@sha256:ea23e7cd253323f6a7c0abedb5a7ce9646bc5620e9be38373cff1fecbd5b57e0
+    environment:
+      MARIADB_DATABASE: moodle
+      MARIADB_USER: moodle
+      MARIADB_PASSWORD: ${MOODLE_DB_PASSWORD:?Ejecute Initialize-Local.ps1}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Ejecute Initialize-Local.ps1}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  moodle:
+    build: .
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      MOODLE_DB_PASSWORD: ${MOODLE_DB_PASSWORD:?Ejecute Initialize-Local.ps1}
+      MOODLE_ADMIN_PASSWORD: ${MOODLE_ADMIN_PASSWORD:?Ejecute Initialize-Local.ps1}
+      MOODLE_DEMO_PASSWORD: ${MOODLE_DEMO_PASSWORD:?Ejecute Initialize-Local.ps1}
+    volumes:
+      - moodle_data:/var/moodledata
+      - ./.local:/run/edumonitor
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost/login/index.php"]
+      interval: 15s
+      timeout: 10s
+      start_period: 180s
+      retries: 30
+    restart: unless-stopped
+volumes:
+  mariadb_data:
+  moodle_data:
