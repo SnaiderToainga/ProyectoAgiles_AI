@@ -1,4 +1,4 @@
-﻿using EduMonitor.Core.Entities;
+using EduMonitor.Core.Entities;
 using EduMonitor.Core.Entities.Auth;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,6 +25,7 @@ public class EduMonitorDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        AcademicModelConfiguration.Configure(modelBuilder);
 
         // Mapeo Usuarios
         modelBuilder.Entity<Usuario>(entity =>

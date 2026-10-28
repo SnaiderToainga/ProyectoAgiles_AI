@@ -1,10 +1,14 @@
-﻿using EduMonitor.Core.Enums;
+using EduMonitor.Core.Enums;
 
 namespace EduMonitor.Core.Entities;
 
 public class ItemEvaluacion
 {
     public int Id { get; set; }
+    public int? ParcialId { get; set; }
+    public bool Publicado { get; set; }
+    public decimal? MinimoMoodle { get; set; }
+    public decimal? MaximoMoodle { get; set; }
     public int CursoId { get; set; }
     public Curso Curso { get; set; } = null!;
 

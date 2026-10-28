@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="EduMonitor.DevSetup/EduMonitor.DevSetup.csproj" />
   <Project Path="EduMonitor.Api/EduMonitor.Api.csproj" />
   <Project Path="EduMonitor.Core/EduMonitor.Core.csproj" />
   <Project Path="EduMonitor.Gateway/EduMonitor.Gateway.csproj" />

@@ -1,8 +1,9 @@
-﻿namespace EduMonitor.Core.Entities;
+namespace EduMonitor.Core.Entities;
 
 public class Curso
 {
     public int Id { get; set; }
+    public string Codigo { get; set; } = string.Empty;
     public int MoodleCourseId { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public string Periodo { get; set; } = string.Empty;

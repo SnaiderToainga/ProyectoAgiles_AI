@@ -1,4 +1,6 @@
-﻿using System.Text;
+using System.Text;
+using EduMonitor.Api;
+using EduMonitor.Infrastructure.Moodle;
 using EduMonitor.Core.Services;
 using EduMonitor.Infrastructure.Data;
 using EduMonitor.Infrastructure.Services;
@@ -11,6 +13,23 @@ var builder = WebApplication.CreateBuilder(args);
 // DbContext SQL Server Express
 builder.Services.AddDbContext<EduMonitorDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddDbContext<AcademicoDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("AcademicoConnection")));
+builder.Services.AddScoped<CatalogoService>();
+builder.Services.AddScoped<MoodleSyncService>();
+builder.Services.AddExceptionHandler<AcademicExceptionHandler>();
+builder.Services.AddProblemDetails();
+builder.Services.AddOptions<MoodleOptions>().BindConfiguration(MoodleOptions.Section)
+    .Validate(o=>Uri.TryCreate(o.BaseUrl,UriKind.Absolute,out var uri) && (uri.Scheme=="http" || uri.Scheme=="https"),"URL Moodle inválida")
+    .Validate(o=>o.TimeoutSeconds is >=1 and <=120 && o.MaxRetries is >=0 and <=3,"Límites Moodle inválidos")
+    .ValidateOnStart();
+builder.Services.AddHttpClient(MoodleService.ClientName,(sp,client)=> {
+    var o=sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MoodleOptions>>().Value;
+    client.BaseAddress=new Uri(o.BaseUrl.TrimEnd('/')+"/");
+    client.Timeout=TimeSpan.FromSeconds(o.TimeoutSeconds);
+}).ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false});
+builder.Services.AddScoped<IMoodleService,MoodleService>();
 
 // Inyección de Servicios de Snaider
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
@@ -50,6 +69,7 @@ builder.Services.AddControllers();
 var app = builder.Build();
 
 // Inicializador de contraseñas reales con Salt PBKDF2
+if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Development:ResetExamplePasswords"))
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<EduMonitorDbContext>();
@@ -74,9 +94,12 @@ using (var scope = app.Services.CreateScope())
     context.SaveChanges();
 }
 
+app.UseExceptionHandler();
 app.UseCors("AllowReactApp");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }
