@@ -5,6 +5,10 @@ obj/
 *.suo
 appsettings.Development.json
 .vs/
+.local/
+TestResults/
+*.trx
+.env
 
 # Node / React
 node_modules/

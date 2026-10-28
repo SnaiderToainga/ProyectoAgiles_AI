@@ -1,4 +1,4 @@
-﻿using EduMonitor.Core.Enums;
+using EduMonitor.Core.Enums;
 
 namespace EduMonitor.Core.Entities;
 
@@ -13,6 +13,7 @@ public class Calificacion
     public Estudiante Estudiante { get; set; } = null!;
 
     public decimal? Nota { get; set; }
+    public decimal? NotaMoodle { get; set; }
     public EstadoCalificacion Estado { get; set; }
     public DateTime? FechaEntrega { get; set; }
 }
