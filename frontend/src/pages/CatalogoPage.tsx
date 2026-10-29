@@ -1,13 +1,38 @@
-import { useState } from 'react'
-import { BookOpen, ChevronDown, ChevronRight, Layers, FileText, CheckCircle } from 'lucide-react'
+import { useState, useEffect, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import clienteAxios from '../api/clienteAxios'
 
-// Datos curriculares piloto del Sprint 1 (HU-02)
-const MATERIAS_PILOTO = [
+interface Tema {
+  id: number
+  nombre: string
+  descripcion: string
+}
+
+interface Unidad {
+  numero: number
+  nombre: string
+  temas: Tema[]
+}
+
+interface Parcial {
+  numero: number
+  unidades: Unidad[]
+}
+
+interface Materia {
+  id: number
+  codigo: string
+  nombre: string
+  semestre: string
+  parciales: Parcial[]
+}
+
+const MATERIAS_BASE: Materia[] = [
   {
     id: 1,
-    codigo: 'SOFT-401',
+    codigo: 'SOF-401',
     nombre: 'Metodologías Ágiles',
-    semestre: 'Cuarto - B',
+    semestre: 'Cuarto Nivel B',
     parciales: [
       {
         numero: 1,
@@ -16,7 +41,7 @@ const MATERIAS_PILOTO = [
             numero: 1,
             nombre: 'Marco General de Metodologías Ágiles y Scrum',
             temas: [
-              { id: 101, nombre: 'Manifiesto Ágil y Principios Fundamentales', descripcion: 'Los 4 valores y 12 principios rectores.' },
+              { id: 101, nombre: 'Manifiesto Ágil y Principios Fundamentales', descripcion: 'Valores y principios del desarrollo ágil.' },
               { id: 102, nombre: 'Roles y Responsabilidades en Scrum', descripcion: 'Product Owner, Scrum Master y Developers.' },
               { id: 103, nombre: 'Eventos y Artefactos del Sprint', descripcion: 'Sprint Planning, Daily, Review, Retrospective y Backlogs.' }
             ]
@@ -25,9 +50,30 @@ const MATERIAS_PILOTO = [
             numero: 2,
             nombre: 'Planificación, Estimación y Gestión del Backlog',
             temas: [
-              { id: 104, nombre: 'Historias de Usuario y Criterios de Aceptación', descripcion: 'Formato INVEST y escenarios Given-When-Then.' },
+              { id: 104, nombre: 'Historias de Usuario y Criterios de Aceptación', descripcion: 'Estructura INVEST y escenarios Given-When-Then.' },
               { id: 105, nombre: 'Técnicas de Estimación Ágil', descripcion: 'Story Points, Planning Poker y Fibonacci.' },
-              { id: 106, nombre: 'Cálculo de Capacidad del Equipo y Burndown', descripcion: 'Horas nominales, factor de enfoque y velocidad.' }
+              { id: 106, nombre: 'Cálculo de Capacidad del Equipo y Burndown', descripcion: 'Velocidad del equipo y seguimiento del Sprint.' }
+            ]
+          }
+        ]
+      },
+      {
+        numero: 2,
+        unidades: [
+          {
+            numero: 1,
+            nombre: 'Métricas Ágiles y Escalado',
+            temas: [
+              { id: 107, nombre: 'Velocidad, Lead Time y Cycle Time', descripcion: 'Indicadores de flujo y predictibilidad de entregas.' },
+              { id: 108, nombre: 'Integración Continua y DevOps Ágil', descripcion: 'Automatización de pruebas y despliegue continuo.' }
+            ]
+          },
+          {
+            numero: 2,
+            nombre: 'Calidad de Software y Mejora Continua',
+            temas: [
+              { id: 109, nombre: 'Desarrollo Guiado por Pruebas (TDD)', descripcion: 'Ciclo Red-Green-Refactor y pruebas unitarias.' },
+              { id: 110, nombre: 'Retrospectivas Efectivas y Deuda Técnica', descripcion: 'Acciones de mejora e inspección del proceso.' }
             ]
           }
         ]
@@ -36,9 +82,9 @@ const MATERIAS_PILOTO = [
   },
   {
     id: 2,
-    codigo: 'SOFT-302',
+    codigo: 'SOF-402',
     nombre: 'Estructuras de Datos',
-    semestre: 'Tercer - A',
+    semestre: 'Cuarto Nivel A',
     parciales: [
       {
         numero: 1,
@@ -61,112 +107,308 @@ const MATERIAS_PILOTO = [
             ]
           }
         ]
+      },
+      {
+        numero: 2,
+        unidades: [
+          {
+            numero: 1,
+            nombre: 'Árboles Balanceados y Tablas Hash',
+            temas: [
+              { id: 206, nombre: 'Árboles AVL y Rotaciones', descripcion: 'Factor de equilibrio y rotaciones simples y dobles.' },
+              { id: 207, nombre: 'Tablas Hash y Manejo de Colisiones', descripcion: 'Funciones de dispersión y encadenamiento.' }
+            ]
+          },
+          {
+            numero: 2,
+            nombre: 'Algoritmos sobre Grafos',
+            temas: [
+              { id: 208, nombre: 'Búsqueda en Anchura (BFS) y Profundidad (DFS)', descripcion: 'Exploración de vértices y componentes conexas.' },
+              { id: 209, nombre: 'Caminos Mínimos (Dijkstra)', descripcion: 'Optimización de rutas en grafos ponderados.' }
+            ]
+          }
+        ]
       }
     ]
   }
 ]
 
 export function CatalogoPage() {
-  const [materiaSeleccionada, setMateriaSeleccionada] = useState(MATERIAS_PILOTO[0])
-  const [unidadesAbiertas, setUnidadesAbiertas] = useState<number[]>([1, 2])
+  const [searchParams] = useSearchParams()
+  const [materias, setMaterias] = useState<Materia[]>(MATERIAS_BASE)
+  const [materiaId, setMateriaId] = useState(1)
+  const [parcialNum, setParcialNum] = useState(1)
+  const [abiertas, setAbiertas] = useState<number[]>([1, 2])
+  const [modalAbierto, setModalAbierto] = useState(false)
+  const [unidadForm, setUnidadForm] = useState(1)
+  const [nombreTema, setNombreTema] = useState('')
+  const [descTema, setDescTema] = useState('')
+  const [alertaModal, setAlertaModal] = useState<string | null>(null)
 
-  const toggleUnidad = (num: number) => {
-    setUnidadesAbiertas(prev =>
-      prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num]
+  useEffect(() => {
+    const c = Number(searchParams.get('curso'))
+    if (c === 1 || c === 2) setMateriaId(c)
+  }, [searchParams])
+
+  useEffect(() => {
+    clienteAxios
+      .get<Materia[]>('/academico/materias')
+      .then((res) => {
+        if (Array.isArray(res.data) && res.data.length > 0) {
+          setMaterias(res.data)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const materiaActual = materias.find((m) => m.id === materiaId) || materias[0]
+  const parcialActual =
+    materiaActual.parciales.find((p) => p.numero === parcialNum) || materiaActual.parciales[0]
+
+  const toggleUnidad = (n: number) =>
+    setAbiertas((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]))
+
+  const abrirModal = (unidadNum = 1) => {
+    setUnidadForm(unidadNum)
+    setNombreTema('')
+    setDescTema('')
+    setAlertaModal(null)
+    setModalAbierto(true)
+  }
+
+  const guardarTema = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!nombreTema.trim() || !descTema.trim()) {
+      setAlertaModal('Operación rechazada: no se permiten campos vacíos. Complete el nombre y la descripción del tema.')
+      return
+    }
+
+    const nuevo: Tema = {
+      id: Date.now(),
+      nombre: nombreTema.trim(),
+      descripcion: descTema.trim()
+    }
+
+    try {
+      await clienteAxios.post('/academico/temas', {
+        materiaId: materiaActual.id,
+        parcialNumero: parcialActual.numero,
+        unidadNumero: unidadForm,
+        nombre: nuevo.nombre,
+        descripcion: nuevo.descripcion
+      })
+    } catch {
+      void 0
+    }
+
+    setMaterias((prev) =>
+      prev.map((m) =>
+        m.id !== materiaActual.id
+          ? m
+          : {
+              ...m,
+              parciales: m.parciales.map((p) =>
+                p.numero !== parcialActual.numero
+                  ? p
+                  : {
+                      ...p,
+                      unidades: p.unidades.map((u) =>
+                        u.numero !== unidadForm ? u : { ...u, temas: [...u.temas, nuevo] }
+                      )
+                    }
+              )
+            }
+      )
     )
+
+    if (!abiertas.includes(unidadForm)) setAbiertas((prev) => [...prev, unidadForm])
+    setModalAbierto(false)
   }
 
   return (
-    <div className="space-y-6">
-      
-      {/* Encabezado */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Catálogo Curricular Institucional</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Estructura académica de las asignaturas piloto desglosadas por unidades y temas atómicos (HU-02).
-        </p>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-bold text-[#18181b]">Catálogo Curricular</h1>
+        <button
+          onClick={() => abrirModal(1)}
+          className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer"
+        >
+          + Agregar Tema
+        </button>
       </div>
 
-      {/* Selector de Materias (Pestañas) */}
-      <div className="flex gap-3 border-b border-slate-200 pb-2">
-        {MATERIAS_PILOTO.map(materia => (
-          <button
-            key={materia.id}
-            onClick={() => setMateriaSeleccionada(materia)}
-            className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-semibold transition cursor-pointer ${
-              materiaSeleccionada.id === materia.id
-                ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <BookOpen className="w-4 h-4" />
-            <span>{materia.nombre} ({materia.codigo})</span>
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e4e7] pb-3">
+        <div className="flex gap-2">
+          {materias.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => {
+                setMateriaId(m.id)
+                setParcialNum(1)
+              }}
+              className={`py-2 px-4 rounded text-xs font-semibold transition cursor-pointer ${
+                materiaActual.id === m.id
+                  ? 'bg-[#8B151A] text-white'
+                  : 'bg-white text-[#18181b] border border-[#d4d4d8] hover:border-[#8B151A]'
+              }`}
+            >
+              {m.nombre} ({m.codigo})
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-1.5">
+          {materiaActual.parciales.map((p) => (
+            <button
+              key={p.numero}
+              onClick={() => setParcialNum(p.numero)}
+              className={`py-1.5 px-3 rounded text-xs font-semibold transition cursor-pointer ${
+                parcialActual.numero === p.numero
+                  ? 'bg-[#18181b] text-white'
+                  : 'bg-white text-[#52525b] border border-[#d4d4d8] hover:text-[#18181b]'
+              }`}
+            >
+              Parcial {p.numero}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Contenido de la Materia Seleccionada */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
-        
-        <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+      <div className="bg-white rounded-md border border-[#e4e4e7] p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-[#e4e4e7] pb-3.5">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">{materiaSeleccionada.nombre}</h2>
-            <p className="text-xs text-slate-500">Parcial 1 • Nivel: {materiaSeleccionada.semestre}</p>
+            <h2 className="text-base font-bold text-[#18181b]">{materiaActual.nombre}</h2>
+            <p className="text-xs text-[#52525b]">
+              {materiaActual.codigo} • {materiaActual.semestre}
+            </p>
           </div>
-          <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-semibold flex items-center gap-1.5">
-            <CheckCircle className="w-3.5 h-3.5" />
-            <span>Sincronizado con Moodle</span>
+          <span className="text-xs font-semibold text-[#8B151A]">
+            Parcial {parcialActual.numero}
           </span>
         </div>
 
-        {/* Desglose de Unidades y Temas */}
-        <div className="space-y-4">
-          {materiaSeleccionada.parciales[0].unidades.map(unidad => {
-            const estaAbierta = unidadesAbiertas.includes(unidad.numero)
+        <div className="space-y-3">
+          {parcialActual.unidades.map((u) => {
+            const abierta = abiertas.includes(u.numero)
             return (
-              <div key={unidad.numero} className="border border-slate-200 rounded-xl overflow-hidden">
-                
-                {/* Cabecera de la Unidad */}
+              <div key={u.numero} className="border border-[#e4e4e7] rounded-md overflow-hidden">
                 <button
-                  onClick={() => toggleUnidad(unidad.numero)}
-                  className="w-full bg-slate-50 hover:bg-slate-100 p-4 flex items-center justify-between text-left transition cursor-pointer"
+                  onClick={() => toggleUnidad(u.numero)}
+                  className="w-full bg-[#f4f4f5] hover:bg-[#e4e4e7]/60 px-4 py-3 flex items-center justify-between text-left transition cursor-pointer"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
-                      <Layers className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm text-slate-900">
-                        Unidad {unidad.numero}: {unidad.nombre}
-                      </h3>
-                      <p className="text-[11px] text-slate-500">{unidad.temas.length} temas específicos de evaluación</p>
-                    </div>
-                  </div>
-                  {estaAbierta ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+                  <span className="font-bold text-xs text-[#18181b]">
+                    Unidad {u.numero}: {u.nombre}
+                  </span>
+                  <span className="text-xs font-semibold text-[#8B151A]">
+                    {abierta ? 'Ocultar' : 'Mostrar'}
+                  </span>
                 </button>
 
-                {/* Lista de Temas Atómicos */}
-                {estaAbierta && (
-                  <div className="p-4 bg-white divide-y divide-slate-100">
-                    {unidad.temas.map(tema => (
-                      <div key={tema.id} className="py-3 flex items-start gap-3 first:pt-0 last:pb-0">
-                        <FileText className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                        <div>
-                          <h4 className="text-xs font-semibold text-slate-800">{tema.nombre}</h4>
-                          <p className="text-[11px] text-slate-500 mt-0.5">{tema.descripcion}</p>
-                        </div>
+                {abierta && (
+                  <div className="p-4 bg-white divide-y divide-[#e4e4e7]">
+                    {u.temas.map((t) => (
+                      <div key={t.id} className="py-2.5 first:pt-0 last:pb-0">
+                        <p className="text-xs font-semibold text-[#18181b]">{t.nombre}</p>
+                        <p className="text-xs text-[#52525b] mt-0.5">{t.descripcion}</p>
                       </div>
                     ))}
                   </div>
                 )}
-
               </div>
             )
           })}
         </div>
-
       </div>
 
+      {modalAbierto && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-md border border-[#e4e4e7] w-full max-w-md overflow-hidden">
+            <div className="bg-[#8B151A] px-5 py-3.5 flex items-center justify-between text-white">
+              <h3 className="text-sm font-bold">Agregar Tema — Parcial {parcialActual.numero}</h3>
+              <button
+                type="button"
+                onClick={() => setModalAbierto(false)}
+                className="text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <form onSubmit={guardarTema} className="p-5 space-y-4">
+              {alertaModal && (
+                <div className="bg-[#fef2f2] border-l-4 border-[#8B151A] p-3 rounded text-xs text-[#8B151A] font-semibold">
+                  {alertaModal}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-[#18181b] mb-1">
+                  Unidad Académica
+                </label>
+                <select
+                  value={unidadForm}
+                  onChange={(e) => setUnidadForm(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded border border-[#d4d4d8] text-xs text-[#18181b] bg-white focus:outline-none focus:border-[#8B151A]"
+                >
+                  {parcialActual.unidades.map((u) => (
+                    <option key={u.numero} value={u.numero}>
+                      Unidad {u.numero}: {u.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#18181b] mb-1">
+                  Nombre del Tema
+                </label>
+                <input
+                  type="text"
+                  value={nombreTema}
+                  onChange={(e) => {
+                    setNombreTema(e.target.value)
+                    if (alertaModal) setAlertaModal(null)
+                  }}
+                  placeholder="Ej. Planificación de Release"
+                  className="w-full px-3 py-2 rounded border border-[#d4d4d8] text-xs text-[#18181b] focus:outline-none focus:border-[#8B151A]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#18181b] mb-1">
+                  Descripción
+                </label>
+                <textarea
+                  rows={3}
+                  value={descTema}
+                  onChange={(e) => {
+                    setDescTema(e.target.value)
+                    if (alertaModal) setAlertaModal(null)
+                  }}
+                  placeholder="Contenido del tema..."
+                  className="w-full px-3 py-2 rounded border border-[#d4d4d8] text-xs text-[#18181b] focus:outline-none focus:border-[#8B151A]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalAbierto(false)}
+                  className="px-4 py-2 rounded border border-[#d4d4d8] text-xs font-semibold text-[#18181b] hover:bg-[#f4f4f5] cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded bg-[#8B151A] hover:bg-[#6E1014] text-white text-xs font-semibold cursor-pointer"
+                >
+                  Guardar Tema
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

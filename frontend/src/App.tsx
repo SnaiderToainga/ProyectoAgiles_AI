@@ -9,10 +9,7 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Ruta Pública: Inicio de sesión con control de bloqueo */}
         <Route path="/login" element={<LoginPage />} />
-
-        {/* Rutas Privadas: Protegidas con token JWT en AuthContext */}
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -20,8 +17,6 @@ export function App() {
             <Route path="/catalogo" element={<CatalogoPage />} />
           </Route>
         </Route>
-
-        {/* Ruta comodín: Redirección automática */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

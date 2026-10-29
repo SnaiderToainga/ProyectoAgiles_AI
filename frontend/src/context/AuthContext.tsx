@@ -17,7 +17,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
 
-  // Al cargar la aplicación, recuperamos la sesión guardada en localStorage si existe
   useEffect(() => {
     try {
       const storedToken = localStorage.getItem('token')
@@ -27,8 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(storedToken)
         setUser(JSON.parse(storedUser))
       }
-    } catch (error) {
-      console.error('Error al recuperar sesión local:', error)
+    } catch {
       localStorage.removeItem('token')
       localStorage.removeItem('usuario')
     } finally {
@@ -50,19 +48,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  const value: AuthContextType = {
-    user,
-    token,
-    isAuthenticated: !!token,
-    isLoading,
-    login,
-    logout,
-  }
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isAuthenticated: !!token,
+        isLoading,
+        login,
+        logout,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-// Hook personalizado para consumir el contexto de autenticación fácilmente
 export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) {
