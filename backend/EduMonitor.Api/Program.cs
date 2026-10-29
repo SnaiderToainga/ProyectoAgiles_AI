@@ -16,20 +16,35 @@ builder.Services.AddDbContext<EduMonitorDbContext>(options =>
 
 builder.Services.AddDbContext<AcademicoDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("AcademicoConnection")));
+
+// Servicios de Catálogo y Sincronización Moodle
 builder.Services.AddScoped<CatalogoService>();
 builder.Services.AddScoped<MoodleSyncService>();
+
+// Servicios de Estiven: Cálculo Ponderado e Inferencia IA
+builder.Services.AddScoped<ICalculoPonderadoService, CalculoPonderadoService>();
+builder.Services.AddHttpClient(IaInferenciaService.ClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<IIaInferenciaService, IaInferenciaService>();
+
 builder.Services.AddExceptionHandler<AcademicExceptionHandler>();
 builder.Services.AddProblemDetails();
+
 builder.Services.AddOptions<MoodleOptions>().BindConfiguration(MoodleOptions.Section)
-    .Validate(o=>Uri.TryCreate(o.BaseUrl,UriKind.Absolute,out var uri) && (uri.Scheme=="http" || uri.Scheme=="https"),"URL Moodle inválida")
-    .Validate(o=>o.TimeoutSeconds is >=1 and <=120 && o.MaxRetries is >=0 and <=3,"Límites Moodle inválidos")
+    .Validate(o => Uri.TryCreate(o.BaseUrl, UriKind.Absolute, out var uri) && (uri.Scheme == "http" || uri.Scheme == "https"), "URL Moodle inválida")
+    .Validate(o => o.TimeoutSeconds is >= 1 and <= 120 && o.MaxRetries is >= 0 and <= 3, "Límites Moodle inválidos")
     .ValidateOnStart();
-builder.Services.AddHttpClient(MoodleService.ClientName,(sp,client)=> {
-    var o=sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MoodleOptions>>().Value;
-    client.BaseAddress=new Uri(o.BaseUrl.TrimEnd('/')+"/");
-    client.Timeout=TimeSpan.FromSeconds(o.TimeoutSeconds);
-}).ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false});
-builder.Services.AddScoped<IMoodleService,MoodleService>();
+
+builder.Services.AddHttpClient(MoodleService.ClientName, (sp, client) =>
+{
+    var o = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MoodleOptions>>().Value;
+    client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(o.TimeoutSeconds);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+builder.Services.AddScoped<IMoodleService, MoodleService>();
 
 // Inyección de Servicios de Snaider
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
