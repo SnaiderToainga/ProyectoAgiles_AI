@@ -17,6 +17,7 @@ builder.Services.AddDbContext<EduMonitorDbContext>(options =>
 builder.Services.AddDbContext<AcademicoDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("AcademicoConnection")));
 builder.Services.AddScoped<CatalogoService>();
+builder.Services.AddScoped<ICalculoPonderadoService, CalculoPonderadoService>();
 builder.Services.AddScoped<MoodleSyncService>();
 builder.Services.AddExceptionHandler<AcademicExceptionHandler>();
 builder.Services.AddProblemDetails();
