@@ -3,9 +3,9 @@ import { Navbar } from './Navbar'
 
 export function AppLayout() {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+    <div className="min-h-screen bg-[#fafafa] text-[#18181b] flex flex-col">
       <Navbar />
-      <main className="max-w-6xl w-full mx-auto px-4 py-8 flex-1">
+      <main className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-7 flex-1">
         <Outlet />
       </main>
     </div>
