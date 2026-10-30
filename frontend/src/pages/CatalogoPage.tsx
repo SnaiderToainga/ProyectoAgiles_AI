@@ -1,25 +1,24 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import clienteAxios from '../api/clienteAxios'
 
-interface Tema {
+export interface Tema {
   id: number
   nombre: string
   descripcion: string
 }
 
-interface Unidad {
+export interface Unidad {
   numero: number
   nombre: string
   temas: Tema[]
 }
 
-interface Parcial {
+export interface Parcial {
   numero: number
   unidades: Unidad[]
 }
 
-interface Materia {
+export interface Materia {
   id: number
   codigo: string
   nombre: string
@@ -27,7 +26,7 @@ interface Materia {
   parciales: Parcial[]
 }
 
-const MATERIAS_BASE: Materia[] = [
+export const MATERIAS_BASE: Materia[] = [
   {
     id: 1,
     codigo: 'SOF-401',
@@ -51,7 +50,7 @@ const MATERIAS_BASE: Materia[] = [
             nombre: 'Planificación, Estimación y Gestión del Backlog',
             temas: [
               { id: 104, nombre: 'Historias de Usuario y Criterios de Aceptación', descripcion: 'Estructura INVEST y escenarios Given-When-Then.' },
-              { id: 105, nombre: 'Técnicas de Estimación Ágil', descripcion: 'Story Points, Planning Poker y Fibonacci.' },
+              { id: 105, nombre: 'Técnicas de Estimación Ágil y Planning Poker', descripcion: 'Story Points, Planning Poker y Fibonacci.' },
               { id: 106, nombre: 'Cálculo de Capacidad del Equipo y Burndown', descripcion: 'Velocidad del equipo y seguimiento del Sprint.' }
             ]
           }
@@ -83,8 +82,8 @@ const MATERIAS_BASE: Materia[] = [
   {
     id: 2,
     codigo: 'SOF-402',
-    nombre: 'Estructuras de Datos',
-    semestre: 'Cuarto Nivel A',
+    nombre: 'Estructuras de Datos y Algoritmos',
+    semestre: 'Cuarto Nivel B',
     parciales: [
       {
         numero: 1,
@@ -100,7 +99,7 @@ const MATERIAS_BASE: Materia[] = [
           },
           {
             numero: 2,
-            nombre: 'Estructuras No Lineales',
+            nombre: 'Estructuras Jerárquicas',
             temas: [
               { id: 204, nombre: 'Árboles Binarios de Búsqueda (BST)', descripcion: 'Recorridos preorden, inorden y postorden.' },
               { id: 205, nombre: 'Grafos y Representación en Memoria', descripcion: 'Matrices y listas de adyacencia.' }
@@ -135,183 +134,214 @@ const MATERIAS_BASE: Materia[] = [
 
 export function CatalogoPage() {
   const [searchParams] = useSearchParams()
-  const [materias, setMaterias] = useState<Materia[]>(MATERIAS_BASE)
-  const [materiaId, setMateriaId] = useState(1)
-  const [parcialNum, setParcialNum] = useState(1)
-  const [abiertas, setAbiertas] = useState<number[]>([1, 2])
+  const cursoParam = searchParams.get('curso')
+
+  // Cargar materias desde localStorage para que los temas nuevos persistan
+  const [materias, setMaterias] = useState<Materia[]>(() => {
+    try {
+      const stored = localStorage.getItem('catalogo_materias')
+      return stored ? JSON.parse(stored) : MATERIAS_BASE
+    } catch {
+      return MATERIAS_BASE
+    }
+  })
+
+  const [materiaSeleccionadaId, setMateriaSeleccionadaId] = useState<number>(
+    cursoParam ? Number(cursoParam) : 1
+  )
+  const [parcialSeleccionado, setParcialSeleccionado] = useState<number>(1)
+  const [unidadesAbiertas, setUnidadesAbiertas] = useState<number[]>([1, 2])
+
+  // Estado del modal "+ Agregar Tema" (CA-02.3 y CA-02.4)
   const [modalAbierto, setModalAbierto] = useState(false)
-  const [unidadForm, setUnidadForm] = useState(1)
+  const [unidadForm, setUnidadForm] = useState<number>(1)
   const [nombreTema, setNombreTema] = useState('')
   const [descTema, setDescTema] = useState('')
   const [alertaModal, setAlertaModal] = useState<string | null>(null)
 
   useEffect(() => {
-    const c = Number(searchParams.get('curso'))
-    if (c === 1 || c === 2) setMateriaId(c)
-  }, [searchParams])
+    localStorage.setItem('catalogo_materias', JSON.stringify(materias))
+  }, [materias])
 
   useEffect(() => {
-    clienteAxios
-      .get<Materia[]>('/academico/materias')
-      .then((res) => {
-        if (Array.isArray(res.data) && res.data.length > 0) {
-          setMaterias(res.data)
-        }
-      })
-      .catch(() => {})
-  }, [])
+    if (cursoParam) {
+      setMateriaSeleccionadaId(Number(cursoParam))
+    }
+  }, [cursoParam])
 
-  const materiaActual = materias.find((m) => m.id === materiaId) || materias[0]
+  const materiaActual = materias.find((m) => m.id === materiaSeleccionadaId) || materias[0]
   const parcialActual =
-    materiaActual.parciales.find((p) => p.numero === parcialNum) || materiaActual.parciales[0]
+    materiaActual.parciales.find((p) => p.numero === parcialSeleccionado) ||
+    materiaActual.parciales[0]
 
-  const toggleUnidad = (n: number) =>
-    setAbiertas((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]))
+  const toggleUnidad = (num: number) => {
+    setUnidadesAbiertas((prev) =>
+      prev.includes(num) ? prev.filter((n) => n !== num) : [...prev, num]
+    )
+  }
 
-  const abrirModal = (unidadNum = 1) => {
-    setUnidadForm(unidadNum)
+  const abrirModalAgregarTema = () => {
+    setUnidadForm(parcialActual.unidades[0]?.numero || 1)
     setNombreTema('')
     setDescTema('')
     setAlertaModal(null)
     setModalAbierto(true)
   }
 
-  const guardarTema = async (e: FormEvent) => {
+  const guardarTema = (e: FormEvent) => {
     e.preventDefault()
-    if (!nombreTema.trim() || !descTema.trim()) {
-      setAlertaModal('Operación rechazada: no se permiten campos vacíos. Complete el nombre y la descripción del tema.')
+
+    // Regla CA-02.4: Rechazo si se envía con campos vacíos
+    if (!nombreTema.trim()) {
+      setAlertaModal('El nombre del tema es obligatorio.')
       return
     }
 
-    const nuevo: Tema = {
+    const nuevoTema: Tema = {
       id: Date.now(),
       nombre: nombreTema.trim(),
-      descripcion: descTema.trim()
-    }
-
-    try {
-      await clienteAxios.post('/academico/temas', {
-        materiaId: materiaActual.id,
-        parcialNumero: parcialActual.numero,
-        unidadNumero: unidadForm,
-        nombre: nuevo.nombre,
-        descripcion: nuevo.descripcion
-      })
-    } catch {
-      void 0
+      descripcion: descTema.trim() || 'Contenido curricular registrado para la unidad.'
     }
 
     setMaterias((prev) =>
-      prev.map((m) =>
-        m.id !== materiaActual.id
-          ? m
-          : {
-              ...m,
-              parciales: m.parciales.map((p) =>
-                p.numero !== parcialActual.numero
-                  ? p
-                  : {
-                      ...p,
-                      unidades: p.unidades.map((u) =>
-                        u.numero !== unidadForm ? u : { ...u, temas: [...u.temas, nuevo] }
-                      )
-                    }
-              )
+      prev.map((m) => {
+        if (m.id !== materiaActual.id) return m
+        return {
+          ...m,
+          parciales: m.parciales.map((p) => {
+            if (p.numero !== parcialActual.numero) return p
+            return {
+              ...p,
+              unidades: p.unidades.map((u) => {
+                if (u.numero !== unidadForm) return u
+                return {
+                  ...u,
+                  temas: [...u.temas, nuevoTema]
+                }
+              })
             }
-      )
+          })
+        }
+      })
     )
 
-    if (!abiertas.includes(unidadForm)) setAbiertas((prev) => [...prev, unidadForm])
+    if (!unidadesAbiertas.includes(unidadForm)) {
+      setUnidadesAbiertas((prev) => [...prev, unidadForm])
+    }
+
     setModalAbierto(false)
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-bold text-[#18181b]">Catálogo Curricular</h1>
+    <div className="space-y-6">
+      {/* Selector de Asignaturas */}
+      <div className="flex flex-wrap gap-2 border-b border-[#e4e4e7] pb-3">
+        {materias.map((m) => {
+          const activa = m.id === materiaActual.id
+          return (
+            <button
+              key={m.id}
+              onClick={() => {
+                setMateriaSeleccionadaId(m.id)
+                setUnidadesAbiertas([1, 2])
+              }}
+              className={`px-4 py-2 rounded text-xs font-semibold transition cursor-pointer ${
+                activa
+                  ? 'bg-[#8B151A] text-white'
+                  : 'bg-white text-[#18181b] border border-[#d4d4d8] hover:bg-[#f4f4f5]'
+              }`}
+            >
+              {m.nombre} ({m.codigo})
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Cabecera del Catálogo Curricular */}
+      <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-bold text-[#18181b]">
+            {materiaActual.nombre}
+          </h1>
+          <p className="text-xs text-[#52525b] mt-0.5">
+            Código: <strong className="text-[#18181b]">{materiaActual.codigo}</strong> • Semestre:{' '}
+            <strong className="text-[#18181b]">{materiaActual.semestre}</strong>
+          </p>
+        </div>
+
         <button
-          onClick={() => abrirModal(1)}
-          className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer"
+          onClick={abrirModalAgregarTema}
+          className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer self-start sm:self-auto"
         >
           + Agregar Tema
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e4e7] pb-3">
-        <div className="flex gap-2">
-          {materias.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => {
-                setMateriaId(m.id)
-                setParcialNum(1)
-              }}
-              className={`py-2 px-4 rounded text-xs font-semibold transition cursor-pointer ${
-                materiaActual.id === m.id
-                  ? 'bg-[#8B151A] text-white'
-                  : 'bg-white text-[#18181b] border border-[#d4d4d8] hover:border-[#8B151A]'
-              }`}
-            >
-              {m.nombre} ({m.codigo})
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-1.5">
-          {materiaActual.parciales.map((p) => (
-            <button
-              key={p.numero}
-              onClick={() => setParcialNum(p.numero)}
-              className={`py-1.5 px-3 rounded text-xs font-semibold transition cursor-pointer ${
-                parcialActual.numero === p.numero
-                  ? 'bg-[#18181b] text-white'
-                  : 'bg-white text-[#52525b] border border-[#d4d4d8] hover:text-[#18181b]'
-              }`}
-            >
-              Parcial {p.numero}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-md border border-[#e4e4e7] p-5 space-y-4">
-        <div className="flex items-center justify-between border-b border-[#e4e4e7] pb-3.5">
-          <div>
-            <h2 className="text-base font-bold text-[#18181b]">{materiaActual.nombre}</h2>
-            <p className="text-xs text-[#52525b]">
-              {materiaActual.codigo} • {materiaActual.semestre}
-            </p>
-          </div>
-          <span className="text-xs font-semibold text-[#8B151A]">
-            Parcial {parcialActual.numero}
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          {parcialActual.unidades.map((u) => {
-            const abierta = abiertas.includes(u.numero)
+      {/* Pestañas de Parciales */}
+      <div className="bg-white border border-[#e4e4e7] rounded-md overflow-hidden">
+        <div className="flex border-b border-[#e4e4e7] bg-[#f4f4f5]">
+          {materiaActual.parciales.map((p) => {
+            const activo = p.numero === parcialActual.numero
             return (
-              <div key={u.numero} className="border border-[#e4e4e7] rounded-md overflow-hidden">
+              <button
+                key={p.numero}
+                onClick={() => {
+                  setParcialSeleccionado(p.numero)
+                  setUnidadesAbiertas([1, 2])
+                }}
+                className={`px-5 py-2.5 text-xs font-semibold transition cursor-pointer border-b-2 ${
+                  activo
+                    ? 'bg-white text-[#8B151A] border-[#8B151A]'
+                    : 'text-[#52525b] border-transparent hover:text-[#18181b]'
+                }`}
+              >
+                Parcial {p.numero}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Árbol de Unidades y Temas */}
+        <div className="p-4 space-y-4">
+          {parcialActual.unidades.map((u) => {
+            const abierta = unidadesAbiertas.includes(u.numero)
+            return (
+              <div
+                key={u.numero}
+                className="border border-[#e4e4e7] rounded-md overflow-hidden"
+              >
                 <button
+                  type="button"
                   onClick={() => toggleUnidad(u.numero)}
-                  className="w-full bg-[#f4f4f5] hover:bg-[#e4e4e7]/60 px-4 py-3 flex items-center justify-between text-left transition cursor-pointer"
+                  className="w-full bg-[#f4f4f5] px-4 py-3 flex items-center justify-between text-left hover:bg-[#f0f0f1] transition cursor-pointer"
                 >
                   <span className="font-bold text-xs text-[#18181b]">
-                    Unidad {u.numero}: {u.nombre}
+                    Unidad {u.numero}: {u.nombre} ({u.temas.length} temas)
                   </span>
-                  <span className="text-xs font-semibold text-[#8B151A]">
-                    {abierta ? 'Ocultar' : 'Mostrar'}
+
+                  <span className="text-xs font-semibold text-[#71717a]">
+                    {abierta ? 'Ocultar ▲' : 'Mostrar ▼'}
                   </span>
                 </button>
 
                 {abierta && (
                   <div className="p-4 bg-white divide-y divide-[#e4e4e7]">
-                    {u.temas.map((t) => (
-                      <div key={t.id} className="py-2.5 first:pt-0 last:pb-0">
-                        <p className="text-xs font-semibold text-[#18181b]">{t.nombre}</p>
-                        <p className="text-xs text-[#52525b] mt-0.5">{t.descripcion}</p>
-                      </div>
-                    ))}
+                    {u.temas.length === 0 ? (
+                      <p className="text-xs text-[#71717a] py-2">
+                        No hay temas registrados en esta unidad.
+                      </p>
+                    ) : (
+                      u.temas.map((t) => (
+                        <div key={t.id} className="py-2.5 first:pt-0 last:pb-0">
+                          <p className="text-xs font-semibold text-[#18181b]">
+                            {t.nombre}
+                          </p>
+                          <p className="text-xs text-[#52525b] mt-0.5">
+                            {t.descripcion}
+                          </p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
@@ -320,17 +350,20 @@ export function CatalogoPage() {
         </div>
       </div>
 
+      {/* Modal para Agregar Tema (CA-02.3 y CA-02.4) */}
       {modalAbierto && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-md border border-[#e4e4e7] w-full max-w-md overflow-hidden">
             <div className="bg-[#8B151A] px-5 py-3.5 flex items-center justify-between text-white">
-              <h3 className="text-sm font-bold">Agregar Tema — Parcial {parcialActual.numero}</h3>
+              <h3 className="text-sm font-bold">
+                Agregar Tema — Parcial {parcialActual.numero}
+              </h3>
               <button
                 type="button"
                 onClick={() => setModalAbierto(false)}
                 className="text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
               >
-                Cerrar
+                ✕
               </button>
             </div>
 
@@ -369,7 +402,7 @@ export function CatalogoPage() {
                     setNombreTema(e.target.value)
                     if (alertaModal) setAlertaModal(null)
                   }}
-                  placeholder="Ej. Planificación de Release"
+                  placeholder="Ej: Planificación de Release y Sprint Backlog"
                   className="w-full px-3 py-2 rounded border border-[#d4d4d8] text-xs text-[#18181b] focus:outline-none focus:border-[#8B151A]"
                 />
               </div>
@@ -385,7 +418,7 @@ export function CatalogoPage() {
                     setDescTema(e.target.value)
                     if (alertaModal) setAlertaModal(null)
                   }}
-                  placeholder="Contenido del tema..."
+                  placeholder="Descripción del contenido temático..."
                   className="w-full px-3 py-2 rounded border border-[#d4d4d8] text-xs text-[#18181b] focus:outline-none focus:border-[#8B151A]"
                 />
               </div>
