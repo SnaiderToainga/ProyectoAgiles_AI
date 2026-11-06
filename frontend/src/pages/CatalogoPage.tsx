@@ -1,5 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import axios from 'axios'
+import clienteAxios from '../api/clienteAxios'
 
 export interface Tema {
   id: number
@@ -132,19 +134,21 @@ export const MATERIAS_BASE: Materia[] = [
   }
 ]
 
+type MateriaApi = Omit<Materia, 'parciales'> & {
+  parciales: (Omit<Parcial, 'unidades'> & {
+    id: number
+    unidades: (Unidad & { id: number })[]
+  })[]
+}
+
 export function CatalogoPage() {
   const [searchParams] = useSearchParams()
   const cursoParam = searchParams.get('curso')
 
-  // Cargar materias desde localStorage para que los temas nuevos persistan
-  const [materias, setMaterias] = useState<Materia[]>(() => {
-    try {
-      const stored = localStorage.getItem('catalogo_materias')
-      return stored ? JSON.parse(stored) : MATERIAS_BASE
-    } catch {
-      return MATERIAS_BASE
-    }
-  })
+  const [materias, setMaterias] = useState<MateriaApi[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
 
   const [materiaSeleccionadaId, setMateriaSeleccionadaId] = useState<number>(
     cursoParam ? Number(cursoParam) : 1
@@ -160,8 +164,13 @@ export function CatalogoPage() {
   const [alertaModal, setAlertaModal] = useState<string | null>(null)
 
   useEffect(() => {
-    localStorage.setItem('catalogo_materias', JSON.stringify(materias))
-  }, [materias])
+    let vigente = true
+    clienteAxios.get<MateriaApi[]>('/academico/materias')
+      .then(({ data }) => { if (vigente) setMaterias(data) })
+      .catch(() => { if (vigente) setErrorCarga('No se pudo cargar el catálogo. Comprueba la sesión y la conexión con la API.') })
+      .finally(() => { if (vigente) setCargando(false) })
+    return () => { vigente = false }
+  }, [])
 
   useEffect(() => {
     if (cursoParam) {
@@ -171,8 +180,8 @@ export function CatalogoPage() {
 
   const materiaActual = materias.find((m) => m.id === materiaSeleccionadaId) || materias[0]
   const parcialActual =
-    materiaActual.parciales.find((p) => p.numero === parcialSeleccionado) ||
-    materiaActual.parciales[0]
+    materiaActual?.parciales.find((p) => p.numero === parcialSeleccionado) ||
+    materiaActual?.parciales[0]
 
   const toggleUnidad = (num: number) => {
     setUnidadesAbiertas((prev) =>
@@ -181,56 +190,55 @@ export function CatalogoPage() {
   }
 
   const abrirModalAgregarTema = () => {
-    setUnidadForm(parcialActual.unidades[0]?.numero || 1)
+    if (!parcialActual) return
+    setUnidadForm(parcialActual.unidades[0]?.id || 0)
     setNombreTema('')
     setDescTema('')
     setAlertaModal(null)
     setModalAbierto(true)
   }
 
-  const guardarTema = (e: FormEvent) => {
+  const guardarTema = async (e: FormEvent) => {
     e.preventDefault()
-
-    // Regla CA-02.4: Rechazo si se envía con campos vacíos
+    if (guardando || !materiaActual || !parcialActual) return
     if (!nombreTema.trim()) {
       setAlertaModal('El nombre del tema es obligatorio.')
       return
     }
-
-    const nuevoTema: Tema = {
-      id: Date.now(),
-      nombre: nombreTema.trim(),
-      descripcion: descTema.trim() || 'Contenido curricular registrado para la unidad.'
-    }
-
-    setMaterias((prev) =>
-      prev.map((m) => {
-        if (m.id !== materiaActual.id) return m
-        return {
-          ...m,
-          parciales: m.parciales.map((p) => {
-            if (p.numero !== parcialActual.numero) return p
-            return {
-              ...p,
-              unidades: p.unidades.map((u) => {
-                if (u.numero !== unidadForm) return u
-                return {
-                  ...u,
-                  temas: [...u.temas, nuevoTema]
-                }
-              })
-            }
-          })
-        }
+    const unidad = parcialActual.unidades.find(u => u.id === unidadForm)
+    if (!unidad) { setAlertaModal('Seleccione una unidad válida.'); return }
+    setGuardando(true)
+    setAlertaModal(null)
+    try {
+      const { data: nuevoTema } = await clienteAxios.post<Tema>('/academico/temas', {
+        unidadId: unidad.id,
+        nombre: nombreTema.trim(),
+        descripcion: descTema.trim()
       })
-    )
-
-    if (!unidadesAbiertas.includes(unidadForm)) {
-      setUnidadesAbiertas((prev) => [...prev, unidadForm])
+      setMaterias(prev => prev.map(m => ({
+        ...m,
+        parciales: m.parciales.map(p => ({
+          ...p,
+          unidades: p.unidades.map(u => u.id === unidad.id
+            ? { ...u, temas: [...u.temas, nuevoTema] } : u)
+        }))
+      })))
+      setUnidadesAbiertas(prev => prev.includes(unidad.numero) ? prev : [...prev, unidad.numero])
+      setModalAbierto(false)
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined
+      setAlertaModal(status === 409 ? 'Ese tema ya existe en la unidad.'
+        : status === 400 ? 'Revisa el nombre y los datos del tema.'
+        : status === 403 ? 'No tienes permiso para modificar esta unidad.'
+        : 'No se pudo confirmar el guardado. Recarga el catálogo para comprobarlo antes de reintentar.')
+    } finally {
+      setGuardando(false)
     }
-
-    setModalAbierto(false)
   }
+
+  if (cargando) return <p role="status">Cargando catálogo...</p>
+  if (errorCarga) return <p role="alert">{errorCarga}</p>
+  if (!materiaActual || !parcialActual) return <p>No hay materias con parciales disponibles para este usuario.</p>
 
   return (
     <div className="space-y-6">
@@ -360,6 +368,7 @@ export function CatalogoPage() {
               </h3>
               <button
                 type="button"
+                disabled={guardando}
                 onClick={() => setModalAbierto(false)}
                 className="text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
               >
@@ -384,7 +393,7 @@ export function CatalogoPage() {
                   className="w-full px-3 py-2 rounded border border-[#d4d4d8] text-xs text-[#18181b] bg-white focus:outline-none focus:border-[#8B151A]"
                 >
                   {parcialActual.unidades.map((u) => (
-                    <option key={u.numero} value={u.numero}>
+                    <option key={u.id} value={u.id}>
                       Unidad {u.numero}: {u.nombre}
                     </option>
                   ))}
@@ -426,16 +435,18 @@ export function CatalogoPage() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setModalAbierto(false)}
+                  disabled={guardando}
+                onClick={() => setModalAbierto(false)}
                   className="px-4 py-2 rounded border border-[#d4d4d8] text-xs font-semibold text-[#18181b] hover:bg-[#f4f4f5] cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
+                  disabled={guardando}
                   className="px-4 py-2 rounded bg-[#8B151A] hover:bg-[#6E1014] text-white text-xs font-semibold cursor-pointer"
                 >
-                  Guardar Tema
+                  {guardando ? 'Guardando...' : 'Guardar Tema'}
                 </button>
               </div>
             </form>

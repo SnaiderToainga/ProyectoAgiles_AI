@@ -1,0 +1,55 @@
+name: Integracion Continua (CI) - SISRA
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+
+jobs:
+  backend-test:
+    name: Compilar y Probar Backend (.NET 10)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Descargar codigo del repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar SDK de .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restaurar dependencias de NuGet
+      run: dotnet restore backend/EduMonitor.Tests/EduMonitor.Tests.csproj
+
+    - name: Compilar proyectos de backend
+      run: dotnet build backend/EduMonitor.Tests/EduMonitor.Tests.csproj --configuration Release --no-restore
+
+    - name: Ejecutar Suite de Pruebas Unitarias (xUnit)
+      run: dotnet test backend/EduMonitor.Tests/EduMonitor.Tests.csproj --configuration Release --no-build --verbosity normal
+
+  frontend-build:
+    name: Validar y Empaquetar Frontend (React 19)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Descargar codigo del repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: frontend/package.json
+
+    - name: Instalar dependencias npm
+      run: |
+        cd frontend
+        npm install
+
+    - name: Compilar Frontend Vite y Typecheck
+      run: |
+        cd frontend
+        npm run build
