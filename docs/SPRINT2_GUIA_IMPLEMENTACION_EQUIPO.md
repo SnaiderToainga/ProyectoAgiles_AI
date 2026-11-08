@@ -45,7 +45,39 @@ dotnet ef database update --context AcademicoDbContext --project backend/EduMoni
 
 ---
 
-## 3. Reparto de Responsabilidades y Tareas Técnicas Detalladas
+## 3. 📋 Flujo de Trabajo Obligatorio en GitHub Projects e Issues
+
+> [!IMPORTANT]
+> **Seguimiento del Tablero Scrum (`SISRA - EduMonitor AI (Scrum Board)`):**  
+> El docente evalúa el uso continuo de la herramienta ágil. Cada integrante tiene un Issue formal creado en la columna **`Sprint 2 — Por Hacer`**:
+> * **Issue #11:** Cristian Sivinta (`[HU-04A] T-07: Ingesta de datos reales de Moodle Docker y auditoría de sincronización`)
+> * **Issue #12:** Estiven Chiluisa (`[HU-04B] T-09: Microservicio FastAPI :8000, Gemini API y Fallback determinista`)
+> * **Issue #13:** Cesar Carrasco (`[HU-04A / HU-04B] T-08 y T-10: Desacoplar EVALUACIONES_BASE y vista TutoriaPage.tsx`)
+> * **PR #10:** Snaider Toainga (`feat(academico): persistencia relacional de planes de refuerzo y documentacion Sprint 2`)
+
+### Pasos que debe seguir cada integrante al trabajar:
+1. **Mover la tarjeta a `En progreso`:**
+   En cuanto empieces a codificar tu tarea, entra al tablero `SISRA - EduMonitor AI (Scrum Board)` y arrastra tu Issue desde `Sprint 2 — Por Hacer` hacia **`En progreso`**.
+2. **Crear su rama de trabajo desde `develop` actualizado:**
+   ```powershell
+   git checkout develop
+   git pull origin develop
+   git checkout -b feature/<nombre-de-tu-tarea>
+   ```
+3. **Marcar los avances en el Issue:**
+   Abre tu Issue en GitHub y ve marcando con un clic los vistos `[x]` en la lista de subtareas conforme las vayas completando.
+4. **Vincular el Pull Request con el Tablero e Issue (CRÍTICO):**
+   Al terminar tu tarea y abrir el Pull Request hacia `develop`:
+   * **En la descripción del PR:** Escribe `Closes #11` (si eres Cristian), `Closes #12` (si eres Estiven) o `Closes #13` (si eres Cesar). Esto cerrará y vinculará automáticamente el Issue cuando se apruebe el PR.
+   * **En la barra lateral derecha del PR:**
+     * En **Projects**, selecciona **`SISRA - EduMonitor AI (Scrum Board)`**. *(Esto hace que el PR aparezca en el tablero)*.
+     * En **Reviewers**, solicita revisión al Scrum Master (`SnaiderToainga`).
+5. **Cierre de Tarea:**
+   Una vez que el Scrum Master apruebe y fusione el PR en `develop`, la tarjeta se moverá a la columna de **Terminado**.
+
+---
+
+## 4. Reparto de Responsabilidades y Tareas Técnicas Detalladas
 
 ---
 
@@ -64,20 +96,20 @@ dotnet ef database update --context AcademicoDbContext --project backend/EduMoni
 
 #### Tareas Inmediatas Pendientes:
 1. **Pull Request en GitHub:**
-   * Ingresar a GitHub (`ProyectoAgiles_AI`) y presionar **"Compare & pull request"** de la rama `feature/HU-04B-persistencia-planes` hacia `develop`.
+   * PR #10 abierto hacia `develop`.
    * Verificar que pase el workflow de CI (`.github/workflows/ci.yml`).
    * Fusionar (Merge) el PR hacia `develop`.
 2. **T-08.4 (Autorización Granular JWT):**
    * Verificar que ningún docente pueda consultar o generar planes de asignaturas ajenas (`curso.DocenteId == docente.Id`).
 3. **T-08.5 (Gestión del Tablero Scrum):**
-   * En el tablero GitHub Projects, mover el PR fusionado a *Done* y crear las tarjetas atómicas del Sprint 2 para Cristian, Estiven y Cesar en la columna *In Progress*.
+   * En el tablero GitHub Projects, mover el PR fusionado a *Done* y supervisar el avance de las tarjetas #11, #12 y #13 en la columna *In Progress*.
 
 ---
 
 ### 🔌 INTEGRANTE 2: Cristian Sivinta
 * **Roles:** Development Team | Backend & LMS Specialist
 * **Historia Asignada:** HU-04A (Ingesta de Datos Reales de Moodle) | **Capacidad Neta:** 24 h
-* **Rama Git:** `feature/HU-04A-sincronizacion-moodle`
+* **Issue Asignado:** `#11` | **Rama Git:** `feature/HU-04A-sincronizacion-moodle`
 
 #### Configuración Lista y Credenciales de Moodle Docker:
 * **URL:** `http://localhost:8080`
@@ -113,7 +145,7 @@ devuelva registros con notas reales y **cero registros vacíos o inventados**.
 ### 🤖 INTEGRANTE 3: Estiven Chiluisa
 * **Roles:** Product Owner | Backend & Cloud AI Specialist
 * **Historia Asignada:** HU-04B (Microservicio de IA & Fallback) | **Capacidad Neta:** 24 h
-* **Rama Git:** `feature/HU-04B-microservicio-ia`
+* **Issue Asignado:** `#12` | **Rama Git:** `feature/HU-04B-microservicio-ia`
 * **Directorio de Trabajo:** `ai-service/`
 
 #### Subtareas Asignadas (≤ 4 horas c/u):
@@ -170,15 +202,12 @@ devuelva registros con notas reales y **cero registros vacíos o inventados**.
 }
 ```
 
-> [!TIP]
-> **Modo Fallback:** Si ocurre una excepción de red o `API_KEY_INVALID`, la función `except Exception:` debe retornar el mismo esquema JSON anterior, asignando `"esFallback": true` y recomendaciones heurísticas basadas en los temas críticos recibidos.
-
 ---
 
 ### 🎨 INTEGRANTE 4: Cesar Carrasco
 * **Roles:** Development Team | Frontend & UI/UX Lead
 * **Historias Asignadas:** HU-04A y HU-04B | **Capacidad Neta:** 24 h
-* **Rama Git:** `feature/HU-04-interfaz-frontend`
+* **Issue Asignado:** `#13` | **Rama Git:** `feature/HU-04-interfaz-frontend`
 * **Directorio de Trabajo:** `frontend/src/`
 
 #### Subtareas Asignadas (≤ 4 horas c/u):
@@ -190,7 +219,6 @@ devuelva registros con notas reales y **cero registros vacíos o inventados**.
 2. **Carga en Vivo:**
    * Consumir las calificaciones y catálogo desde el backend real mediante:
      ```typescript
-     // Ejemplo de consumo en React:
      const { data } = await clienteAxios.get(`/api/academico/materias/${cursoId}/evaluaciones`);
      ```
 3. **Botón de Refresco Moodle:**
@@ -222,7 +250,7 @@ devuelva registros con notas reales y **cero registros vacíos o inventados**.
 
 ---
 
-## 4. Guía de Arranque del Entorno Completo Local (Día a Día)
+## 5. Guía de Arranque del Entorno Completo Local (Día a Día)
 
 Para trabajar de forma sincronizada sin bloqueos, levantar los servicios en este orden:
 
@@ -237,7 +265,7 @@ Para trabajar de forma sincronizada sin bloqueos, levantar los servicios en este
 
 ---
 
-## 5. Criterios de Aceptación para la Demo Final del Sprint 2
+## 6. Criterios de Aceptación para la Demo Final del Sprint 2
 
 * [ ] El sistema no contiene ningún array estático o lectura de `localStorage` para notas.
 * [ ] Al calificar una tarea en Moodle Docker (`:8080`) y presionar "Sincronizar", la nota se refleja de inmediato en la tabla de React.
@@ -245,4 +273,4 @@ Para trabajar de forma sincronizada sin bloqueos, levantar los servicios en este
 * [ ] Al presionar "Generar Plan con IA", se despliega el spinner institucional y se renderizan los acordeones pedagógicos.
 * [ ] Si se apaga el microservicio de IA o se desconecta internet, el sistema no se rompe; activa el modo fallback preventivo.
 * [ ] Al reiniciar la página web o cerrar sesión, los planes de refuerzo persisten intactos desde la base de datos `AcademicoDB`.
-* [ ] Todos los Pull Requests cuentan con la revisión de código del Scrum Master y la integración continua en verde (`✔ ci.yml`).
+* [ ] Todos los Pull Requests cuentan con la vinculación formal en el tablero Scrum, revisión de código y pipeline CI en verde (`✔ ci.yml`).
