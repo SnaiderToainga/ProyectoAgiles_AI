@@ -22,6 +22,47 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.DetallePlanRefuerzo", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActividadSugerida")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("PlanRefuerzoId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Prioridad")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("RecursoRecomendado")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("TemaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TiempoEstimadoHoras")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlanRefuerzoId");
+
+                    b.HasIndex("TemaId");
+
+                    b.ToTable("DetallesPlanRefuerzo");
+                });
+
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.EvaluacionTema", b =>
                 {
                     b.Property<int>("ItemEvaluacionId")
@@ -57,6 +98,45 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .IsUnique();
 
                     b.ToTable("Parciales");
+                });
+
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.PlanRefuerzo", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CursoId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DiagnosticoGeneral")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<bool>("EsFallback")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("EstudianteId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("FechaGeneracion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NivelRiesgo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CursoId");
+
+                    b.HasIndex("EstudianteId");
+
+                    b.ToTable("PlanesRefuerzo");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.Tema", b =>
@@ -406,6 +486,25 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                     b.ToTable("Matriculas", (string)null);
                 });
 
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.DetallePlanRefuerzo", b =>
+                {
+                    b.HasOne("EduMonitor.Core.Entities.Academico.PlanRefuerzo", "PlanRefuerzo")
+                        .WithMany("Detalles")
+                        .HasForeignKey("PlanRefuerzoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EduMonitor.Core.Entities.Academico.Tema", "Tema")
+                        .WithMany()
+                        .HasForeignKey("TemaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PlanRefuerzo");
+
+                    b.Navigation("Tema");
+                });
+
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.EvaluacionTema", b =>
                 {
                     b.HasOne("EduMonitor.Core.Entities.ItemEvaluacion", "Evaluacion")
@@ -434,6 +533,25 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .IsRequired();
 
                     b.Navigation("Curso");
+                });
+
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.PlanRefuerzo", b =>
+                {
+                    b.HasOne("EduMonitor.Core.Entities.Curso", "Curso")
+                        .WithMany()
+                        .HasForeignKey("CursoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EduMonitor.Core.Entities.Estudiante", "Estudiante")
+                        .WithMany()
+                        .HasForeignKey("EstudianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Curso");
+
+                    b.Navigation("Estudiante");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.Tema", b =>
@@ -536,6 +654,11 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.Parcial", b =>
                 {
                     b.Navigation("Unidades");
+                });
+
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.PlanRefuerzo", b =>
+                {
+                    b.Navigation("Detalles");
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.Unidad", b =>
