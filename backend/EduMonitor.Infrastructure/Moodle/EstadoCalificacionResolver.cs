@@ -17,8 +17,9 @@ public static class EstadoCalificacionResolver
             return EstadoCalificacion.NoDeterminado;
         // La API no garantiza fecha límite efectiva de overrides de usuario/grupo.
         // Sin fecha efectiva verificada no se presupone vencimiento: extensión sí es individual.
-        if (intento.Extensionduedate <= 0 && !courseDueDatesAreAuthoritative) return EstadoCalificacion.NoDeterminado;
-        var due = intento.Extensionduedate > 0 ? intento.Extensionduedate : tarea.Duedate;
+        var extension = intento.Extensionduedate ?? 0;
+        if (extension <= 0 && !courseDueDatesAreAuthoritative) return EstadoCalificacion.NoDeterminado;
+        var due = extension > 0 ? extension : tarea.Duedate;
         if (due == 0) return EstadoCalificacion.PendienteEntrega;
         return due < now.ToUnixTimeSeconds() ? EstadoCalificacion.SinEntrega : EstadoCalificacion.PendienteEntrega;
     }

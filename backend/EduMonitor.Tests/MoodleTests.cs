@@ -1,5 +1,8 @@
 using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using EduMonitor.Core.DTOs;
+using EduMonitor.Core.Enums;
 using EduMonitor.Core.Services;
 using EduMonitor.Infrastructure.Data;
 using EduMonitor.Infrastructure.Moodle;
@@ -38,6 +41,92 @@ public class MoodleTests
         var service=new MoodleService(handler,Options.Create(new MoodleOptions{MoodleToken="synthetic-token",MaxRetries=0}));
         Assert.Equal(504,(await Assert.ThrowsAsync<MoodleException>(()=>service.ObtenerParticipantes(2))).HttpStatus);
     }
+    [Theory]
+    [InlineData("submitted", false, EstadoCalificacion.PendienteCalificar)]
+    [InlineData("new", false, EstadoCalificacion.NoDeterminado)]
+    [InlineData("new", true, EstadoCalificacion.SinEntrega)]
+    public async Task LeeExtensionNulaEnRespuestaRealistaDeMoodle(
+        string estadoEntrega, bool fechaCursoVerificada, EstadoCalificacion estadoEsperado)
+    {
+        var json = $$$"""
+            {"lastattempt":{"submission":{"status":"{{{estadoEntrega}}}","timemodified":100},
+            "extensionduedate":null,"submissionsenabled":true}}
+            """;
+        using var handler = new Handler(json);
+        var options = Options.Create(new MoodleOptions { MoodleToken = "synthetic-token", MaxRetries = 0 });
+        var service = new MoodleService(handler, options);
+
+        var intento = await service.ObtenerEstadoEntrega(42, 4);
+        var item = new MoodleItemDto(101, "Tarea", "mod", "assign", 42, null, 0, 100, null);
+        var tarea = new MoodleTareaDto(42, 200, 0);
+        var ahora = DateTimeOffset.FromUnixTimeSeconds(300);
+
+        Assert.Null(intento.Lastattempt!.Extensionduedate);
+        Assert.Equal(estadoEsperado,
+            EstadoCalificacionResolver.Resolver(item, tarea, intento, ahora, fechaCursoVerificada));
+    }
+
+    public sealed class MoodleLocalFactAttribute : FactAttribute
+    {
+        public MoodleLocalFactAttribute()
+        {
+            if (Environment.GetEnvironmentVariable("EDUMONITOR_MOODLE_LIVE_TEST") != "1")
+                Skip = "Requiere Moodle Docker, Gateway y AcademicoDB del piloto local.";
+        }
+    }
+
+    [MoodleLocalFact]
+    public async Task SincronizaEntregaRealPendienteSinDuplicarEnSqlServer()
+    {
+        static string Config(string variable) =>
+            Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value
+                ? value
+                : throw new InvalidOperationException($"Configura {variable} para la prueba local.");
+
+        var cursoId = int.Parse(Config("EDUMONITOR_MOODLE_LIVE_CURSO_ID"));
+        var tarea = Config("EDUMONITOR_MOODLE_LIVE_TAREA");
+        var estudianteMoodleId = int.Parse(Config("EDUMONITOR_MOODLE_LIVE_ESTUDIANTE_ID"));
+        var connection = Config("ConnectionStrings__AcademicoConnection");
+
+        using var http = new HttpClient
+        {
+            BaseAddress = new Uri("http://localhost:5000"),
+            Timeout = TimeSpan.FromSeconds(90)
+        };
+        http.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", Config("EDUMONITOR_MOODLE_LIVE_JWT"));
+
+        await using var db = new AcademicoDbContext(
+            new DbContextOptionsBuilder<AcademicoDbContext>().UseSqlServer(connection).Options);
+
+        async Task<int> SincronizarYVerificar()
+        {
+            using var response = await http.PostAsync($"/api/moodle/sync-notas/{cursoId}", null);
+            response.EnsureSuccessStatusCode();
+            var sync = await response.Content.ReadFromJsonAsync<SincronizacionDto>();
+            Assert.NotNull(sync);
+
+            var log = await db.LogsSincronizacion.AsNoTracking().SingleAsync(x => x.Id == sync.LogId);
+            Assert.Equal(cursoId, log.CursoId);
+            Assert.True(log.Exitoso);
+
+            var nota = await (
+                from calificacion in db.Calificaciones.AsNoTracking()
+                join item in db.ItemsEvaluacion on calificacion.ItemEvaluacionId equals item.Id
+                join estudiante in db.Estudiantes on calificacion.EstudianteId equals estudiante.Id
+                where item.CursoId == cursoId && item.Nombre == tarea
+                    && estudiante.MoodleUserId == estudianteMoodleId
+                select calificacion).SingleAsync();
+            Assert.Null(nota.NotaMoodle);
+            Assert.Null(nota.Nota);
+            Assert.Equal(EstadoCalificacion.PendienteCalificar, nota.Estado);
+            return nota.Id;
+        }
+
+        var idOriginal = await SincronizarYVerificar();
+        Assert.Equal(idOriginal, await SincronizarYVerificar());
+    }
+
     private sealed class FakeMoodle : IMoodleService
     {
         public bool Fail;
