@@ -43,6 +43,7 @@ public class ApiAuthorizationTests
     [Theory]
     [InlineData("/api/academico/materias")]
     [InlineData("/api/auth/auditoria")]
+    [InlineData("/api/academico/materias/1/parciales/1/rendimiento")]
     public async Task SinJwtEs401(string path)
     {using var f=new Factory();using var c=f.CreateClient();Assert.Equal(HttpStatusCode.Unauthorized,(await c.GetAsync(path)).StatusCode);}
     [Fact] public async Task SyncSinJwtEs401()
@@ -56,8 +57,10 @@ public class ApiAuthorizationTests
         Assert.Equal(HttpStatusCode.Forbidden,(await c.GetAsync("/api/academico/materias")).StatusCode);
         c.DefaultRequestHeaders.Authorization=new("Bearer",Token("Docente",88));
         Assert.Equal(HttpStatusCode.Forbidden,(await c.GetAsync("/api/academico/materias")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,(await c.GetAsync("/api/academico/materias/1/parciales/1/rendimiento")).StatusCode);
         c.DefaultRequestHeaders.Authorization=new("Bearer",Token("Docente",77));
         Assert.Equal(HttpStatusCode.OK,(await c.GetAsync("/api/academico/materias")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,(await c.GetAsync("/api/academico/materias/1/parciales/1/rendimiento")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,(await c.GetAsync("/api/auth/auditoria")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,(await c.PostAsJsonAsync("/api/academico/evaluaciones",new{parcialId=1,nombre="Sin temas",tipo=1,temaIds=Array.Empty<int>()})).StatusCode);
     }
