@@ -15,7 +15,7 @@ public sealed record MoodleCursoTareasDto(int Id, List<MoodleTareaDto> Assignmen
 public sealed record MoodleTareaDto(int Id, long Duedate, int Teamsubmission);
 public sealed record MoodleEstadoEntregaDto(MoodleIntentoDto? Lastattempt);
 public sealed record MoodleIntentoDto(MoodleEntregaDto? Submission, MoodleEntregaDto? Teamsubmission,
-    long Extensionduedate, bool Submissionsenabled);
+    long? Extensionduedate, bool Submissionsenabled);
 public sealed record MoodleEntregaDto(string Status, long Timemodified);
 public sealed record SincronizacionDto(int LogId, string Operacion, int Cursos, int Estudiantes,
     int Items, int Calificaciones, int EstadosNoDeterminados, DateTime FechaUtc);
