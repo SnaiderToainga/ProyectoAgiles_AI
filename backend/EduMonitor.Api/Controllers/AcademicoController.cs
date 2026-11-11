@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using EduMonitor.Core.DTOs.Academico;
+using EduMonitor.Core.Services;
 using EduMonitor.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -7,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace EduMonitor.Api.Controllers;
 
 [ApiController, Route("api/academico"), Authorize(Roles = "Docente,Administrador")]
-public class AcademicoController(CatalogoService catalogo) : ControllerBase
+public class AcademicoController(CatalogoService catalogo, ICalculoPonderadoService calculoPonderado) : ControllerBase
 {
     private int UsuarioId => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && id > 0
         ? id : throw new AcademicoException(403, "Identidad sin identificador válido.");
@@ -39,4 +40,11 @@ public class AcademicoController(CatalogoService catalogo) : ControllerBase
     [HttpGet("planes/{cursoId:int}")]
     public async Task<IActionResult> PlanesPorCurso(int cursoId, CancellationToken ct) =>
         Ok(await catalogo.PlanesPorCurso(UsuarioId, Admin, cursoId, ct));
+
+    [HttpGet("materias/{cursoId:int}/parciales/{parcialId:int}/rendimiento")]
+    public async Task<IActionResult> RendimientoPorParcial(int cursoId, int parcialId, CancellationToken ct)
+    {
+        await catalogo.ComprobarCurso(UsuarioId, Admin, cursoId, ct);
+        return Ok(await calculoPonderado.CalcularCursoAsync(cursoId, parcialId, ct));
+    }
 }
