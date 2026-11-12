@@ -5,14 +5,6 @@ import { useAuth } from '../context/AuthContext'
 import axios from 'axios'
 import logo from '../assets/logo.png'
 
-const USUARIOS_LOCAL: Record<string, { id: number; nombreCompleto: string; rol: string }> = {
-  'docente@uta.edu.ec': { id: 1, nombreCompleto: 'Ing. Carlos Mendoza', rol: 'Docente' },
-  'carlos.mendoza@uta.edu.ec': { id: 1, nombreCompleto: 'Ing. Carlos Mendoza', rol: 'Docente' },
-  'h.naranjo@uta.edu.ec': { id: 1, nombreCompleto: 'Ing. Hernan Naranjo', rol: 'Docente' },
-  's.toainga@uta.edu.ec': { id: 2, nombreCompleto: 'Snaider Toainga', rol: 'Administrador' },
-  'estudiante@uta.edu.ec': { id: 4, nombreCompleto: 'Andrés Silva', rol: 'Estudiante' }
-}
-
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
@@ -23,7 +15,6 @@ export function LoginPage() {
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bloqueado, setBloqueado] = useState(false)
-  const [fallos, setFallos] = useState(0)
 
   useEffect(() => {
     if (isAuthenticated) navigate('/dashboard')
@@ -34,18 +25,13 @@ export function LoginPage() {
     setCargando(true)
     setError(null)
 
-    const correo = email.trim().toLowerCase()
-    if (correo === 'prueba.bloqueo@uta.edu.ec') {
-      setBloqueado(true)
-      setCargando(false)
-      return
-    }
-
     try {
-      const res = await loginUsuario({ email, password })
+      const res = await loginUsuario({ email: email.trim(), password })
       if (res.exitoso && res.token && res.usuario) {
         login(res.token, res.usuario)
         navigate('/dashboard')
+      } else {
+        setError(res.mensaje || 'Credenciales incorrectas.')
       }
     } catch (err) {
       if (axios.isAxiosError(err) && err.response) {
@@ -57,16 +43,7 @@ export function LoginPage() {
           setError(data?.mensaje || 'Credenciales incorrectas.')
         }
       } else {
-        const usr = USUARIOS_LOCAL[correo]
-        if (usr && password === 'Admin123!') {
-          login('token-jwt-fisei', { ...usr, email: correo })
-          navigate('/dashboard')
-        } else {
-          const total = fallos + 1
-          setFallos(total)
-          if (total >= 3) setBloqueado(true)
-          else setError(`Credenciales incorrectas. Intentos restantes: ${3 - total}.`)
-        }
+        setError('No se pudo conectar con el servidor de autenticación. Verifica que el API Gateway esté activo.')
       }
     } finally {
       setCargando(false)
