@@ -1,82 +1,61 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import logo from '../assets/logo.png'
 
-export function Navbar() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
+interface NavbarProps {
+  onToggleMobileMenu?: () => void
+}
 
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
+export function Navbar({ onToggleMobileMenu }: NavbarProps) {
+  const { user } = useAuth()
+  const location = useLocation()
+
+  // Determinar la miga de pan / título según la ruta activa
+  const getBreadcrumb = () => {
+    const path = location.pathname
+    if (path.startsWith('/admin/usuarios')) return { seccion: 'Administración', item: 'Gestión de Usuarios' }
+    if (path.startsWith('/admin/auditoria')) return { seccion: 'Administración', item: 'Auditoría de Accesos' }
+    if (path.startsWith('/admin/moodle')) return { seccion: 'Administración', item: 'Configuración Moodle' }
+    if (path.startsWith('/evaluaciones')) return { seccion: 'Módulos Académicos', item: 'Evaluaciones Ponderadas (30/30/40)' }
+    if (path.startsWith('/catalogo')) return { seccion: 'Módulos Académicos', item: 'Catálogo Curricular' }
+    if (path.startsWith('/tutoria')) return { seccion: 'Módulos Académicos', item: 'Tutoría y Refuerzo Pedagógico con IA' }
+    return { seccion: 'Panel Principal', item: 'Inicio (Dashboard)' }
   }
 
-  const getLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `px-3.5 py-1.5 rounded text-xs font-medium transition ${
-      isActive
-        ? 'bg-white text-[#8B151A] font-semibold'
-        : 'text-white/90 hover:text-white hover:bg-black/20'
-    }`
+  const breadcrumb = getBreadcrumb()
 
   return (
-    <header className="bg-[#8B151A] text-white border-b border-black/20 sticky top-0 z-50">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-white p-1 rounded flex items-center justify-center">
-            <img src={logo} alt="EduMonitor" className="h-6 w-auto object-contain" />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm tracking-tight text-white">EduMonitor</span>
-            <span className="text-white/40 hidden sm:inline">|</span>
-            <span className="hidden sm:inline text-xs text-white/85 font-medium">
-              FISEI • UTA
-            </span>
-          </div>
-        </div>
-
-        <nav className="flex items-center gap-1.5">
-          <NavLink to="/dashboard" className={getLinkClass}>
-            Inicio
-          </NavLink>
-          <NavLink to="/catalogo" className={getLinkClass}>
-            Catálogo Curricular
-          </NavLink>
-          <NavLink to="/evaluaciones" className={getLinkClass}>
-            Evaluaciones
-          </NavLink>
-          <NavLink to="/tutoria" className={getLinkClass}>
-            Tutoría IA
-          </NavLink>
-        </nav>
-
-        <div className="flex items-center gap-3">
-          <div className="text-right hidden sm:block">
-            <div className="flex items-center justify-end gap-1.5">
-              <p className="text-xs font-semibold text-white leading-tight">
-                {user?.nombreCompleto || 'Usuario'}
-              </p>
-              <span
-                className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase ${
-                  user?.rol?.toLowerCase().includes('admin')
-                    ? 'bg-amber-400 text-black'
-                    : 'bg-white/20 text-white'
-                }`}
-              >
-                {user?.rol || 'Docente'}
-              </span>
-            </div>
-            <p className="text-[11px] text-white/75 mt-0.5">
-              {user?.email || ''}
-            </p>
-          </div>
-
+    <header className="bg-white border-b border-zinc-200 h-14 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
+      {/* Lado izquierdo: Botón móvil + Migas de pan institucionales */}
+      <div className="flex items-center gap-3">
+        {onToggleMobileMenu && (
           <button
-            onClick={handleLogout}
-            className="px-3 py-1 bg-black/25 hover:bg-black/45 text-white border border-white/25 rounded text-xs font-medium transition cursor-pointer"
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-1.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition"
+            aria-label="Abrir menú de navegación"
           >
-            Salir
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
           </button>
-        </div>
+        )}
+
+        <nav aria-label="Migas de pan" className="flex items-center gap-2 text-xs">
+          <span className="text-zinc-400 font-medium hidden sm:inline">EduMonitor</span>
+          <span className="text-zinc-300 hidden sm:inline">/</span>
+          <span className="text-zinc-500 font-medium">{breadcrumb.seccion}</span>
+          <span className="text-zinc-300">/</span>
+          <span className="text-zinc-900 font-semibold">{breadcrumb.item}</span>
+        </nav>
+      </div>
+
+      {/* Lado derecho: Rol y contexto institucional */}
+      <div className="text-right">
+        <p className="text-xs font-semibold text-zinc-800 leading-tight">
+          {user?.rol || 'Docente'}
+        </p>
+        <p className="text-[10px] text-zinc-400 mt-0.5">
+          FISEI · Universidad Técnica de Ambato
+        </p>
       </div>
     </header>
   )

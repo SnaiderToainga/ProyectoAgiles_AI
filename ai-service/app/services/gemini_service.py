@@ -54,32 +54,39 @@ Reglas obligatorias:
 5. 'tiempoEstimadoHoras' debe ser un entero entre 2 y 6.
 """
 
-        try:
-            response = self.client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=RespuestaPlan,
-                    temperature=0.2,
-                ),
-            )
+        modelos_a_probar = [settings.GEMINI_MODEL]
+        if "gemini-3.1-flash-lite" not in modelos_a_probar:
+            modelos_a_probar.append("gemini-3.1-flash-lite")
 
-            contenido = (response.text or "").strip()
-            data_dict = json.loads(contenido)
-            plan = RespuestaPlan(**data_dict)
-            plan.esFallback = False
-
-            # Garantiza integridad referencial con AcademicoDB (evita 400 en POST /api/academico/planes)
-            ids_recibidos = {d.temaId for d in plan.detalles}
-            if ids_recibidos != set(ids_esperados):
-                raise ValueError(
-                    f"Los temaId devueltos por Gemini ({ids_recibidos}) no coinciden con los solicitados ({set(ids_esperados)})."
+        for modelo in modelos_a_probar:
+            try:
+                response = self.client.models.generate_content(
+                    model=modelo,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_schema=RespuestaPlan,
+                        temperature=0.2,
+                    ),
                 )
 
-            return plan
+                contenido = (response.text or "").strip()
+                data_dict = json.loads(contenido)
+                plan = RespuestaPlan(**data_dict)
+                plan.esFallback = False
 
-        except Exception as exc:
-            logger.error(f"Falla o inconsistencia en Gemini ({exc}). Ejecutando fallback determinista.")
-            return FallbackService.generar_plan_contingencia(solicitud)
+                # Garantiza integridad referencial con AcademicoDB (evita 400 en POST /api/academico/planes)
+                ids_recibidos = {d.temaId for d in plan.detalles}
+                if ids_recibidos != set(ids_esperados):
+                    raise ValueError(
+                        f"Los temaId devueltos por Gemini ({ids_recibidos}) no coinciden con los solicitados ({set(ids_esperados)})."
+                    )
+
+                return plan
+
+            except Exception as exc:
+                logger.warning(f"Error temporal o indisponibilidad en Gemini ({modelo}): {exc}. Intentando modelo alterno...")
+
+        logger.error("Todos los modelos de Gemini fallaron o no estuvieron disponibles. Ejecutando fallback determinista.")
+        return FallbackService.generar_plan_contingencia(solicitud)

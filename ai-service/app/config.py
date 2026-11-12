@@ -9,8 +9,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
-    GEMINI_TIMEOUT_SECONDS: float = 10.0
+    GEMINI_MODEL: str = "gemini-3.5-flash"
+    GEMINI_TIMEOUT_SECONDS: float = 30.0
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     CORS_ORIGINS: List[str] = [

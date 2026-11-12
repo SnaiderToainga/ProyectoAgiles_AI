@@ -239,7 +239,9 @@ export function CatalogoPage() {
                             {t.nombre}
                           </p>
                           <p className="text-xs text-[#52525b] mt-0.5">
-                            {t.descripcion}
+                            {t.descripcion?.includes('Sprint')
+                              ? 'Contenido y resultados de aprendizaje planificados para la unidad académica.'
+                              : t.descripcion || 'Contenido curricular de la asignatura.'}
                           </p>
                         </div>
                       ))
