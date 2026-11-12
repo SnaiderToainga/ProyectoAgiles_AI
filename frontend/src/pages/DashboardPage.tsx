@@ -154,6 +154,14 @@ export function DashboardPage() {
           <p className="text-[11px] text-[#71717a] mt-1">
             Estudiantes que requieren refuerzo pedagógico
           </p>
+          {kpis.totalEnRiesgo > 0 && (
+            <Link
+              to="/tutoria"
+              className="inline-block mt-2.5 text-xs font-semibold text-[#8B151A] hover:underline"
+            >
+              Ver estudiantes y generar planes con IA →
+            </Link>
+          )}
         </div>
       </div>
 

@@ -38,6 +38,13 @@ export function TutoriaPage() {
   const [generandoIa, setGenerandoIa] = useState(false)
   const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [alertaPlan, setAlertaPlan] = useState<string | null>(null)
+  const [mensajeExito, setMensajeExito] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!mensajeExito) return
+    const timer = setTimeout(() => setMensajeExito(null), 6000)
+    return () => clearTimeout(timer)
+  }, [mensajeExito])
 
   useEffect(() => {
     let vigente = true
@@ -80,6 +87,7 @@ export function TutoriaPage() {
   const cargarTutoriaCurso = useCallback(async (cursoId: number, parcialId: number) => {
     setCargandoCurso(true)
     setAlertaPlan(null)
+    setMensajeExito(null)
     try {
       const [resRend, resPlanes] = await Promise.all([
         clienteAxios.get<ResumenAcademicoEstudianteDto[]>(
@@ -157,6 +165,7 @@ export function TutoriaPage() {
   const generarPlanConIa = async () => {
     if (!materiaActual || !parcialActual || !estudianteActual || generandoIa) return
     setAlertaPlan(null)
+    setMensajeExito(null)
 
     const temasCatalogo = parcialActual.unidades.flatMap((u) =>
       u.temas.map((t) => ({ id: t.id, nombre: t.nombre, unidad: `U${u.numero}` }))
@@ -215,6 +224,7 @@ export function TutoriaPage() {
         `/academico/planes/${materiaActual.id}`
       )
       setPlanesGuardados(planesActualizados)
+      setMensajeExito('Plan remedial guardado y persistido exitosamente en SQL Server.')
     } catch (error) {
       const detalle =
         axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
@@ -319,6 +329,12 @@ export function TutoriaPage() {
       {alertaPlan && (
         <div role="alert" className="p-3.5 bg-amber-50 border-l-4 border-amber-500 rounded text-xs text-amber-800 font-medium">
           {alertaPlan}
+        </div>
+      )}
+
+      {mensajeExito && (
+        <div role="status" className="p-3.5 bg-emerald-50 border-l-4 border-emerald-600 rounded text-xs text-emerald-800 font-medium">
+          ✅ {mensajeExito}
         </div>
       )}
 
