@@ -44,15 +44,29 @@ export function Navbar() {
           <NavLink to="/evaluaciones" className={getLinkClass}>
             Evaluaciones
           </NavLink>
+          <NavLink to="/tutoria" className={getLinkClass}>
+            Tutoría IA
+          </NavLink>
         </nav>
 
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <p className="text-xs font-semibold text-white leading-tight">
-              {user?.nombreCompleto || 'Ing. Carlos Mendoza'}
-            </p>
-            <p className="text-[11px] text-white/75">
-              {user?.rol || 'Docente'}
+            <div className="flex items-center justify-end gap-1.5">
+              <p className="text-xs font-semibold text-white leading-tight">
+                {user?.nombreCompleto || 'Usuario'}
+              </p>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase ${
+                  user?.rol?.toLowerCase().includes('admin')
+                    ? 'bg-amber-400 text-black'
+                    : 'bg-white/20 text-white'
+                }`}
+              >
+                {user?.rol || 'Docente'}
+              </span>
+            </div>
+            <p className="text-[11px] text-white/75 mt-0.5">
+              {user?.email || ''}
             </p>
           </div>
 
