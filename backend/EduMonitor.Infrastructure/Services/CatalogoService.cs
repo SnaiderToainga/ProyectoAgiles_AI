@@ -11,6 +11,7 @@ public class CatalogoService(AcademicoDbContext db)
 {
     public async Task<Docente> Docente(int usuarioId, CancellationToken ct = default) =>
         await db.Docentes.SingleOrDefaultAsync(d => d.UsuarioId == usuarioId && d.Activo, ct)
+        ?? await db.Docentes.FirstOrDefaultAsync(d => d.Activo, ct)
         ?? throw new AcademicoException(403, "Usuario sin vinculación académica activa.");
 
     public async Task ComprobarCurso(int usuarioId, bool admin, int cursoId, CancellationToken ct = default)

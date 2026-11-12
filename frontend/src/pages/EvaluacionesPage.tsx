@@ -193,7 +193,7 @@ export function EvaluacionesPage() {
         tipo: 'advertencia',
         mensaje:
           detalle ||
-          'No se pudo conectar con Moodle Docker en este momento. Se mantienen las últimas calificaciones guardadas en SQL Server.',
+          'No se pudo conectar con el aula virtual Moodle en este momento. Se mantienen las últimas calificaciones registradas.',
       })
     } finally {
       setSincronizando(false)
@@ -455,7 +455,7 @@ export function EvaluacionesPage() {
               Calificaciones Reales por Estudiante — Parcial {parcialActual.numero}
             </h2>
             <p className="text-[11px] text-[#71717a]">
-              Cálculo ponderado en vivo (30% Tareas • 30% APE • 40% Examen)
+              Ponderación institucional: 30% Tareas • 30% APE • 40% Examen
             </p>
           </div>
           <span className="text-xs text-[#71717a]">

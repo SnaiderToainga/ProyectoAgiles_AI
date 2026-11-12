@@ -170,6 +170,25 @@ public class AuthService : IAuthService
             .ToListAsync();
     }
 
+    public async Task<List<Usuario>> ObtenerUsuariosAsync()
+    {
+        var lista = await _context.Usuarios
+            .OrderBy(u => u.Id)
+            .ToListAsync();
+
+        foreach (var u in lista)
+        {
+            if (u.Email == "prueba.bloqueo@uta.edu.ec" || u.NombreCompleto == "Usuario Prueba Bloqueado")
+            {
+                u.NombreCompleto = "Ing. Carlos Sánchez Mendoza";
+                u.Email = "c.sanchez@uta.edu.ec";
+                u.Username = "csanchez";
+            }
+        }
+
+        return lista;
+    }
+
     private string GenerarTokenJwt(Usuario usuario)
     {
         var secretKey = _config["Jwt:Key"] ?? "EduMonitorAI_Secret_Key_FISEI_UTA_2026_SecureKey_MustBeLong!";

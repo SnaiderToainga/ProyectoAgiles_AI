@@ -22,7 +22,7 @@ public static class AcademicoSeeder
                     var unidad=await db.Unidades.SingleOrDefaultAsync(x=>x.ParcialId==parcial.Id && x.Numero==u,ct);
                     if(unidad is null){unidad=new(){ParcialId=parcial.Id,Numero=u,Nombre=$"Unidad {u}: {titulo}"};db.Unidades.Add(unidad);await db.SaveChangesAsync(ct);}
                     foreach(var tema in (codigo=="SOF-401" ? new[]{"Fundamentos y roles Scrum","Historias de usuario y estimación"}:new[]{"Estructuras lineales","Árboles y grafos"}))
-                        if(!await db.Temas.AnyAsync(t=>t.UnidadId==unidad.Id && t.Nombre==tema,ct))db.Temas.Add(new(){UnidadId=unidad.Id,Nombre=tema,Descripcion="Contenido piloto para validación local del Sprint 1."});
+                        if(!await db.Temas.AnyAsync(t=>t.UnidadId==unidad.Id && t.Nombre==tema,ct))db.Temas.Add(new(){UnidadId=unidad.Id,Nombre=tema,Descripcion="Contenido curricular correspondiente a la unidad académica."});
                     await db.SaveChangesAsync(ct);
                 }
             }

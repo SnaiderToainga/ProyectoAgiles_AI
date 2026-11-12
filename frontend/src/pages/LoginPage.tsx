@@ -116,6 +116,15 @@ export function LoginPage() {
             >
               {cargando ? 'Ingresando...' : bloqueado ? 'Cuenta bloqueada' : 'Iniciar sesión'}
             </button>
+
+            <div className="pt-3 text-center border-t border-zinc-100">
+              <p className="text-xs text-zinc-500">
+                ¿Olvidaste tu contraseña o necesitas acceso?
+              </p>
+              <p className="text-xs text-zinc-700 font-medium mt-0.5">
+                Comunícate con el Administrador del Sistema
+              </p>
+            </div>
           </form>
         </div>
       </div>

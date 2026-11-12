@@ -44,6 +44,25 @@ public class AuthController : ControllerBase
     }
 
     [Authorize(Roles="Administrador")]
+    [HttpGet("usuarios")]
+    public async Task<IActionResult> ObtenerUsuarios()
+    {
+        var usuarios = await _authService.ObtenerUsuariosAsync();
+        var resultado = usuarios.Select(u => new
+        {
+            u.Id,
+            u.Username,
+            u.Email,
+            u.NombreCompleto,
+            u.Rol,
+            u.Status,
+            u.IntentosFallidos,
+            u.FechaBloqueo
+        });
+        return Ok(resultado);
+    }
+
+    [Authorize(Roles="Administrador")]
     [HttpPut("desbloquear/{usuarioId}")]
     public async Task<IActionResult> DesbloquearCuenta(int usuarioId)
     {

@@ -2,6 +2,7 @@ using System.Data;
 using EduMonitor.Core.DTOs;
 using EduMonitor.Core.DTOs.Academico;
 using EduMonitor.Core.Entities;
+using EduMonitor.Core.Entities.Academico;
 using EduMonitor.Core.Enums;
 using EduMonitor.Core.Services;
 using EduMonitor.Infrastructure.Data;
@@ -36,7 +37,25 @@ public sealed class MoodleSyncService(AcademicoDbContext db, CatalogoService cat
                 var curso=await db.Cursos.SingleOrDefaultAsync(c=>c.MoodleCourseId==source.Id || c.Codigo==source.Shortname,ct);
                 if(curso is not null && (curso.DocenteId!=docente.Id || (curso.MoodleCourseId>0 && curso.MoodleCourseId!=source.Id)))
                     throw new AcademicoException(409,"Curso ya vinculado a otra identidad; requiere revisión administrativa.");
-                if(curso is null){curso=new Curso{DocenteId=docente.Id,Periodo="Sin asignar"};db.Cursos.Add(curso);}
+                if(curso is null)
+                {
+                    curso=new Curso{DocenteId=docente.Id,Periodo="Octubre 2026 – Febrero 2027"};
+                    db.Cursos.Add(curso);
+                    await db.SaveChangesAsync(ct);
+
+                    var p1=new Parcial{CursoId=curso.Id,Numero=1};
+                    var p2=new Parcial{CursoId=curso.Id,Numero=2};
+                    db.Parciales.AddRange(p1,p2);
+                    await db.SaveChangesAsync(ct);
+
+                    db.Unidades.AddRange(
+                        new Unidad{ParcialId=p1.Id,Numero=1,Nombre=$"Unidad 1: {source.Fullname}"},
+                        new Unidad{ParcialId=p1.Id,Numero=2,Nombre=$"Unidad 2: {source.Fullname}"},
+                        new Unidad{ParcialId=p2.Id,Numero=1,Nombre=$"Unidad 1: {source.Fullname}"},
+                        new Unidad{ParcialId=p2.Id,Numero=2,Nombre=$"Unidad 2: {source.Fullname}"}
+                    );
+                    await db.SaveChangesAsync(ct);
+                }
                 curso.MoodleCourseId=source.Id;curso.Codigo=source.Shortname;curso.Nombre=source.Fullname;
             }
             await db.SaveChangesAsync(ct);await tx.CommitAsync(ct);

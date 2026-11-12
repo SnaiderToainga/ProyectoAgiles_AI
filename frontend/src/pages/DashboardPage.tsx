@@ -139,7 +139,7 @@ export function DashboardPage() {
             {cargando ? '...' : kpis.promedioGeneral}{' '}
             <span className="text-xs font-normal text-[#71717a]">/ 10.00 pts</span>
           </p>
-          <p className="text-[11px] text-[#71717a] mt-1">Cálculo oficial 30 / 30 / 40</p>
+          <p className="text-[11px] text-[#71717a] mt-1">Ponderación institucional</p>
         </div>
 
         <div
@@ -165,11 +165,10 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Tabla de Asignaturas Conectada a AcademicoDB */}
+      {/* Tabla de Asignaturas */}
       <div className="bg-white rounded-md border border-[#e4e4e7] overflow-hidden">
         <div className="p-4 border-b border-[#e4e4e7] flex items-center justify-between">
           <h2 className="font-bold text-sm text-[#18181b]">Asignaturas</h2>
-          <span className="text-xs text-[#71717a]">Datos reales en vivo</span>
         </div>
 
         <div className="overflow-x-auto">

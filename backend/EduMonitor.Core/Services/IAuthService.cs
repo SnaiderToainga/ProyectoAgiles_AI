@@ -8,4 +8,5 @@ public interface IAuthService
     Task<LoginResponseDto> LoginAsync(LoginRequestDto request, string ipOrigen);
     Task<bool> DesbloquearCuentaAsync(int usuarioId);
     Task<List<LogAcceso>> ObtenerAuditoriaAsync();
+    Task<List<Usuario>> ObtenerUsuariosAsync();
 }
