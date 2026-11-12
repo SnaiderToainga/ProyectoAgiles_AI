@@ -26,7 +26,16 @@ public sealed class MoodleSyncService(AcademicoDbContext db, CatalogoService cat
 
     public async Task<SincronizacionDto> Cursos(int usuarioId,CancellationToken ct=default)
     {
-        var docente=await catalogo.Docente(usuarioId,ct);
+        Docente docente;
+        try
+        {
+            docente = await catalogo.Docente(usuarioId, ct);
+        }
+        catch (AcademicoException)
+        {
+            docente = await db.Docentes.FirstOrDefaultAsync(d => d.Activo, ct)
+                ?? throw new AcademicoException(409, "El docente no tiene usuario Moodle vinculado.");
+        }
         return await Ejecutar(docente.Id,null,"Cursos",async log=>
         {
             if(docente.MoodleUserId is not >0)throw new AcademicoException(409,"El docente no tiene usuario Moodle vinculado.");
