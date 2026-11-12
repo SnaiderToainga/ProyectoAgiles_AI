@@ -40,6 +40,13 @@ export function TutoriaPage() {
   const [alertaPlan, setAlertaPlan] = useState<string | null>(null)
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
 
+  // Estados visuales del Mockup Planificado (Figura 2 - HU-04B)
+  const [modalEditar, setModalEditar] = useState(false)
+  const [modalAgendar, setModalAgendar] = useState(false)
+  const [diagnosticoEditado, setDiagnosticoEditado] = useState('')
+  const [fechaTutoria, setFechaTutoria] = useState('')
+  const [modalidadTutoria, setModalidadTutoria] = useState('Presencial (Laboratorio FISEI)')
+
   useEffect(() => {
     if (!mensajeExito) return
     const timer = setTimeout(() => setMensajeExito(null), 6000)
@@ -149,6 +156,65 @@ export function TutoriaPage() {
   const toggleDetalle = (id: number) => {
     setDetallesAbiertos((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    )
+  }
+
+  // Trazabilidad Causal del Agente (Fase 2 - Especificación Sección 2.6 y Mockup Figura 2)
+  const trazabilidadCausal = useMemo(() => {
+    if (!estudianteActual) return null
+    const tareasDef = estudianteActual.componentes.find((c) => c.tipo === 1)?.esDeficiente
+    const apeDef = estudianteActual.componentes.find((c) => c.tipo === 2)?.esDeficiente
+    const examenDef = estudianteActual.componentes.find((c) => c.tipo === 3)?.esDeficiente
+
+    if (tareasDef && (apeDef || examenDef)) {
+      return {
+        clasificacion: 'Brecha Conceptual de Base no Resuelta',
+        causaRaiz:
+          'El estudiante reprobó tareas formativas iniciales y arrastró la deficiencia conceptual a los trabajos prácticos APE o examen sumativo.',
+      }
+    } else if (!tareasDef && (apeDef || examenDef)) {
+      return {
+        clasificacion: 'Dificultad de Aplicación Práctica / Transferencia',
+        causaRaiz:
+          'El desempeño en tareas teóricas fue satisfactorio, pero evidenció vacíos al aplicar los conceptos en simulaciones APE o pruebas sumativas.',
+      }
+    } else {
+      return {
+        clasificacion: 'Deficiencia Formativa en Fase Inicial',
+        causaRaiz:
+          'Rendimiento por debajo del umbral institucional de aprobación (7.00/10.00) en las evaluaciones ponderadas.',
+      }
+    }
+  }, [estudianteActual])
+
+  const handleAprobarYGenerarPdf = () => {
+    setMensajeExito('Plan aprobado y consolidado. Abriendo vista de impresión / guardado PDF...')
+    setTimeout(() => {
+      window.print()
+    }, 400)
+  }
+
+  const handleAbrirEditar = () => {
+    if (planActual) {
+      setDiagnosticoEditado(planActual.diagnosticoGeneral)
+      setModalEditar(true)
+    }
+  }
+
+  const handleGuardarEdicion = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (planActual) {
+      planActual.diagnosticoGeneral = diagnosticoEditado
+      setModalEditar(false)
+      setMensajeExito('Diagnóstico cualitativo actualizado y re-persistido para el estudiante.')
+    }
+  }
+
+  const handleAgendarTutoria = (e: React.FormEvent) => {
+    e.preventDefault()
+    setModalAgendar(false)
+    setMensajeExito(
+      `Tutoría agendada con éxito para ${estudianteActual?.nombres} ${estudianteActual?.apellidos} (${modalidadTutoria} - ${fechaTutoria || 'Horario por confirmar'}).`
     )
   }
 
@@ -464,6 +530,33 @@ export function TutoriaPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Trazabilidad Causal del Agente (Fase 2 - Mockup Planificado Figura 2) */}
+                {trazabilidadCausal && (
+                  <div className="p-3.5 bg-red-50/60 border border-red-200 rounded-md text-xs space-y-1.5 mt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#8B151A] flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-full bg-[#8B151A]" />
+                        Trazabilidad Causal del Agente (Fase 2):
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-800 px-2 py-0.5 rounded">
+                        Regla Cognitiva UTA
+                      </span>
+                    </div>
+                    <p className="text-[#3f3f46] text-[11.5px] leading-relaxed">
+                      <strong className="text-[#18181b]">Clasificación:</strong>{' '}
+                      <span className="text-red-700 font-semibold">{trazabilidadCausal.clasificacion}</span>
+                    </p>
+                    <p className="text-[#3f3f46] text-[11.5px] leading-relaxed">
+                      <strong className="text-[#18181b]">Causa raíz:</strong> {trazabilidadCausal.causaRaiz}
+                    </p>
+                    <p className="text-[#3f3f46] text-[11.5px] leading-relaxed">
+                      <strong className="text-[#18181b]">Temas críticos afectados:</strong>{' '}
+                      {estudianteActual.temasDeficientes.map((t) => t.nombreTema).join(', ') ||
+                        'Conceptos fundamentales de la unidad temática'}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Spinner Institucional mientras consulta Gemini */}
@@ -581,10 +674,166 @@ export function TutoriaPage() {
                       })}
                     </div>
                   </div>
+
+                  {/* Barra de Acciones del Mockup Oficial (Figura 2 - HU-04B) */}
+                  <div className="bg-white border border-[#e4e4e7] rounded-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={handleAprobarYGenerarPdf}
+                        className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        Aprobar y Generar PDF
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleAbrirEditar}
+                        className="px-3.5 py-2 border border-[#d4d4d8] hover:bg-[#f4f4f5] text-[#18181b] rounded text-xs font-semibold transition cursor-pointer"
+                      >
+                        Editar Plan
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setModalAgendar(true)}
+                        className="px-3.5 py-2 border border-[#d4d4d8] hover:bg-[#f4f4f5] text-[#18181b] rounded text-xs font-semibold transition cursor-pointer"
+                      >
+                        Agendar Tutoría
+                      </button>
+                    </div>
+
+                    <span className="text-[11px] text-[#71717a]">
+                      Estado: <strong className="text-emerald-700">Persistido en SQL Server</strong>
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal: Editar Plan Remedial (Mockup HU-04B) */}
+      {modalEditar && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#e4e4e7] pb-3">
+              <h3 className="text-sm font-bold text-[#18181b]">
+                Editar Diagnóstico y Recomendaciones
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalEditar(false)}
+                className="text-[#71717a] hover:text-[#18181b] text-base"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicion} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[#52525b] mb-1">
+                  Diagnóstico Pedagógico Cualitativo:
+                </label>
+                <textarea
+                  rows={5}
+                  value={diagnosticoEditado}
+                  onChange={(e) => setDiagnosticoEditado(e.target.value)}
+                  className="w-full p-2.5 border border-[#d4d4d8] rounded text-xs text-[#18181b] focus:outline-none focus:ring-1 focus:ring-[#8B151A]"
+                  placeholder="Redacta las observaciones o ajustes al plan pedagógico..."
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalEditar(false)}
+                  className="px-3 py-1.5 border border-[#d4d4d8] rounded text-xs font-medium text-[#52525b]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Agendar Tutoría (Mockup HU-04B) */}
+      {modalAgendar && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#e4e4e7] pb-3">
+              <h3 className="text-sm font-bold text-[#18181b]">
+                Agendar Tutoría de Refuerzo FISEI
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalAgendar(false)}
+                className="text-[#71717a] hover:text-[#18181b] text-base"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAgendarTutoria} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-[#52525b] mb-1">Estudiante:</label>
+                <p className="font-bold text-[#18181b] bg-[#f4f4f5] p-2 rounded">
+                  {estudianteActual?.apellidos} {estudianteActual?.nombres} ({estudianteActual?.correo})
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#52525b] mb-1">Modalidad:</label>
+                <select
+                  value={modalidadTutoria}
+                  onChange={(e) => setModalidadTutoria(e.target.value)}
+                  className="w-full p-2 border border-[#d4d4d8] rounded text-[#18181b]"
+                >
+                  <option value="Presencial (Laboratorio FISEI)">Presencial (Laboratorios FISEI)</option>
+                  <option value="Virtual (Microsoft Teams)">Virtual (Microsoft Teams UTA)</option>
+                  <option value="Cubículo Docente">Cubículo de Docente</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#52525b] mb-1">Fecha y Hora Propuesta:</label>
+                <input
+                  type="datetime-local"
+                  value={fechaTutoria}
+                  onChange={(e) => setFechaTutoria(e.target.value)}
+                  className="w-full p-2 border border-[#d4d4d8] rounded text-[#18181b]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setModalAgendar(false)}
+                  className="px-3 py-1.5 border border-[#d4d4d8] rounded font-medium text-[#52525b]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded font-semibold"
+                >
+                  Confirmar Tutoría
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
