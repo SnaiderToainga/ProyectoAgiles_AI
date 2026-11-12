@@ -3,6 +3,7 @@ import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { CatalogoPage } from './pages/CatalogoPage'
 import { EvaluacionesPage } from './pages/EvaluacionesPage'
+import { TutoriaPage } from './pages/TutoriaPage'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppLayout } from './components/AppLayout'
 
@@ -17,6 +18,7 @@ export function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/catalogo" element={<CatalogoPage />} />
             <Route path="/evaluaciones" element={<EvaluacionesPage />} />
+            <Route path="/tutoria" element={<TutoriaPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

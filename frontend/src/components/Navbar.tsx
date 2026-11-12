@@ -44,6 +44,9 @@ export function Navbar() {
           <NavLink to="/evaluaciones" className={getLinkClass}>
             Evaluaciones
           </NavLink>
+          <NavLink to="/tutoria" className={getLinkClass}>
+            Tutoría IA
+          </NavLink>
         </nav>
 
         <div className="flex items-center gap-3">
