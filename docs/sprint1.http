@@ -1,0 +1,46 @@
+@baseUrl = http://localhost:5000
+@jwt = PEGAR_TOKEN_LOCAL
+@password = PEGAR_PASSWORD_LOCAL
+
+### Login del usuario ficticio creado por DevSetup
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{"email":"docente.sprint1@example.invalid","password":"{{password}}"}
+
+### Catálogo jerárquico
+GET {{baseUrl}}/api/academico/materias
+Authorization: Bearer {{jwt}}
+
+### Usar unidadId devuelto por el catálogo
+POST {{baseUrl}}/api/academico/temas
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{"unidadId":1,"nombre":"Retrospectiva del equipo","descripcion":"Mejora continua"}
+
+### Crear evaluación con tema del mismo parcial
+POST {{baseUrl}}/api/academico/evaluaciones
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{"parcialId":1,"nombre":"Evaluación Sprint 1","tipo":1,"temaIds":[1]}
+
+### Evaluaciones: incluye borradores de Moodle
+GET {{baseUrl}}/api/academico/materias/1/evaluaciones
+Authorization: Bearer {{jwt}}
+
+### Vinculación docente Moodle requerida por DevSetup
+POST {{baseUrl}}/api/moodle/sync-cursos
+Authorization: Bearer {{jwt}}
+
+### cursoId LOCAL, no MoodleCourseId
+POST {{baseUrl}}/api/moodle/sync-notas/1
+Authorization: Bearer {{jwt}}
+
+### Publicar borrador tras asignar temas reales
+PUT {{baseUrl}}/api/academico/evaluaciones/1/clasificacion
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{"parcialId":1,"tipo":1,"temaIds":[1]}

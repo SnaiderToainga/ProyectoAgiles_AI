@@ -1,0 +1,6 @@
+@EduMonitor.Api_HostAddress = http://localhost:5102
+
+GET {{EduMonitor.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
