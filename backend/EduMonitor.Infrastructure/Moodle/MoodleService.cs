@@ -45,6 +45,11 @@ public sealed class MoodleService(IHttpClientFactory factory, IOptions<MoodleOpt
             if (page.Count < 200) return result;
         }
     }
+    public async Task<IReadOnlyList<MoodleSeccionDto>> ObtenerContenidoCurso(int cursoMoodleId, CancellationToken ct = default)
+    {
+        return await Call<List<MoodleSeccionDto>>("core_course_get_contents",
+        Args("courseid", cursoMoodleId), ct);
+    }
     public Task<MoodleTareasDto> ObtenerTareas(int cursoMoodleId, CancellationToken ct = default) =>
         Call<MoodleTareasDto>("mod_assign_get_assignments", Args("courseids[0]", cursoMoodleId), ct);
     public Task<MoodleEstadoEntregaDto> ObtenerEstadoEntrega(int tareaId, int usuarioId, CancellationToken ct = default)

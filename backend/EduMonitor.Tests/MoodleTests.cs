@@ -35,6 +35,57 @@ public class MoodleTests
         Assert.Equal(code,(await Assert.ThrowsAsync<MoodleException>(()=>service.ObtenerParticipantes(2))).Code);
         Assert.DoesNotContain("synthetic-token",handler.Uri!.ToString());Assert.Contains("wstoken=synthetic-token",handler.Body);
     }
+    [Fact] public async Task ConsultaContenidoCursoConFuncionYParametrosCorrectos()
+    {
+        const string json = """
+        [
+        {
+            "id": 10,
+            "name": "Unidad 1",
+            "section": 1,
+            "modules": [
+            {
+                "id": 20,
+                "name": "Tarea Scrum",
+                "modname": "assign",
+                "instance": 30
+            }
+            ]
+        }
+        ]
+        """;
+
+        using var handler = new Handler(json);
+
+        var service = new MoodleService(
+            handler,
+            Options.Create(new MoodleOptions
+            {
+                MoodleToken = "synthetic-token",
+                MaxRetries = 0
+            }));
+
+        var contenido = await service.ObtenerContenidoCurso(2);
+
+        var seccion = Assert.Single(contenido);
+        Assert.Equal(10, seccion.Id);
+        Assert.Equal("Unidad 1", seccion.Name);
+
+        var modulo = Assert.Single(seccion.Modules);
+        Assert.Equal(20, modulo.Id);
+        Assert.Equal(30, modulo.Instance);
+        Assert.Equal("assign", modulo.Modname);
+
+        Assert.NotNull(handler.Body);
+        Assert.Contains("wsfunction=core_course_get_contents", handler.Body);
+        Assert.Contains("courseid=2", handler.Body);
+        Assert.Contains("moodlewsrestformat=json", handler.Body);
+        Assert.Contains("wstoken=synthetic-token", handler.Body);
+
+        Assert.NotNull(handler.Uri);
+        Assert.Equal("/webservice/rest/server.php", handler.Uri.AbsolutePath);
+        Assert.DoesNotContain("synthetic-token", handler.Uri.ToString());
+    }
     [Fact] public async Task TimeoutControlado()
     {
         using var handler=new Handler("",true);
@@ -139,6 +190,11 @@ public class MoodleTests
             new(id,901,[new(301,"Cero","manual",null,null,0,0,100,null),new(302,"Sin nota","manual",null,null,null,0,100,null)])]));
         public Task<MoodleTareasDto> ObtenerTareas(int id,CancellationToken ct=default)=>Task.FromResult(new MoodleTareasDto([]));
         public Task<MoodleEstadoEntregaDto> ObtenerEstadoEntrega(int id,int user,CancellationToken ct=default)=>Task.FromResult(new MoodleEstadoEntregaDto(null));
+        public Task<IReadOnlyList<MoodleSeccionDto>> ObtenerContenidoCurso(int cursoMoodleId,CancellationToken ct = default)
+    {
+        return Task.FromResult<IReadOnlyList<MoodleSeccionDto>>(
+        Array.Empty<MoodleSeccionDto>());
+    }
     }
     [Fact] public async Task ReimportarNoDuplicaYPreservaCeroNullBorradoresYLogDeFalloSinCurso()
     {

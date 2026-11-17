@@ -7,4 +7,5 @@ public interface IMoodleService
     Task<IReadOnlyList<MoodleParticipanteDto>> ObtenerParticipantes(int cursoMoodleId, CancellationToken ct = default);
     Task<MoodleTareasDto> ObtenerTareas(int cursoMoodleId, CancellationToken ct = default);
     Task<MoodleEstadoEntregaDto> ObtenerEstadoEntrega(int tareaId, int usuarioId, CancellationToken ct = default);
+    Task<IReadOnlyList<MoodleSeccionDto>> ObtenerContenidoCurso(int cursoMoodleId,CancellationToken ct = default);
 }
