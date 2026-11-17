@@ -93,17 +93,17 @@ $courses_config = [
             '1P' => [
                 'name' => 'PRIMER PARCIAL',
                 'subs' => [
-                    '1P_ACD' => '1P ACD: Docencia y Tareas (40%)',
+                    '1P_ACD' => '1P ACD: Docencia y Tareas (30%)',
                     '1P_APE' => '1P APE: Laboratorios y Talleres (30%)',
-                    '1P_AA'  => '1P AA: Trabajo Autónomo y Examen (30%)'
+                    '1P_AA'  => '1P AA: Trabajo Autónomo y Examen (40%)'
                 ]
             ],
             '2P' => [
                 'name' => 'SEGUNDO PARCIAL',
                 'subs' => [
-                    '2P_ACD' => '2P ACD: Docencia y Tareas (40%)',
+                    '2P_ACD' => '2P ACD: Docencia y Tareas (30%)',
                     '2P_APE' => '2P APE: Laboratorios y Talleres (30%)',
-                    '2P_AA'  => '2P AA: Trabajo Autónomo y Examen (30%)'
+                    '2P_AA'  => '2P AA: Trabajo Autónomo y Examen (40%)'
                 ]
             ]
         ],
@@ -137,17 +137,17 @@ $courses_config = [
             '1P' => [
                 'name' => 'PRIMER PARCIAL',
                 'subs' => [
-                    '1P_ACD' => '1P ACD: Docencia y Talleres (40%)',
+                    '1P_ACD' => '1P ACD: Docencia y Talleres (30%)',
                     '1P_APE' => '1P APE: Simulaciones y Prácticas (30%)',
-                    '1P_AA'  => '1P AA: Trabajo Autónomo y Examen (30%)'
+                    '1P_AA'  => '1P AA: Trabajo Autónomo y Examen (40%)'
                 ]
             ],
             '2P' => [
                 'name' => 'SEGUNDO PARCIAL',
                 'subs' => [
-                    '2P_ACD' => '2P ACD: Docencia y Talleres (40%)',
+                    '2P_ACD' => '2P ACD: Docencia y Talleres (30%)',
                     '2P_APE' => '2P APE: Simulaciones y Prácticas (30%)',
-                    '2P_AA'  => '2P AA: Trabajo Autónomo y Examen (30%)'
+                    '2P_AA'  => '2P AA: Trabajo Autónomo y Examen (40%)'
                 ]
             ]
         ],
