@@ -1,14 +1,18 @@
 using EduMonitor.Core.DTOs.Academico;
+using EduMonitor.Core.DTOs.Calculo;
 using EduMonitor.Core.Entities;
 using EduMonitor.Core.Entities.Academico;
 using EduMonitor.Core.Enums;
+using EduMonitor.Core.Services;
 using EduMonitor.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduMonitor.Infrastructure.Services;
 
-public class CatalogoService(AcademicoDbContext db)
+public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? calculoPonderado = null)
 {
+    private const int RegistrosPorPaginaPdf = 15;
+    private readonly ICalculoPonderadoService _calculoPonderado = calculoPonderado ?? new CalculoPonderadoService(db);
     public async Task<Docente> Docente(int usuarioId, CancellationToken ct = default) =>
         await db.Docentes.SingleOrDefaultAsync(d => d.UsuarioId == usuarioId && d.Activo, ct)
         ?? throw new AcademicoException(403, "Usuario sin vinculación académica activa.");
@@ -157,5 +161,305 @@ public class CatalogoService(AcademicoDbContext db)
                 d.RecursoRecomendado
             )).ToList()
         )).ToList();
+    }
+
+    public async Task<ReporteConsolidadoCursoDto> ReporteConsolidadoCurso(
+        int user,
+        bool admin,
+        int cursoId,
+        int? parcialId = null,
+        int? parcialNumero = null,
+        CancellationToken ct = default)
+    {
+        var curso = await ObtenerCursoAutorizadoAsync(user, admin, cursoId, ct);
+        var parcial = await ResolverParcialCursoAsync(cursoId, parcialId, parcialNumero, ct);
+
+        var rendimiento = await _calculoPonderado.CalcularCursoAsync(cursoId, parcial.Id, ct);
+        var planes = await PlanesPorCurso(user, admin, cursoId, ct);
+
+        var planesVigentesPorEstudiante = planes
+            .GroupBy(p => p.EstudianteId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.FechaGeneracion).ThenByDescending(p => p.Id).First());
+
+        var filas = rendimiento
+            .Select((est, index) => MapearFilaConsolidada(
+                index + 1,
+                est,
+                planesVigentesPorEstudiante.GetValueOrDefault(est.EstudianteId)))
+            .ToList();
+
+        var resumenEstadistico = ConstruirResumenEstadistico(filas);
+        var fechaEmision = DateTime.UtcNow;
+
+        var membrete = ConstruirMembrete(
+            curso,
+            parcial,
+            "INFORME OFICIAL CONSOLIDADO DE RENDIMIENTO ACADÉMICO Y TUTORÍA",
+            fechaEmision);
+
+        var bloqueFirma = ConstruirBloqueFirma(curso);
+        var piePagina = ConstruirPiePagina(curso, parcial, filas.Count, fechaEmision, sufijo: "CONS");
+
+        return new ReporteConsolidadoCursoDto(
+            curso.Id,
+            parcial.Id,
+            parcial.Numero,
+            membrete,
+            resumenEstadistico,
+            filas,
+            bloqueFirma,
+            piePagina
+        );
+    }
+
+    public async Task<ReporteIndividualTutoriaDto> ReporteIndividualTutoria(
+        int user,
+        bool admin,
+        int cursoId,
+        int estudianteId,
+        int? parcialId = null,
+        int? parcialNumero = null,
+        CancellationToken ct = default)
+    {
+        var curso = await ObtenerCursoAutorizadoAsync(user, admin, cursoId, ct);
+        var parcial = await ResolverParcialCursoAsync(cursoId, parcialId, parcialNumero, ct);
+
+        var matriculado = await db.Matriculas.AsNoTracking()
+            .AnyAsync(m => m.CursoId == cursoId && m.EstudianteId == estudianteId, ct);
+        if (!matriculado)
+            throw new AcademicoException(404, "El estudiante no se encuentra matriculado en la materia.");
+
+        var resumenEstudiante = await _calculoPonderado.CalcularEstudianteAsync(cursoId, parcial.Id, estudianteId, ct);
+        var planes = await PlanesPorCurso(user, admin, cursoId, ct);
+        var planVigente = planes
+            .Where(p => p.EstudianteId == estudianteId)
+            .OrderByDescending(p => p.FechaGeneracion)
+            .ThenByDescending(p => p.Id)
+            .FirstOrDefault();
+
+        var fila = MapearFilaConsolidada(1, resumenEstudiante, planVigente);
+        var causaPrincipal = DeterminarCausaPrincipal(fila);
+        var fechaEmision = DateTime.UtcNow;
+
+        var membrete = ConstruirMembrete(
+            curso,
+            parcial,
+            "INFORME OFICIAL INDIVIDUAL DE TUTORÍA Y REFUERZO ACADÉMICO",
+            fechaEmision);
+
+        var bloqueFirma = ConstruirBloqueFirma(curso);
+        var piePagina = ConstruirPiePagina(
+            curso,
+            parcial,
+            Math.Max(1, planVigente?.Detalles.Count ?? 1),
+            fechaEmision,
+            sufijo: $"EST{estudianteId}");
+
+        return new ReporteIndividualTutoriaDto(
+            curso.Id,
+            parcial.Id,
+            parcial.Numero,
+            membrete,
+            fila,
+            causaPrincipal,
+            planVigente,
+            bloqueFirma,
+            piePagina
+        );
+    }
+
+    private async Task<Curso> ObtenerCursoAutorizadoAsync(int usuarioId, bool admin, int cursoId, CancellationToken ct)
+    {
+        var curso = await db.Cursos.AsNoTracking()
+            .Include(c => c.Docente)
+            .SingleOrDefaultAsync(c => c.Id == cursoId, ct)
+            ?? throw new AcademicoException(404, "Materia inexistente.");
+
+        if (!admin && curso.DocenteId != (await Docente(usuarioId, ct)).Id)
+            throw new AcademicoException(403, "Materia no asignada al docente.");
+
+        return curso;
+    }
+
+    private async Task<Parcial> ResolverParcialCursoAsync(int cursoId, int? parcialId, int? parcialNumero, CancellationToken ct)
+    {
+        var query = db.Parciales.AsNoTracking().Where(p => p.CursoId == cursoId);
+
+        if (parcialId.HasValue)
+        {
+            return await query.SingleOrDefaultAsync(p => p.Id == parcialId.Value, ct)
+                ?? throw new AcademicoException(404, "Parcial inexistente en la materia.");
+        }
+
+        if (parcialNumero.HasValue)
+        {
+            return await query.SingleOrDefaultAsync(p => p.Numero == parcialNumero.Value, ct)
+                ?? throw new AcademicoException(404, "Parcial inexistente en la materia.");
+        }
+
+        return await query.OrderBy(p => p.Numero).FirstOrDefaultAsync(ct)
+            ?? throw new AcademicoException(404, "La materia no registra parciales configurados.");
+    }
+
+    private static FilaMatrizConsolidadaDto MapearFilaConsolidada(
+        int numeroOrden,
+        ResumenAcademicoEstudianteDto est,
+        PlanRefuerzoDto? planVigente)
+    {
+        var compTareas = est.Componentes.FirstOrDefault(c => c.Tipo == TipoItemEvaluacion.Tarea);
+        var compApe = est.Componentes.FirstOrDefault(c => c.Tipo == TipoItemEvaluacion.APE);
+        var compExamen = est.Componentes.FirstOrDefault(c => c.Tipo == TipoItemEvaluacion.Examen);
+
+        var nombreCompleto = $"{est.Apellidos} {est.Nombres}".Trim();
+        var estadoAcademico = est.EnRiesgo ? "En Riesgo Académico (< 7.00)" : "Aprobado (>= 7.00)";
+
+        return new FilaMatrizConsolidadaDto(
+            numeroOrden,
+            est.EstudianteId,
+            est.Nombres,
+            est.Apellidos,
+            nombreCompleto,
+            est.Correo,
+            est.FotoUrl,
+            compTareas?.PromedioComponente ?? 0m,
+            compTareas?.AporteFinal ?? 0m,
+            compApe?.PromedioComponente ?? 0m,
+            compApe?.AporteFinal ?? 0m,
+            compExamen?.PromedioComponente ?? 0m,
+            compExamen?.AporteFinal ?? 0m,
+            est.NotaFinalParcial,
+            est.EnRiesgo,
+            estadoAcademico,
+            est.Componentes,
+            est.TemasDeficientes,
+            planVigente
+        );
+    }
+
+    private static ResumenEstadisticoReporteDto ConstruirResumenEstadistico(List<FilaMatrizConsolidadaDto> filas)
+    {
+        var total = filas.Count;
+        if (total == 0)
+        {
+            return new ResumenEstadisticoReporteDto(0, 0, 0, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 7.00m);
+        }
+
+        var enRiesgo = filas.Count(f => f.EnRiesgo);
+        var aprobados = total - enRiesgo;
+
+        var pctAprobados = Math.Round(aprobados * 100m / total, 2, MidpointRounding.AwayFromZero);
+        var pctRiesgo = Math.Round(enRiesgo * 100m / total, 2, MidpointRounding.AwayFromZero);
+
+        decimal Promedio(Func<FilaMatrizConsolidadaDto, decimal> selector) =>
+            Math.Round(filas.Sum(selector) / total, 2, MidpointRounding.AwayFromZero);
+
+        return new ResumenEstadisticoReporteDto(
+            total,
+            aprobados,
+            enRiesgo,
+            pctAprobados,
+            pctRiesgo,
+            Promedio(f => f.NotaFinalParcial),
+            Promedio(f => f.PromedioTareas),
+            Promedio(f => f.AporteTareas),
+            Promedio(f => f.PromedioApe),
+            Promedio(f => f.AporteApe),
+            Promedio(f => f.PromedioExamen),
+            Promedio(f => f.AporteExamen),
+            7.00m
+        );
+    }
+
+    private static MembreteInstitucionalDto ConstruirMembrete(
+        Curso curso,
+        Parcial parcial,
+        string tituloReporte,
+        DateTime fechaEmisionUtc)
+    {
+        return new MembreteInstitucionalDto(
+            Universidad: "Universidad Técnica de Ambato",
+            Facultad: "Facultad de Ingeniería en Sistemas, Electrónica e Industrial (FISEI)",
+            Carrera: "Carrera de Ingeniería en Software",
+            Sistema: "SISRA — EduMonitor AI",
+            TituloReporte: tituloReporte,
+            MateriaCodigo: curso.Codigo,
+            MateriaNombre: curso.Nombre,
+            PeriodoLectivo: curso.Periodo,
+            ParcialId: parcial.Id,
+            ParcialNumero: parcial.Numero,
+            DocenteTitular: !string.IsNullOrWhiteSpace(curso.Docente?.Nombre) ? curso.Docente.Nombre : "Docente Titular",
+            DocenteCorreo: curso.Docente?.Correo ?? string.Empty,
+            FechaEmisionUtc: fechaEmisionUtc
+        );
+    }
+
+    private static FirmaDocenteDto ConstruirBloqueFirma(Curso curso)
+    {
+        var nombreDocente = !string.IsNullOrWhiteSpace(curso.Docente?.Nombre)
+            ? curso.Docente.Nombre
+            : "Docente Titular";
+
+        return new FirmaDocenteDto(
+            NombreDocente: nombreDocente,
+            CorreoDocente: curso.Docente?.Correo ?? string.Empty,
+            Cargo: "Docente Titular de la Asignatura — FISEI UTA",
+            EtiquetaCasillero: "Firma y Rúbrica del Docente Titular",
+            LeyendaConformidad: "Certifico que las calificaciones ponderadas bajo el modelo 30/30/40 y los planes de seguimiento pedagógico consignados en este documento corresponden a los registros oficiales de la asignatura.",
+            LineaFirma: "__________________________________________"
+        );
+    }
+
+    private static PiePaginaReporteDto ConstruirPiePagina(
+        Curso curso,
+        Parcial parcial,
+        int totalRegistros,
+        DateTime fechaEmisionUtc,
+        string sufijo)
+    {
+        var totalPaginas = Math.Max(1, (int)Math.Ceiling(totalRegistros / (double)RegistrosPorPaginaPdf));
+        var paginas = Enumerable.Range(1, totalPaginas)
+            .Select(p => $"Página {p} de {totalPaginas}")
+            .ToList();
+
+        var codigo = $"UTA-FISEI-{curso.Codigo}-P{parcial.Numero}-{sufijo}-{fechaEmisionUtc:yyyyMMdd}";
+
+        return new PiePaginaReporteDto(
+            TextoInstitucional: "Universidad Técnica de Ambato — FISEI | Sistema Inteligente de Seguimiento y Refuerzo Académico (EduMonitor AI)",
+            PlantillaNumeracion: "Página {pagina} de {total}",
+            NumeracionInicial: paginas[0],
+            TotalPaginasEstimadas: totalPaginas,
+            RegistrosPorPagina: RegistrosPorPaginaPdf,
+            Paginas: paginas,
+            CodigoDocumento: codigo,
+            FechaEmisionUtc: fechaEmisionUtc
+        );
+    }
+
+    private static string DeterminarCausaPrincipal(FilaMatrizConsolidadaDto fila)
+    {
+        var deficientes = fila.Componentes
+            .Where(c => c.EsDeficiente)
+            .OrderBy(c => c.PromedioComponente)
+            .Select(c =>
+            {
+                var nombre = c.Tipo switch
+                {
+                    TipoItemEvaluacion.Tarea => "Tareas (30%)",
+                    TipoItemEvaluacion.APE => "APE (30%)",
+                    TipoItemEvaluacion.Examen => "Examen (40%)",
+                    _ => c.Tipo.ToString()
+                };
+                return $"{nombre}: {c.PromedioComponente:0.00}/10";
+            })
+            .ToList();
+
+        if (deficientes.Count > 0)
+        {
+            return $"Deficiencia académica detectada en componentes ponderados: {string.Join(", ", deficientes)}.";
+        }
+
+        return fila.EnRiesgo
+            ? $"Promedio ponderado general ({fila.NotaFinalParcial:0.00}/10) inferior al umbral de aprobación reglamentario (7.00/10)."
+            : "Rendimiento académico satisfactorio sobre el umbral reglamentario de aprobación (>= 7.00/10).";
     }
 }
