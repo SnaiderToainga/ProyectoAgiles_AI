@@ -66,4 +66,81 @@ public class MoodleCurriculoResolverTests
 
         Assert.Null(resultado);
     }
+
+    [Fact]
+    public void ResolverTemasEvaluacion_CoincidenciaSemantica_DetectaPalabrasClave()
+    {
+        var temas = new List<Core.Entities.Academico.Tema>
+        {
+            new() { Id = 10, Nombre = "Pilas" },
+            new() { Id = 20, Nombre = "colas" },
+            new() { Id = 30, Nombre = "listas simples y doblemente enlazadas" }
+        };
+
+        // Debe detectar "Pilas" y "Colas" ignorando mayúsculas y acentos
+        var resPilasColas = MoodleCurriculoResolver.ResolverTemasEvaluacion(
+            "Evaluación 1.2: Pilas y Colas en Memoria Dinámica",
+            TipoItemEvaluacion.Tarea,
+            moduloInstance: 101,
+            temas);
+
+        Assert.Equal([10, 20], resPilasColas);
+
+        // Debe detectar "listas"
+        var resListas = MoodleCurriculoResolver.ResolverTemasEvaluacion(
+            "Taller Práctico APE 1: Listas Enlazadas",
+            TipoItemEvaluacion.APE,
+            moduloInstance: 102,
+            temas);
+
+        Assert.Equal([30], resListas);
+    }
+
+    [Fact]
+    public void ResolverTemasEvaluacion_Examen_VinculaATodosLosTemasDeLaUnidad()
+    {
+        var temas = new List<Core.Entities.Academico.Tema>
+        {
+            new() { Id = 1, Nombre = "Fundamentos Scrum" },
+            new() { Id = 2, Nombre = "Historias de Usuario INVEST" },
+            new() { Id = 3, Nombre = "Planning Poker" }
+        };
+
+        var resExamen = MoodleCurriculoResolver.ResolverTemasEvaluacion(
+            "Examen Parcial de Cátedra",
+            TipoItemEvaluacion.Examen,
+            moduloInstance: 105,
+            temas);
+
+        Assert.Equal([1, 2, 3], resExamen);
+    }
+
+    [Fact]
+    public void ResolverTemasEvaluacion_FallbackSinCoincidencia_DistribuyeDeterministaPorModulo()
+    {
+        var temas = new List<Core.Entities.Academico.Tema>
+        {
+            new() { Id = 101, Nombre = "Tema Alfa" },
+            new() { Id = 102, Nombre = "Tema Beta" },
+            new() { Id = 103, Nombre = "Tema Gamma" }
+        };
+
+        // moduloInstance = 4 -> 4 % 3 = 1 -> Tema Beta (Id: 102)
+        var res1 = MoodleCurriculoResolver.ResolverTemasEvaluacion(
+            "Actividad Sin Nombre Coincidente",
+            TipoItemEvaluacion.Tarea,
+            moduloInstance: 4,
+            temas);
+
+        Assert.Equal([102], res1);
+
+        // moduloInstance = 6 -> 6 % 3 = 0 -> Tema Alfa (Id: 101)
+        var res2 = MoodleCurriculoResolver.ResolverTemasEvaluacion(
+            "Actividad Sin Nombre Coincidente",
+            TipoItemEvaluacion.Tarea,
+            moduloInstance: 6,
+            temas);
+
+        Assert.Equal([101], res2);
+    }
 }
