@@ -24,16 +24,16 @@ flowchart TD
     end
 
     subgraph FASE2["Fase 2: Integración y Hand-offs (Días 4 a 7)"]
-        PR_Moodle["PR #1: Backend Moodle Sync\n(Cristian)"] --> T12_5["Snaider: T-12.5\nRelación EvaluacionTemas"]
+        PR_Moodle["PR: feature/HU-06-backend-moodle-sync\n(Cristian T-12.1 a T-12.4)"] --> T12_5["Snaider: T-12.5\nRelación EvaluacionTemas"]
         PR_Moodle --> T12_7["Cesar: T-12.7 y T-12.8\nConexión Filtros Cascada"]
-        PR_FastAPI["PR #2: FastAPI Chat Tools\n(Estiven)"] --> T13_7["Snaider: T-13.7\nYARP Gateway & Docker"]
+        PR_FastAPI["PR: feature/HU-07-fastapi-chat-agent\n(Estiven T-13.4 y T-13.5)"] --> T13_7["Snaider: T-13.7\nYARP Gateway & Docker"]
         PR_FastAPI --> T13_6["Cristian: T-13.6\nSystem Prompt Ético"]
     end
 
     subgraph FASE3["Fase 3: Pruebas, CI/CD y Cierre DoD (Días 8 a 10)"]
-        T12_5 --> PR_Relaciones["PR #3: Relaciones Curriculares\n(Snaider)"]
-        T12_8 --> PR_Filtros["PR #4: Filtros Cascada React\n(Cesar)"]
-        T13_7 --> PR_Infra["PR #5: YARP & Docker Unificado\n(Snaider)"]
+        T12_5 --> PR_Relaciones["PR: feature/HU-06-evaluacion-temas-sync\n(Snaider)"]
+        T12_8 --> PR_Filtros["PR: feature/HU-06-frontend-filtros-cascada\n(Cesar)"]
+        T13_7 --> PR_Infra["PR: feature/HU-07-yarp-gateway-docker\n(Snaider)"]
         T13_6 --> T13_9["Cristian: T-13.9\nPyTest y CI/CD GitHub Actions"]
         PR_Relaciones & PR_Filtros & PR_Infra --> T11_6["Cesar & Snaider: T-11.6\nValidación PDF Cross-Browser"]
         T13_9 --> T13_8["Estiven: T-13.8\nREADME Técnico RNF-05"]
@@ -83,13 +83,15 @@ Crea estas 4 Issues en **GitHub $\rightarrow$ Issues $\rightarrow$ New Issue**:
 
 ---
 
-### ISSUE #1: Cristian Sivinta (Backend LMS Specialist)
+### ISSUE: Cristian Sivinta (Backend LMS Specialist)
 * **Título:** `[Sprint 3] HU-06/HU-07: Extracción Curricular Dinámica Moodle y Calidad CI/CD - @CristianSivinta`
 * **Labels:** `backend`, `moodle`, `testing`, `sprint-3`
 * **Asignado a:** Cristian Sivinta
-* **Ramas Git sugeridas:**
-  * PR 1: `feature/HU-06-backend-moodle-sync` (Tareas T-12.1 a T-12.4)
-  * PR 2: `feature/HU-07-system-prompt-ci` (Tareas T-13.6 y T-13.9)
+* **Pull Requests planificados (Formato institucional del repositorio):**
+  * **PR A:** Rama `feature/HU-06-backend-moodle-sync`  
+    *Título sugerido:* `feat(moodle): T-12.1 a T-12.4 sincronización dinámica Moodle, DTOs y fotos de perfil`
+  * **PR B:** Rama `feature/HU-07-system-prompt-ci`  
+    *Título sugerido:* `feat(ci-ia): T-13.6 y T-13.9 system prompt ético RNF-08 y pipeline CI/CD con PyTest`
 
 #### Contenido del Issue:
 ```markdown
@@ -110,9 +112,9 @@ Implementar la extracción dinámica de la estructura curricular de Moodle (secc
 #### Dependencias y Entregas
 - **Bloquea a:** Snaider Toainga (T-12.5) y Cesar Carrasco (T-12.7).
 - **Bloqueado por:** Estiven Chiluisa (requiere T-13.4/5 para iniciar T-13.6).
-- **Estrategia de PRs:**
-  1. Abrir **PR #1** al terminar T-12.4 para desbloquear inmediatamente el trabajo de Snaider y Cesar.
-  2. Abrir **PR #2** al terminar T-13.9 con la validación de CI/CD.
+- **Estrategia de Pull Requests hacia `develop`:**
+  1. Abrir PR de `feature/HU-06-backend-moodle-sync` (`feat(moodle): T-12.1 a T-12.4 sincronización dinámica...`) al terminar T-12.4 para desbloquear inmediatamente el trabajo de Snaider y Cesar.
+  2. Abrir PR de `feature/HU-07-system-prompt-ci` (`feat(ci-ia): T-13.6 y T-13.9 system prompt ético...`) al terminar T-13.9 con la validación de CI/CD.
 
 #### Criterios de Aceptación Verificables
 - CA-06.1: Ingesta de unidades temáticas reales desde Moodle sin datos estáticos.
@@ -122,13 +124,15 @@ Implementar la extracción dinámica de la estructura curricular de Moodle (secc
 
 ---
 
-### ISSUE #2: Cesar Carrasco (Frontend Lead)
+### ISSUE: Cesar Carrasco (Frontend Lead)
 * **Título:** `[Sprint 3] HU-06/HU-05: Filtros en Cascada, Avatares y Plantilla Oficial de Informes PDF - @CesarCarrasco`
 * **Labels:** `frontend`, `ui/ux`, `jspdf`, `sprint-3`
 * **Asignado a:** Cesar Carrasco
-* **Ramas Git sugeridas:**
-  * PR 1: `feature/HU-05-frontend-plantilla-pdf` (Tareas T-11.1 a T-11.3)
-  * PR 2: `feature/HU-06-frontend-filtros-cascada` (Tareas T-12.6 a T-12.8)
+* **Pull Requests planificados (Formato institucional del repositorio):**
+  * **PR A:** Rama `feature/HU-05-frontend-plantilla-pdf`  
+    *Título sugerido:* `feat(frontend): T-11.1 y T-12.6 plantilla base PDF institucional y componente visual de filtros`
+  * **PR B:** Rama `feature/HU-06-frontend-filtros-cascada`  
+    *Título sugerido:* `feat(frontend): T-12.7 a T-12.8 y T-11.2 a T-11.3 filtros en cascada y exportación de reportes PDF`
 
 #### Contenido del Issue:
 ```markdown
@@ -149,9 +153,9 @@ Construir en React el sistema interactivo de filtros combinados en cascada por P
 #### Dependencias y Entregas
 - **Bloquea a:** Snaider Toainga (T-11.6 para validación de descarga cruzada en navegadores).
 - **Bloqueado por:** Cristian Sivinta (requiere T-12.4 para poblar los selectores con datos reales de Moodle).
-- **Estrategia de PRs:**
-  1. Abrir **PR #1** con la estructura base de filtros y plantilla PDF.
-  2. Abrir **PR #2** con la integración de los datos dinámicos y reportes consolidados.
+- **Estrategia de Pull Requests hacia `develop`:**
+  1. Abrir PR de `feature/HU-05-frontend-plantilla-pdf` (`feat(frontend): T-11.1 y T-12.6 plantilla base PDF...`) con la estructura visual de filtros y plantilla PDF.
+  2. Abrir PR de `feature/HU-06-frontend-filtros-cascada` (`feat(frontend): T-12.7 a T-12.8 y T-11.2 a T-11.3...`) con la integración de datos dinámicos y reportes consolidados.
 
 #### Criterios de Aceptación Verificables
 - CA-06.4: Filtros en cascada fluidos: Parcial -> Unidad -> Tema -> Actividad.
@@ -161,14 +165,17 @@ Construir en React el sistema interactivo de filtros combinados en cascada por P
 
 ---
 
-### ISSUE #3: Estiven Chiluisa (Product Owner / AI & Data Lead)
+### ISSUE: Estiven Chiluisa (Product Owner / AI & Data Lead)
 * **Título:** `[Sprint 3] HU-07: Gráficos de Rendimiento en Dashboard, Microservicio Chat IA y Manual Técnico - @EstivenChiluisa`
 * **Labels:** `ai-service`, `fastapi`, `frontend`, `documentation`, `sprint-3`
 * **Asignado a:** Estiven Chiluisa
-* **Ramas Git sugeridas:**
-  * PR 1: `feature/HU-07-dashboard-barchart` (Tareas T-13.1 y T-13.2)
-  * PR 2: `feature/HU-07-fastapi-chat-agent` (Tareas T-13.3 a T-13.5)
-  * PR 3: `docs/HU-07-readme-tecnico-rnf05` (Tarea T-13.8)
+* **Pull Requests planificados (Formato institucional del repositorio):**
+  * **PR A:** Rama `feature/HU-07-dashboard-barchart`  
+    *Título sugerido:* `feat(dashboard): T-13.1 a T-13.3 gráfico de barras de rendimiento y panel de chat`
+  * **PR B:** Rama `feature/HU-07-fastapi-chat-agent`  
+    *Título sugerido:* `feat(ai-service): T-13.4 y T-13.5 microservicio FastAPI con chat conversacional y tools`
+  * **PR C:** Rama `docs/HU-07-readme-tecnico-rnf05`  
+    *Título sugerido:* `docs(readme): T-13.8 manual técnico de instalación, variables de entorno y ejecución RNF-05`
 
 #### Contenido del Issue:
 ```markdown
@@ -189,10 +196,10 @@ Implementar el gráfico interactivo de barras clasificado en 4 rangos de rendimi
 #### Dependencias y Entregas
 - **Bloquea a:** Cristian Sivinta (T-13.6 Prompt sobre FastAPI) y Snaider Toainga (T-13.7 Enrutamiento en Gateway YARP).
 - **Bloqueado por:** Ninguna dependencia de inicio.
-- **Estrategia de PRs:**
-  1. Abrir **PR #1** con el Dashboard y gráfico de barras.
-  2. Abrir **PR #2** con el backend de FastAPI y Tools para desbloquear a Cristian y Snaider.
-  3. Abrir **PR #3** con la documentación técnica final.
+- **Estrategia de Pull Requests hacia `develop`:**
+  1. Abrir PR de `feature/HU-07-dashboard-barchart` (`feat(dashboard): T-13.1 a T-13.3...`) con el Dashboard y gráfico de barras.
+  2. Abrir PR de `feature/HU-07-fastapi-chat-agent` (`feat(ai-service): T-13.4 y T-13.5...`) con el backend de FastAPI y Tools para desbloquear a Cristian y Snaider.
+  3. Abrir PR de `docs/HU-07-readme-tecnico-rnf05` (`docs(readme): T-13.8...`) con la documentación técnica final.
 
 #### Criterios de Aceptación Verificables
 - CA-07.1: Gráfico interactivo con desglose de porcentajes en los 4 rangos de rendimiento.
@@ -202,15 +209,19 @@ Implementar el gráfico interactivo de barras clasificado en 4 rangos de rendimi
 
 ---
 
-### ISSUE #4: Snaider Toainga (Scrum Master / Full Stack Dev)
+### ISSUE: Snaider Toainga (Scrum Master / Full Stack Dev)
 * **Título:** `[Sprint 3] HU-05/HU-06/HU-07: Pasarela YARP, Relaciones Curriculares, API de Exportación y Tests - @SnaiderToainga`
 * **Labels:** `backend`, `gateway`, `docker`, `tests`, `sprint-3`
 * **Asignado a:** Snaider Toainga
-* **Ramas Git sugeridas:**
-  * PR 1: `feature/HU-05-backend-export-pdf` (Tareas T-11.4 y T-11.5)
-  * PR 2: `feature/HU-06-evaluacion-temas-sync` (Tarea T-12.5)
-  * PR 3: `feature/HU-07-yarp-gateway-docker` (Tarea T-13.7)
-  * PR 4: `test/sprint-3-xunit-integration` (Tareas T-12.9 y T-11.6)
+* **Pull Requests planificados (Formato institucional del repositorio):**
+  * **PR A:** Rama `feature/HU-05-backend-export-pdf`  
+    *Título sugerido:* `feat(backend): T-11.4 y T-11.5 endpoint de reporte consolidado y bloque de firma docente`
+  * **PR B:** Rama `feature/HU-06-evaluacion-temas-sync`  
+    *Título sugerido:* `feat(academico): T-12.5 vinculación automática de evaluaciones con temas curriculares`
+  * **PR C:** Rama `feature/HU-07-yarp-gateway-docker`  
+    *Título sugerido:* `feat(gateway-docker): T-13.7 docker-compose unificado y enrutamiento YARP con JWT`
+  * **PR D:** Rama `test/sprint-3-xunit-integration`  
+    *Título sugerido:* `test(qa): T-12.9 y T-11.6 pruebas unitarias xUnit de consistencia y validación PDF cross-browser`
 
 #### Contenido del Issue:
 ```markdown
@@ -231,11 +242,11 @@ Configurar el endpoint de agregación para reportes PDF, vincular automáticamen
 #### Dependencias y Entregas
 - **Bloqueado por:** Cristian Sivinta (T-12.4 para iniciar T-12.5) y Estiven Chiluisa (T-13.4 para enrutar T-13.7).
 - **Bloquea a:** Cierre del Sprint Backlog y validación final de la Definition of Done (DoD).
-- **Estrategia de PRs:**
-  1. Abrir **PR #1** con el backend de soporte para PDF.
-  2. Abrir **PR #2** con el enlace de temas y evaluaciones.
-  3. Abrir **PR #3** con la pasarela YARP y Docker Compose.
-  4. Abrir **PR #4** con las pruebas automatizadas xUnit.
+- **Estrategia de Pull Requests hacia `develop`:**
+  1. Abrir PR de `feature/HU-05-backend-export-pdf` (`feat(backend): T-11.4 y T-11.5...`) con el backend de soporte para PDF.
+  2. Abrir PR de `feature/HU-06-evaluacion-temas-sync` (`feat(academico): T-12.5...`) con el enlace de temas y evaluaciones.
+  3. Abrir PR de `feature/HU-07-yarp-gateway-docker` (`feat(gateway-docker): T-13.7...`) con la pasarela YARP y Docker Compose.
+  4. Abrir PR de `test/sprint-3-xunit-integration` (`test(qa): T-12.9 y T-11.6...`) con las pruebas automatizadas xUnit.
 
 #### Criterios de Aceptación Verificables
 - CA-05.4: Paginación limpia sin textos solapados y recuadro oficial de firma docente.
