@@ -7,6 +7,8 @@ public sealed class MoodleOptions
     public int TimeoutSeconds { get; set; } = 30;
     public int MaxRetries { get; set; } = 2;
     public bool CourseDueDatesAreAuthoritative { get; set; } = false;
+    // Habilitar únicamente tras verificar que el usuario ve también contenido oculto/restringido.
+    public bool ContentInventoryIsAuthoritative { get; set; } = false;
     public string[] TeacherRoles { get; set; } = ["editingteacher", "teacher"];
     public string[] StudentRoles { get; set; } = ["student"];
 }
