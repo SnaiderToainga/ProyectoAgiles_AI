@@ -42,5 +42,6 @@ public record ResumenAcademicoEstudianteDto(
     decimal NotaFinalParcial,
     bool EnRiesgo,
     List<ComponentePonderadoDto> Componentes,
-    List<TemaCriticoDto> TemasDeficientes
+    List<TemaCriticoDto> TemasDeficientes,
+    string? FotoUrl = null
 );

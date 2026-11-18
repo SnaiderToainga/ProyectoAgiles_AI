@@ -348,6 +348,9 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("FotoUrl")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("MoodleUserId")
                         .HasColumnType("int");
 

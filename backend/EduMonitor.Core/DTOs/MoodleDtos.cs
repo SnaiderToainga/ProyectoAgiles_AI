@@ -6,14 +6,19 @@ public sealed record MoodleSeccionDto(
     int Id,
     string Name,
     int Section,
-    List<MoodleModuloDto> Modules);
+    List<MoodleModuloDto> Modules,
+    string? Summary = null,
+    int? Visible = null,
+    bool? Uservisible = null);
 
 public sealed record MoodleModuloDto(
     int Id,
     string Name,
     string Modname,
     int Instance,
-    string? Url = null);
+    string? Url = null,
+    int? Visible = null,
+    bool? Uservisible = null);
 public sealed record MoodleRolDto(string Shortname);
 public sealed record MoodleParticipanteDto(
     int Id,

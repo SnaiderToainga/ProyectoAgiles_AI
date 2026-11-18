@@ -150,4 +150,73 @@ public class MoodleDtosTests
         Assert.Null(participante.Email);
         Assert.Null(participante.Profileimageurl);
     }
+    [Fact]
+    public void LeeResumenYVisibilidadDeSeccionYModulo()
+    {
+        const string json = """
+        {
+        "id": 10,
+        "name": "PRIMER PARCIAL",
+        "section": 1,
+        "summary": "<p>Pilas, colas</p>",
+        "visible": 1,
+        "uservisible": true,
+        "modules": [
+            {
+            "id": 20,
+            "name": "Tarea oculta",
+            "modname": "assign",
+            "instance": 30,
+            "visible": 0,
+            "uservisible": false
+            }
+        ]
+        }
+        """;
+
+        var seccion =
+            JsonSerializer.Deserialize<MoodleSeccionDto>(json, Json);
+
+        Assert.NotNull(seccion);
+        Assert.Equal("<p>Pilas, colas</p>", seccion.Summary);
+        Assert.Equal(1, seccion.Visible);
+        Assert.Equal(true, seccion.Uservisible);
+
+        var modulo = Assert.Single(seccion.Modules);
+
+        Assert.Equal(0, modulo.Visible);
+        Assert.Equal(false, modulo.Uservisible);
+    }
+    [Fact]
+    public void VisibilidadAusentePermaneceDesconocida()
+    {
+        const string json = """
+        {
+        "id": 11,
+        "name": "Unidad",
+        "section": 2,
+        "modules": [
+            {
+            "id": 21,
+            "name": "Actividad",
+            "modname": "assign",
+            "instance": 31
+            }
+        ]
+        }
+        """;
+
+        var seccion =
+            JsonSerializer.Deserialize<MoodleSeccionDto>(json, Json);
+
+        Assert.NotNull(seccion);
+        Assert.Null(seccion.Summary);
+        Assert.Null(seccion.Visible);
+        Assert.Null(seccion.Uservisible);
+
+        var modulo = Assert.Single(seccion.Modules);
+
+        Assert.Null(modulo.Visible);
+        Assert.Null(modulo.Uservisible);
+    }
 }
