@@ -47,4 +47,25 @@ public class AcademicoController(CatalogoService catalogo, ICalculoPonderadoServ
         await catalogo.ComprobarCurso(UsuarioId, Admin, cursoId, ct);
         return Ok(await calculoPonderado.CalcularCursoAsync(cursoId, parcialId, ct));
     }
+
+    [HttpGet("materias/{cursoId:int}/reporte-consolidado")]
+    public async Task<IActionResult> ReporteConsolidado(
+        int cursoId,
+        [FromQuery] int? parcialId = null,
+        [FromQuery] int? parcialNumero = null,
+        CancellationToken ct = default) =>
+        Ok(await catalogo.ReporteConsolidadoCurso(UsuarioId, Admin, cursoId, parcialId, parcialNumero, ct));
+
+    [HttpGet("materias/{cursoId:int}/parciales/{parcialId:int}/reporte-consolidado")]
+    public async Task<IActionResult> ReporteConsolidadoPorParcial(int cursoId, int parcialId, CancellationToken ct = default) =>
+        Ok(await catalogo.ReporteConsolidadoCurso(UsuarioId, Admin, cursoId, parcialId: parcialId, parcialNumero: null, ct: ct));
+
+    [HttpGet("materias/{cursoId:int}/estudiantes/{estudianteId:int}/reporte-tutoria")]
+    public async Task<IActionResult> ReporteIndividualTutoria(
+        int cursoId,
+        int estudianteId,
+        [FromQuery] int? parcialId = null,
+        [FromQuery] int? parcialNumero = null,
+        CancellationToken ct = default) =>
+        Ok(await catalogo.ReporteIndividualTutoria(UsuarioId, Admin, cursoId, estudianteId, parcialId, parcialNumero, ct));
 }

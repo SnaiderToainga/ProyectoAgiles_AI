@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using EduMonitor.Core.DTOs.Calculo;
 using EduMonitor.Core.Enums;
 
 namespace EduMonitor.Core.DTOs.Academico;
@@ -65,6 +66,103 @@ public record DetallePlanRefuerzoDto(
     string Prioridad,
     int TiempoEstimadoHoras,
     string RecursoRecomendado
+);
+
+public record MembreteInstitucionalDto(
+    string Universidad,
+    string Facultad,
+    string Carrera,
+    string Sistema,
+    string TituloReporte,
+    string MateriaCodigo,
+    string MateriaNombre,
+    string PeriodoLectivo,
+    int ParcialId,
+    int ParcialNumero,
+    string DocenteTitular,
+    string DocenteCorreo,
+    DateTime FechaEmisionUtc
+);
+
+public record FirmaDocenteDto(
+    string NombreDocente,
+    string CorreoDocente,
+    string Cargo,
+    string EtiquetaCasillero,
+    string LeyendaConformidad,
+    string LineaFirma
+);
+
+public record PiePaginaReporteDto(
+    string TextoInstitucional,
+    string PlantillaNumeracion,
+    string NumeracionInicial,
+    int TotalPaginasEstimadas,
+    int RegistrosPorPagina,
+    List<string> Paginas,
+    string CodigoDocumento,
+    DateTime FechaEmisionUtc
+);
+
+public record ResumenEstadisticoReporteDto(
+    int TotalEstudiantes,
+    int TotalAprobados,
+    int TotalEnRiesgo,
+    decimal PorcentajeAprobados,
+    decimal PorcentajeEnRiesgo,
+    decimal PromedioGeneralCurso,
+    decimal PromedioTareasCurso,
+    decimal AporteTareasCurso,
+    decimal PromedioApeCurso,
+    decimal AporteApeCurso,
+    decimal PromedioExamenCurso,
+    decimal AporteExamenCurso,
+    decimal UmbralAprobacion
+);
+
+public record FilaMatrizConsolidadaDto(
+    int NumeroOrden,
+    int EstudianteId,
+    string Nombres,
+    string Apellidos,
+    string NombreCompleto,
+    string Correo,
+    string? FotoUrl,
+    decimal PromedioTareas,
+    decimal AporteTareas,
+    decimal PromedioApe,
+    decimal AporteApe,
+    decimal PromedioExamen,
+    decimal AporteExamen,
+    decimal NotaFinalParcial,
+    bool EnRiesgo,
+    string EstadoAcademico,
+    List<ComponentePonderadoDto> Componentes,
+    List<TemaCriticoDto> TemasDeficientes,
+    PlanRefuerzoDto? PlanRefuerzoVigente
+);
+
+public record ReporteConsolidadoCursoDto(
+    int CursoId,
+    int ParcialId,
+    int ParcialNumero,
+    MembreteInstitucionalDto Membrete,
+    ResumenEstadisticoReporteDto ResumenEstadistico,
+    List<FilaMatrizConsolidadaDto> Estudiantes,
+    FirmaDocenteDto BloqueFirma,
+    PiePaginaReporteDto PiePagina
+);
+
+public record ReporteIndividualTutoriaDto(
+    int CursoId,
+    int ParcialId,
+    int ParcialNumero,
+    MembreteInstitucionalDto Membrete,
+    FilaMatrizConsolidadaDto Estudiante,
+    string CausaPrincipalRendimiento,
+    PlanRefuerzoDto? PlanRefuerzo,
+    FirmaDocenteDto BloqueFirma,
+    PiePaginaReporteDto PiePagina
 );
 
 public sealed class AcademicoException(int status, string message) : Exception(message)
