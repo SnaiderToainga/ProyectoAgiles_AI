@@ -146,7 +146,8 @@ public class CalculoPonderadoService(AcademicoDbContext db) : ICalculoPonderadoS
             notaFinal,
             enRiesgo,
             componentes,
-            temasDeficientes
+            temasDeficientes,
+            estudiante.FotoUrl
         );
     }
 
