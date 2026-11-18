@@ -393,6 +393,9 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                     b.Property<int>("MoodleItemId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("MoodleModuleId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(200)

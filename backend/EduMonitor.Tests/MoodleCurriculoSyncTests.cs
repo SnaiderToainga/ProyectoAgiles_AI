@@ -170,12 +170,70 @@ public class MoodleCurriculoSyncTests : IAsyncLifetime
         Assert.Equal(11, (await new CalculoPonderadoService(db).CalcularCursoAsync(curso, parcialId)).Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MatrizParcialDeUnAlumnoAbortaSinGuardar(bool omitirTodas)
+    {
+        await sync.Notas(77, curso);
+        var ids = await db.Calificaciones.OrderBy(n => n.Id).Select(n => n.Id).ToArrayAsync();
+        source.OmitirPrimeraNota = !omitirTodas; source.OmitirNotasAlumno = omitirTodas;
+        source.Prefijo = "No guardar "; source.Nota = 1;
+        var ex = await Assert.ThrowsAsync<MoodleException>(() => sync.Notas(77, curso));
+        Assert.Equal("moodle_incomplete", ex.Code);
+        db.ChangeTracker.Clear();
+        Assert.Equal(ids, await db.Calificaciones.OrderBy(n => n.Id).Select(n => n.Id).ToArrayAsync());
+        Assert.All(await db.Calificaciones.ToListAsync(), n => Assert.Equal(8m, n.Nota));
+        Assert.DoesNotContain(await db.ItemsEvaluacion.ToListAsync(), i => i.Nombre.StartsWith("No guardar"));
+        Assert.False((await db.LogsSincronizacion.OrderBy(l => l.Id).LastAsync()).Exitoso);
+    }
+
+    [Fact]
+    public async Task IdDelLibroDistintoPorAlumnoAborta()
+    {
+        source.CambiarIdPrimeraNota = true;
+        var ex = await Assert.ThrowsAsync<MoodleException>(() => sync.Notas(77, curso));
+        Assert.Equal("moodle_incomplete", ex.Code);
+        Assert.Empty(await db.Calificaciones.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ModuloOcultoSinFilaDeNotasDespublicaYConservaHistorial()
+    {
+        await sync.Notas(77, curso);
+        var items = await db.ItemsEvaluacion.ToListAsync();
+        Assert.All(items, i => Assert.NotNull(i.MoodleModuleId));
+        items.ForEach(i => i.Publicado = true); await db.SaveChangesAsync();
+        source.Oculto = true; source.OmitirNotasOcultas = true;
+        var result = await sync.Notas(77, curso);
+        Assert.Equal(0, result.Calificaciones);
+        Assert.All(await db.ItemsEvaluacion.ToListAsync(), i => Assert.False(i.Publicado));
+        Assert.Equal(144, await db.Calificaciones.CountAsync());
+        Assert.True((await db.LogsSincronizacion.SingleAsync(l => l.Id == result.LogId)).Exitoso);
+    }
+
+    [Fact]
+    public async Task OcultamientoDeDatosLegadosSinVinculoNoConfirmaExitoSilencioso()
+    {
+        await sync.Notas(77, curso);
+        var items = await db.ItemsEvaluacion.ToListAsync();
+        items.ForEach(i => { i.Publicado = true; i.MoodleModuleId = null; });
+        await db.SaveChangesAsync();
+        source.Oculto = true; source.OmitirNotasOcultas = true;
+        var ex = await Assert.ThrowsAsync<MoodleException>(() => sync.Notas(77, curso));
+        Assert.Equal("moodle_module_mapping_required", ex.Code);
+        db.ChangeTracker.Clear();
+        Assert.All(await db.ItemsEvaluacion.ToListAsync(), i => Assert.True(i.Publicado));
+        Assert.False((await db.LogsSincronizacion.OrderBy(l => l.Id).LastAsync()).Exitoso);
+    }
+
     private sealed class Fuente : IMoodleService
     {
         public decimal? Nota = 8;
         public string Prefijo = "";
         public string Fallo = "";
         public bool Oculto, EliminarPrimero, EsQuiz, RetirarUltimoAlumno;
+        public bool OmitirPrimeraNota, OmitirNotasAlumno, OmitirNotasOcultas, CambiarIdPrimeraNota;
         public int ConsultasEstado, ConsultasTareas;
         private IEnumerable<int> Actividades => Enumerable.Range(1, 12).Where(i => !EliminarPrimero || i != 1);
         private string Nombre(int i) => Prefijo + (i % 3 == 0 ? "Examen " : i % 3 == 1 ? "Evaluación " : "Taller APE ") + i;
@@ -198,8 +256,11 @@ public class MoodleCurriculoSyncTests : IAsyncLifetime
         }
         public Task<MoodleCalificacionesDto> ObtenerCalificacionesPorCurso(int id, CancellationToken ct = default) =>
             Task.FromResult(new MoodleCalificacionesDto(Enumerable.Range(1, Fallo == "missing-grades" ? 11 : 12)
-                .Select(i => new MoodleUsuarioNotasDto(id, i, Actividades.Select(a => new MoodleItemDto(
-                    300 + a, Nombre(a), "mod", EsQuiz ? "quiz" : "assign", 200 + a, Nota, 0, 10, null)).ToList())).ToList()));
+                .Select(i => new MoodleUsuarioNotasDto(id, i, Actividades
+                    .Where(a => !(OmitirPrimeraNota && i == 1 && a == 1) && !(OmitirNotasAlumno && i == 1) && !(OmitirNotasOcultas && Oculto))
+                    .Select(a => new MoodleItemDto(
+                    CambiarIdPrimeraNota && i == 1 && a == 1 ? 999 : 300 + a,
+                    Nombre(a), "mod", EsQuiz ? "quiz" : "assign", 200 + a, Nota, 0, 10, null)).ToList())).ToList()));
         public Task<MoodleTareasDto> ObtenerTareas(int id, CancellationToken ct = default)
         {
             ConsultasTareas++;

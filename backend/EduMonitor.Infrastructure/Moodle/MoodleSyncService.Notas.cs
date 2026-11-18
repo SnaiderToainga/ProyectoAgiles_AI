@@ -56,8 +56,20 @@ public sealed partial class MoodleSyncService
                 throw Incompleto();
             if (filasFuente.GroupBy(x => (x.Alumno.Id, x.Item.Id)).Any(g => g.Count() != 1)) throw Incompleto();
             var seleccion = filasFuente.Where(x => visibles.ContainsKey((x.Item.Itemmodule!, x.Item.Iteminstance!.Value))).ToList();
+            // Una actividad sin nota debe llegar como fila con Graderaw=null, no desaparecer.
+            // Contrastar cada alumno con el inventario evita confirmar matrices parciales como exitosas.
+            var esperados = visibles.Keys.ToHashSet();
+            foreach (var alumno in alumnos)
+            {
+                var filasAlumno = seleccion.Where(x => x.Alumno.Id == alumno.Id).ToList();
+                var claves = filasAlumno.Select(x => (x.Item.Itemmodule!, x.Item.Iteminstance!.Value)).ToHashSet();
+                if (!claves.SetEquals(esperados) || claves.Count != filasAlumno.Count) throw Incompleto();
+            }
+            if (filasFuente.Any(x => x.Item.Id <= 0) || filasFuente
+                .GroupBy(x => (x.Item.Itemmodule, x.Item.Iteminstance))
+                .Any(g => g.Select(x => x.Item.Id).Distinct().Count() != 1)) throw Incompleto();
             var fuentes = seleccion.GroupBy(x => x.Item.Id).ToDictionary(g => g.Key, g => g.First().Item);
-            foreach (var grupo in seleccion.GroupBy(x => x.Item.Id))
+            foreach (var grupo in filasFuente.GroupBy(x => x.Item.Id))
                 if (grupo.Any(x => x.Item.Itemmodule != grupo.First().Item.Itemmodule || x.Item.Iteminstance != grupo.First().Item.Iteminstance))
                     throw Incompleto();
 
@@ -126,6 +138,15 @@ public sealed partial class MoodleSyncService
             // Actualizar la nómina vigente sin borrar estudiantes ni su historial de calificaciones.
             db.Matriculas.RemoveRange(matriculas.Where(m => !idsAlumnos.Contains(m.Estudiante.MoodleUserId)));
             var items = await db.ItemsEvaluacion.Where(i => i.CursoId == cursoId && i.MoodleItemId > 0).ToDictionaryAsync(i => i.MoodleItemId, ct);
+            // Recuperar también el vínculo de ítems ocultos si aún aparecen en el reporte de notas.
+            foreach (var fila in filasFuente)
+                if (items.TryGetValue(fila.Item.Id, out var existente))
+                    existente.MoodleModuleId = modulos[(fila.Item.Itemmodule!, fila.Item.Iteminstance!.Value)].Modulo.Id;
+            var modulosOcultos = modulos.Values.Where(m => m.Seccion.Visible == 0 || m.Modulo.Visible == 0)
+                .Select(m => m.Modulo.Id).ToHashSet();
+            // En datos anteriores a la migración no inferir el módulo por nombre ni inventar un vínculo.
+            if (modulosOcultos.Count > 0 && items.Values.Any(i => i.Publicado && i.MoodleModuleId is null))
+                throw new MoodleException("moodle_module_mapping_required", "Sincronice el vínculo del módulo antes de procesar ocultamientos de ítems publicados.", 409);
             var notasDb = await db.Calificaciones.Where(g => g.ItemEvaluacion.CursoId == cursoId).ToListAsync(ct);
             foreach (var alumno in alumnos)
             {
@@ -154,6 +175,7 @@ public sealed partial class MoodleSyncService
                     item.Tipo = MoodleCurriculoResolver.ResolverTipo(fuente.Itemname ?? modulo.Modulo.Name);
                 }
                 item.Nombre = Texto(fuente.Itemname ?? modulo.Modulo.Name, 200);
+                item.MoodleModuleId = modulo.Modulo.Id;
                 item.MinimoMoodle = fuente.Grademin; item.MaximoMoodle = fuente.Grademax; item.CalificacionMaxima = 10;
             }
             // Obtener claves generadas en un solo lote, no por estudiante/evaluación.
@@ -177,9 +199,8 @@ public sealed partial class MoodleSyncService
                 nota.Nota = fila.Nota; nota.NotaMoodle = fila.Item.Graderaw; nota.Estado = fila.Estado; nota.FechaEntrega = fila.Fecha;
             }
             // Ocultamiento explícito: no inferir eliminación por ausencia en una respuesta filtrable.
-            var ocultos = filasFuente.Where(x => modulos.TryGetValue((x.Item.Itemmodule!, x.Item.Iteminstance!.Value), out var m) &&
-                (m.Seccion.Visible == 0 || m.Modulo.Visible == 0)).Select(x => x.Item.Id).ToHashSet();
-            foreach (var item in items.Values.Where(i => ocultos.Contains(i.MoodleItemId))) item.Publicado = false;
+            foreach (var item in items.Values.Where(i => i.MoodleModuleId is int id && modulosOcultos.Contains(id)))
+                item.Publicado = false;
             // Solo un administrador que verificó permisos/inventario puede habilitar ausencia autoritativa.
             if (options.Value.ContentInventoryIsAuthoritative)
             {
