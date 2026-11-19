@@ -187,6 +187,64 @@ public sealed partial class MoodleSyncService
                 // La sección determina el parcial incluso si la clasificación manual se conserva.
                 items[fuente.Id].ParcialId = parciales.Single(p => p.Numero == numero).Id;
             }
+            // T-12.5: Vincular automáticamente evaluaciones con temas curriculares en EvaluacionTemas
+            var itemDbIds = items.Values.Select(i => i.Id).ToList();
+            var enlacesExistentes = await db.EvaluacionTemas
+                .Where(et => itemDbIds.Contains(et.ItemEvaluacionId))
+                .ToListAsync(ct);
+            var enlacesPorItem = enlacesExistentes
+                .GroupBy(et => et.ItemEvaluacionId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var fuente in fuentes.Values)
+            {
+                var item = items[fuente.Id];
+                var moduloInfo = visibles[(fuente.Itemmodule!, fuente.Iteminstance!.Value)];
+                var seccion = moduloInfo.Seccion;
+                var numeroParcial = MoodleCurriculoResolver.ResolverParcial(seccion.Section, seccion.Name);
+                if (numeroParcial is null) continue;
+
+                var parcial = parciales.Single(p => p.Numero == numeroParcial);
+                var unidad = parcial.Unidades.SingleOrDefault(u => u.Numero == seccion.Section)
+                    ?? parcial.Unidades.SingleOrDefault(u => string.Equals(u.Nombre, seccion.Name, StringComparison.OrdinalIgnoreCase));
+
+                var temasCandidatos = unidad?.Temas.Count > 0
+                    ? unidad.Temas.ToList()
+                    : parcial.Unidades.SelectMany(u => u.Temas).ToList();
+
+                if (temasCandidatos.Count == 0) continue;
+
+                var idsTemasParcial = parcial.Unidades.SelectMany(u => u.Temas).Select(t => t.Id).ToHashSet();
+
+                // Si la evaluación ya tiene temas asignados que pertenecen al parcial actual, se conservan las decisiones docentes
+                if (enlacesPorItem.TryGetValue(item.Id, out var linksItem) &&
+                    linksItem.Any(l => idsTemasParcial.Contains(l.TemaId)))
+                {
+                    continue;
+                }
+
+                // Si tenía enlaces huérfanos de otro parcial previo tras un cambio de sección en Moodle, se limpian
+                if (enlacesPorItem.TryGetValue(item.Id, out var obsoletos))
+                {
+                    db.EvaluacionTemas.RemoveRange(obsoletos);
+                }
+
+                // Resolver temas automáticamente por coincidencia semántica, tipo o distribución de unidad
+                var temaIds = MoodleCurriculoResolver.ResolverTemasEvaluacion(
+                    item.Nombre,
+                    item.Tipo,
+                    moduloInfo.Modulo.Instance,
+                    temasCandidatos);
+
+                foreach (var temaId in temaIds)
+                {
+                    db.EvaluacionTemas.Add(new EvaluacionTema
+                    {
+                        ItemEvaluacionId = item.Id,
+                        TemaId = temaId
+                    });
+                }
+            }
             var porClave = notasDb.ToDictionary(g => (g.EstudianteId, g.ItemEvaluacionId));
             foreach (var fila in filas)
             {

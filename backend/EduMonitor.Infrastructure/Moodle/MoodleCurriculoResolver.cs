@@ -1,11 +1,22 @@
-using System.Text.RegularExpressions;
+using System.Globalization;
 using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
+using EduMonitor.Core.Entities.Academico;
 using EduMonitor.Core.Enums;
 
 namespace EduMonitor.Infrastructure.Moodle;
 
 public static class MoodleCurriculoResolver
 {
+    private static readonly HashSet<string> PalabrasVacias = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "de", "del", "la", "el", "las", "los", "un", "una", "unos", "unas", "para", "por",
+        "con", "sin", "sobre", "a", "al", "e", "y", "o", "u", "en", "1", "2", "3", "4",
+        "evaluacion", "taller", "ape", "examen", "tarea", "practico", "practica",
+        "autonomo", "teorico", "tema", "actividad", "modelo", "guia", "semana", "parcial"
+    };
+
     public static TipoItemEvaluacion ResolverTipo(string? nombre)
     {
         const RegexOptions flags = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
@@ -64,5 +75,80 @@ public static class MoodleCurriculoResolver
             3 or 4 => 2,
             _ => null
         };
+    }
+
+    public static IReadOnlyList<int> ResolverTemasEvaluacion(
+        string? nombreEvaluacion,
+        TipoItemEvaluacion tipo,
+        int moduloInstance,
+        IReadOnlyList<Tema> temasUnidad)
+    {
+        if (temasUnidad is null || temasUnidad.Count == 0)
+            return Array.Empty<int>();
+
+        var titulo = nombreEvaluacion ?? "";
+        var tituloNorm = NormalizarTexto(titulo);
+
+        // 1. Coincidencia semántica/léxica con palabras clave significativas del tema
+        var coincidentes = new List<Tema>();
+        foreach (var tema in temasUnidad)
+        {
+            if (CoincideTema(tituloNorm, tema.Nombre))
+            {
+                coincidentes.Add(tema);
+            }
+        }
+
+        if (coincidentes.Count > 0)
+        {
+            return coincidentes.Select(t => t.Id).Distinct().ToArray();
+        }
+
+        // 2. Si es examen o evaluación integradora del parcial, vincular a todos los temas de la unidad
+        if (tipo == TipoItemEvaluacion.Examen || Regex.IsMatch(titulo, @"\b(Examen|Integral|Parcial)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            return temasUnidad.Select(t => t.Id).Distinct().ToArray();
+        }
+
+        // 3. Fallback determinista para actividades sin palabras clave específicas:
+        // Distribuir equitativamente entre los temas de la sección según la instancia del módulo
+        var indice = Math.Abs(moduloInstance) % temasUnidad.Count;
+        return [temasUnidad[indice].Id];
+    }
+
+    private static bool CoincideTema(string tituloEvaluacionNorm, string nombreTema)
+    {
+        var temaNorm = NormalizarTexto(nombreTema);
+        if (string.IsNullOrWhiteSpace(temaNorm)) return false;
+
+        // Si el nombre normalizado del tema está completamente contenido en el título de la evaluación
+        if (tituloEvaluacionNorm.Contains(temaNorm))
+            return true;
+
+        // O si alguna palabra significativa del tema (longitud >= 3 y no vacía) coincide
+        var palabrasTema = Regex.Split(temaNorm, @"[^\p{L}\p{Nd}]+")
+            .Where(p => p.Length >= 3 && !PalabrasVacias.Contains(p))
+            .ToList();
+
+        if (palabrasTema.Count == 0) return false;
+
+        var palabrasEval = Regex.Split(tituloEvaluacionNorm, @"[^\p{L}\p{Nd}]+")
+            .Where(p => p.Length >= 3 && !PalabrasVacias.Contains(p))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return palabrasTema.Any(p => palabrasEval.Contains(p));
+    }
+
+    public static string NormalizarTexto(string texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return "";
+        var normalizado = texto.Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder();
+        foreach (var c in normalizado)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                sb.Append(c);
+        }
+        return sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant();
     }
 }

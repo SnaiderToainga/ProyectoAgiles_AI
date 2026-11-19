@@ -48,10 +48,76 @@ public class MoodleCurriculoSyncTests : IAsyncLifetime
         Assert.Equal(2, await db.Unidades.CountAsync()); Assert.Equal(4, await db.Temas.CountAsync());
         Assert.All(await db.Estudiantes.ToListAsync(), e => Assert.Equal("https://example.invalid/foto.png", e.FotoUrl));
         Assert.All(await db.Calificaciones.ToListAsync(), c => Assert.Equal(EstadoCalificacion.Entregado, c.Estado));
-        Assert.Equal(0, await db.EvaluacionTemas.CountAsync());
+        Assert.Equal(16, await db.EvaluacionTemas.CountAsync());
         var tipos = await db.ItemsEvaluacion.Select(i => i.Tipo).Distinct().ToListAsync();
         Assert.Contains(TipoItemEvaluacion.APE, tipos); Assert.Contains(TipoItemEvaluacion.Examen, tipos);
         Assert.All(await db.ItemsEvaluacion.ToListAsync(), i => Assert.NotNull(i.ParcialId));
+    }
+
+    [Fact]
+    public async Task EvaluacionTemas_VinculaAutomaticamenteYRespetaConsistenciaParcial()
+    {
+        await sync.Notas(77, curso);
+
+        var items = await db.ItemsEvaluacion.ToListAsync();
+        Assert.Equal(12, items.Count);
+
+        var links = await db.EvaluacionTemas
+            .Include(et => et.Evaluacion)
+            .Include(et => et.Tema)
+                .ThenInclude(t => t.Unidad)
+            .ToListAsync();
+
+        Assert.NotEmpty(links);
+
+        // Toda evaluación debe tener al menos un tema asociado
+        var itemsConTemas = links.Select(l => l.ItemEvaluacionId).Distinct().ToHashSet();
+        Assert.All(items, i => Assert.Contains(i.Id, itemsConTemas));
+
+        // Todo tema asociado debe pertenecer al mismo parcial de la evaluación (consistencia relacional)
+        Assert.All(links, link =>
+            Assert.Equal(link.Evaluacion.ParcialId, link.Tema.Unidad.ParcialId));
+
+        // Las evaluaciones tipo Examen deben vincularse a todos los temas de la unidad
+        var examenes = items.Where(i => i.Tipo == TipoItemEvaluacion.Examen).ToList();
+        Assert.NotEmpty(examenes);
+        foreach (var ex in examenes)
+        {
+            var temasDelExamen = links.Where(l => l.ItemEvaluacionId == ex.Id).Select(l => l.TemaId).ToList();
+            Assert.Equal(2, temasDelExamen.Count); // Unidad 1 tiene 2 temas ("Tema Alfa", "Tema Beta")
+        }
+    }
+
+    [Fact]
+    public async Task EvaluacionTemas_ConservaAsociacionesManualesDocentesEnReimportacion()
+    {
+        await sync.Notas(77, curso);
+
+        var item = await db.ItemsEvaluacion.FirstAsync();
+        var parcial = await db.Parciales.FirstAsync(p => p.Id == item.ParcialId);
+        var temaManual = await db.Temas.FirstAsync(t => t.Unidad.ParcialId == parcial.Id);
+
+        // El docente reclasifica manualmente la evaluación para asociarla exclusivamente a un tema
+        var catalogo = new CatalogoService(db);
+        await catalogo.Clasificar(77, false, item.Id, new ClasificarRequest(parcial.Id, item.Tipo, [temaManual.Id]));
+
+        var temasAntes = await db.EvaluacionTemas
+            .Where(et => et.ItemEvaluacionId == item.Id)
+            .Select(et => et.TemaId)
+            .ToListAsync();
+        Assert.Single(temasAntes);
+        Assert.Equal(temaManual.Id, temasAntes[0]);
+
+        // Re-sincronizar calificaciones desde Moodle
+        await sync.Notas(77, curso);
+
+        // La decisión manual del docente se conserva intacta
+        var temasDespues = await db.EvaluacionTemas
+            .Where(et => et.ItemEvaluacionId == item.Id)
+            .Select(et => et.TemaId)
+            .ToListAsync();
+        Assert.Single(temasDespues);
+        Assert.Equal(temaManual.Id, temasDespues[0]);
     }
 
     [Fact]
