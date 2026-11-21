@@ -34,6 +34,14 @@ interface AlertaEstado {
   mensaje: string
 }
 
+function extraerMensajeErrorApi(error: unknown): string | undefined {
+  if (!axios.isAxiosError(error)) return undefined
+  const data = error.response?.data
+  if (!data || typeof data !== 'object') return undefined
+  const payload = data as { detail?: string; title?: string; mensaje?: string }
+  return payload.detail || payload.title || payload.mensaje
+}
+
 export function EvaluacionesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const materiaQuery = searchParams.get('materia')
@@ -165,19 +173,36 @@ export function EvaluacionesPage() {
     )
   }, [evaluaciones, parcialActual])
 
+  const evaluacionesPublicadas = useMemo(
+    () => evaluacionesVisibles.filter((ev) => ev.publicado && ev.tipo !== 0),
+    [evaluacionesVisibles]
+  )
+
   const actividadesCascada = useMemo(
     () =>
       obtenerEvaluacionesEnAlcance(
-        evaluacionesVisibles,
+        evaluacionesPublicadas,
         parcialActual,
         unidadFiltroId,
         temaFiltroId,
         null
       ),
-    [evaluacionesVisibles, parcialActual, unidadFiltroId, temaFiltroId]
+    [evaluacionesPublicadas, parcialActual, unidadFiltroId, temaFiltroId]
   )
 
   const evaluacionesEnAlcance = useMemo(
+    () =>
+      obtenerEvaluacionesEnAlcance(
+        evaluacionesPublicadas,
+        parcialActual,
+        unidadFiltroId,
+        temaFiltroId,
+        actividadFiltroId
+      ),
+    [evaluacionesPublicadas, parcialActual, unidadFiltroId, temaFiltroId, actividadFiltroId]
+  )
+
+  const actividadesTabla = useMemo(
     () =>
       obtenerEvaluacionesEnAlcance(
         evaluacionesVisibles,
@@ -215,9 +240,9 @@ export function EvaluacionesPage() {
   const actividadSeleccionada = useMemo(
     () =>
       actividadFiltroId !== null
-        ? evaluacionesVisibles.find((e) => e.id === actividadFiltroId) ?? null
+        ? evaluacionesPublicadas.find((e) => e.id === actividadFiltroId) ?? null
         : null,
-    [evaluacionesVisibles, actividadFiltroId]
+    [evaluacionesPublicadas, actividadFiltroId]
   )
 
   const metricasCurso = useMemo(
@@ -262,11 +287,7 @@ export function EvaluacionesPage() {
         mensaje: `Matriz consolidada PDF de ${materiaActual.codigo} (Parcial ${parcialActual.numero}) descargada correctamente.`,
       })
     } catch (error) {
-      const detalle =
-        axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
-          ? (error.response.data as { detail?: string; mensaje?: string }).detail ||
-            (error.response.data as { mensaje?: string }).mensaje
-          : undefined
+      const detalle = extraerMensajeErrorApi(error)
       setAlertaSync({
         tipo: 'error',
         mensaje: detalle || 'No se pudo generar la matriz consolidada en PDF.',
@@ -287,11 +308,7 @@ export function EvaluacionesPage() {
       )
       await exportarPdfReporteIndividual(data)
     } catch (error) {
-      const detalle =
-        axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
-          ? (error.response.data as { detail?: string; mensaje?: string }).detail ||
-            (error.response.data as { mensaje?: string }).mensaje
-          : undefined
+      const detalle = extraerMensajeErrorApi(error)
       setAlertaSync({
         tipo: 'error',
         mensaje: detalle || 'No se pudo generar el reporte individual del estudiante en PDF.',
@@ -319,17 +336,27 @@ export function EvaluacionesPage() {
       const { data } = await clienteAxios.post<SincronizacionDto>(
         `/moodle/sync-notas/${materiaActual.id}`
       )
-      await cargarDatosCurso(materiaActual.id, parcialActual.id)
+      const { data: materiasActualizadas } = await clienteAxios.get<MateriaDto[]>(
+        '/academico/materias'
+      )
+      setMaterias(materiasActualizadas)
+      const materiaActualizada = materiasActualizadas.find((m) => m.id === materiaActual.id)
+      const parcialActualizadoId =
+        materiaActualizada?.parciales.find((p) => p.numero === parcialActual.numero)?.id ??
+        materiaActualizada?.parciales[0]?.id ??
+        parcialActual.id
+
+      setUnidadFiltroId(null)
+      setTemaFiltroId(null)
+      setActividadFiltroId(null)
+      setPaginaActual(1)
+      await cargarDatosCurso(materiaActual.id, parcialActualizadoId)
       setAlertaSync({
         tipo: 'exito',
         mensaje: `Calificaciones actualizadas desde Moodle (${data.calificaciones} calificaciones y ${data.items} actividades sincronizadas).`,
       })
     } catch (error) {
-      const detalle =
-        axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
-          ? (error.response.data as { detail?: string; mensaje?: string }).detail ||
-            (error.response.data as { mensaje?: string }).mensaje
-          : undefined
+      const detalle = extraerMensajeErrorApi(error)
       setAlertaSync({
         tipo: 'advertencia',
         mensaje:
@@ -398,11 +425,7 @@ export function EvaluacionesPage() {
       setMostrarModal(false)
       await cargarDatosCurso(materiaActual.id, parcialActual.id)
     } catch (error) {
-      const msg =
-        axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
-          ? (error.response.data as { detail?: string; mensaje?: string }).detail ||
-            (error.response.data as { mensaje?: string }).mensaje
-          : undefined
+      const msg = extraerMensajeErrorApi(error)
       setErrorValidacion(msg || 'No se pudo guardar la evaluación en el servidor.')
     } finally {
       setGuardando(false)
@@ -988,7 +1011,7 @@ export function EvaluacionesPage() {
             Actividades de Evaluación — {materiaActual.nombre}
           </h2>
           <span className="text-xs text-[#71717a]">
-            {evaluacionesEnAlcance.length} de {evaluacionesVisibles.length} actividad(es)
+            {actividadesTabla.length} de {evaluacionesVisibles.length} actividad(es)
           </span>
         </div>
 
@@ -1004,18 +1027,25 @@ export function EvaluacionesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e4e4e7]">
-              {evaluacionesEnAlcance.length === 0 ? (
+              {actividadesTabla.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-5 px-4 text-center text-[#71717a]">
                     No existen actividades registradas para este alcance o parcial.
                   </td>
                 </tr>
               ) : (
-                evaluacionesEnAlcance.map((ev) => {
+                actividadesTabla.map((ev) => {
                   const temas = temasDisponibles.filter((t) => ev.temaIds.includes(t.id))
                   return (
                     <tr key={ev.id} className="hover:bg-[#fafafa] transition">
-                      <td className="py-3 px-4 font-medium text-[#18181b]">{ev.nombre}</td>
+                      <td className="py-3 px-4 font-medium text-[#18181b]">
+                        {ev.nombre}
+                        {!ev.publicado && (
+                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">
+                            Sin publicar
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <span
                           className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${

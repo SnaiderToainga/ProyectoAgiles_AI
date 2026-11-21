@@ -15,6 +15,14 @@ import {
   type SolicitudPlanIa,
 } from '../types/academico'
 
+function extraerMensajeErrorApi(error: unknown): string | undefined {
+  if (!axios.isAxiosError(error)) return undefined
+  const data = error.response?.data
+  if (!data || typeof data !== 'object') return undefined
+  const payload = data as { detail?: string; title?: string; mensaje?: string }
+  return payload.detail || payload.title || payload.mensaje
+}
+
 export function TutoriaPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const materiaQuery = searchParams.get('materia')
@@ -205,11 +213,7 @@ export function TutoriaPage() {
         `Informe oficial PDF de tutoría generado para ${estudianteActual.apellidos} ${estudianteActual.nombres}.`
       )
     } catch (error) {
-      const detalle =
-        axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
-          ? (error.response.data as { detail?: string; mensaje?: string }).detail ||
-            (error.response.data as { mensaje?: string }).mensaje
-          : undefined
+      const detalle = extraerMensajeErrorApi(error)
       setAlertaPlan(detalle || 'No se pudo generar el informe oficial de tutoría en PDF.')
     } finally {
       setExportandoPdf(false)
