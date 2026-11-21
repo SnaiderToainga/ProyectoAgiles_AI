@@ -2,7 +2,8 @@ import logging
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.schemas import RespuestaPlan, SolicitudPlan
+from app.schemas import RespuestaChat, RespuestaPlan, SolicitudChat, SolicitudPlan
+from app.services.chat_service import ChatService
 from app.services.gemini_service import GeminiService
 
 logging.basicConfig(level=logging.INFO)
@@ -10,8 +11,8 @@ logger = logging.getLogger("ai-service")
 
 app = FastAPI(
     title="SISRA - EduMonitor AI Service",
-    description="Microservicio de diagnóstico y generación de planes de refuerzo asistidos por Gemini API",
-    version="2.0.0",
+    description="Microservicio de diagnóstico, planes de refuerzo y asistente conversacional pedagógico asistidos por Gemini API",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -23,6 +24,7 @@ app.add_middleware(
 )
 
 gemini_service = GeminiService()
+chat_service = ChatService()
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["Health"])
@@ -51,3 +53,19 @@ def generar_plan_remedial(solicitud: SolicitudPlan):
         f"Promedio: {solicitud.promedioPonderado:.2f}"
     )
     return gemini_service.generar_plan(solicitud)
+
+
+@app.post(
+    "/api/agent/chat",
+    response_model=RespuestaChat,
+    status_code=status.HTTP_200_OK,
+    tags=["Pedagogical Agent - Chat"],
+)
+def chat_asistente_pedagogico(solicitud: SolicitudChat):
+    """
+    Endpoint de Asistencia Conversacional con IA (HU-07 / T-13.4 y T-13.5).
+    Responde consultas del docente a nivel general de curso o individual por estudiante,
+    integrando Tools deterministas y advertencias éticas de incertidumbre pedagógica (RNF-08).
+    """
+    logger.info(f"Petición de chat recibida - Modo: {solicitud.modo} | Pregunta: {solicitud.mensaje[:60]}...")
+    return chat_service.procesar_chat(solicitud)
