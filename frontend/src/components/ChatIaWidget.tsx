@@ -26,6 +26,8 @@ interface ChatIaWidgetProps {
   materiaSeleccionadaId?: number
   estudiantes?: ResumenAcademicoEstudianteDto[]
   estudiantePreseleccionado?: ResumenAcademicoEstudianteDto | null
+  abiertoExterno?: boolean
+  onCerrar?: () => void
 }
 
 export function ChatIaWidget({
@@ -33,8 +35,17 @@ export function ChatIaWidget({
   materiaSeleccionadaId,
   estudiantes = [],
   estudiantePreseleccionado = null,
+  abiertoExterno,
+  onCerrar,
 }: ChatIaWidgetProps) {
-  const [abierto, setAbierto] = useState(false)
+  const [abiertoInterno, setAbiertoInterno] = useState(false)
+  const abierto = abiertoExterno !== undefined ? abiertoExterno : abiertoInterno
+
+  const setAbierto = (val: boolean) => {
+    setAbiertoInterno(val)
+    if (!val && onCerrar) onCerrar()
+  }
+
   const [modo, setModo] = useState<'curso' | 'estudiante'>('curso')
   const [materiaId, setMateriaId] = useState<number>(
     materiaSeleccionadaId || materias[0]?.id || 1
@@ -173,25 +184,31 @@ export function ChatIaWidget({
         const enRiesgo = estudiantes.filter((e) => e.enRiesgo)
         respuestaLocal = `Actualmente en ${materiaActual?.nombre || 'el curso'}, hay ${enRiesgo.length} estudiante(s) en riesgo de un total de ${estudiantes.length}. `
         if (enRiesgo.length > 0) {
-          respuestaLocal += `Los estudiantes con promedio menor a 7.00 son: ${enRiesgo
-            .map((e) => `${e.apellidos} ${e.nombres} (${e.notaFinalParcial.toFixed(2)})`)
-            .join(', ')}.`
+          respuestaLocal += `Los estudiantes con promedio menor a 7.00 son:\n`
+          enRiesgo.forEach((e) => {
+            const temas = e.temasDeficientes.map((t) => t.nombreTema).join(', ')
+            respuestaLocal += `• ${e.apellidos} ${e.nombres}: ${e.notaFinalParcial.toFixed(2)} pts${
+              temas ? ` (Temas: ${temas})` : ''
+            }\n`
+          })
         } else {
-          respuestaLocal += 'Todos los estudiantes registrados tienen promedio aprobatorio.'
+          respuestaLocal += 'Todos los estudiantes registrados tienen promedio aprobatorio (≥ 7.00).'
         }
       } else if (estudianteActual) {
-        respuestaLocal = `El estudiante ${estudianteActual.apellidos} ${estudianteActual.nombres} tiene un promedio de ${estudianteActual.notaFinalParcial.toFixed(2)} pts (${
-          estudianteActual.enRiesgo ? 'En Riesgo' : 'Aprobado'
-        }). `
+        respuestaLocal = `Diagnóstico de ${estudianteActual.apellidos} ${estudianteActual.nombres}:\n`
+        respuestaLocal += `• Nota actual: ${estudianteActual.notaFinalParcial.toFixed(2)} / 10.00 pts (${
+          estudianteActual.enRiesgo ? 'En Riesgo Académico' : 'Aprobado'
+        }).\n`
         if (estudianteActual.temasDeficientes.length > 0) {
-          respuestaLocal += `Presenta debilidades en los siguientes temas: ${estudianteActual.temasDeficientes
+          respuestaLocal += `• Temas críticos donde reprobó: ${estudianteActual.temasDeficientes
             .map((t) => t.nombreTema)
-            .join(', ')}. Se sugiere programar tutoría de refuerzo enfocada en estos puntos.`
+            .join(', ')}.\n`
+          respuestaLocal += `• Recomendación: Programar 4 horas de tutoría práctica enfocada en estos contenidos.`
         } else {
-          respuestaLocal += 'No registra temas con deficiencias críticas identificadas.'
+          respuestaLocal += '• No registra temas con deficiencias críticas identificadas.'
         }
       } else {
-        respuestaLocal = 'Por favor selecciona un estudiante del listado para ver su diagnóstico individual.'
+        respuestaLocal = 'Por favor selecciona un estudiante del listado superior para ver su diagnóstico individual.'
       }
 
       const respuestaFallback: MensajeChatUi = {
@@ -209,15 +226,16 @@ export function ChatIaWidget({
 
   return (
     <>
-      {/* Botón Flotante para Abrir Chat */}
+      {/* Botón Flotante para Abrir Chat (Superpuesto garantizado con fixed y z-[9999]) */}
       {!abierto && (
         <button
           onClick={() => setAbierto(true)}
-          className="fixed bottom-5 right-5 z-40 bg-[#8B151A] hover:bg-[#6E1014] text-white p-3.5 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2 group cursor-pointer"
+          style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
+          className="bg-[#8B151A] hover:bg-[#6E1014] text-white p-3.5 rounded-full shadow-2xl hover:scale-105 transition-all duration-200 flex items-center gap-2 group cursor-pointer border-2 border-white"
           title="Abrir Asistente IA SISRA"
         >
           <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
-          <span className="text-xs font-bold tracking-wide pr-1 hidden sm:inline">
+          <span className="text-xs font-bold tracking-wide pr-1">
             Tutor IA
           </span>
         </button>
@@ -225,7 +243,10 @@ export function ChatIaWidget({
 
       {/* Ventana Flotante del Chat */}
       {abierto && (
-        <div className="fixed bottom-5 right-5 z-50 w-[95vw] sm:w-[420px] h-[580px] max-h-[85vh] bg-white rounded-xl shadow-2xl border border-[#e4e4e7] flex flex-col overflow-hidden animate-slideUp">
+        <div
+          style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
+          className="w-[95vw] sm:w-[430px] h-[600px] max-h-[85vh] bg-white rounded-xl shadow-2xl border border-[#e4e4e7] flex flex-col overflow-hidden"
+        >
           {/* Cabecera */}
           <div className="bg-[#8B151A] text-white p-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -264,7 +285,7 @@ export function ChatIaWidget({
               </button>
               <button
                 onClick={() => setAbierto(false)}
-                className="p-1 text-white/70 hover:text-white rounded hover:bg-white/10 transition"
+                className="p-1 text-white/70 hover:text-white rounded hover:bg-white/10 transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
