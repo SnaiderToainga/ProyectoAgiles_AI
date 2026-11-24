@@ -67,5 +67,5 @@ def chat_asistente_pedagogico(solicitud: SolicitudChat):
     Responde consultas del docente a nivel general de curso o individual por estudiante,
     integrando Tools deterministas y advertencias éticas de incertidumbre pedagógica (RNF-08).
     """
-    logger.info(f"Petición de chat recibida - Modo: {solicitud.modo} | Pregunta: {solicitud.mensaje[:60]}...")
+    logger.info(f"Petición de chat recibida - Modo: {solicitud.modo} | Longitud mensaje: {len(solicitud.mensaje)} chars")
     return chat_service.procesar_chat(solicitud)

@@ -82,9 +82,9 @@ class ContextoCursoChat(BaseModel):
 
 
 class EstudianteChatDto(BaseModel):
-    estudianteId: int = Field(..., ge=1)
-    nombres: str = Field(..., min_length=1)
-    apellidos: str = Field(..., min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+    codigo: str = Field(..., min_length=1, description="Código anónimo del estudiante, ej. EST-001")
     notaFinal: float = Field(..., ge=0.0, le=10.0)
     enRiesgo: bool = False
     componentes: Optional[Dict[str, float]] = None
@@ -115,9 +115,7 @@ class SolicitudChat(BaseModel):
                 },
                 "estudiantesCurso": [
                     {
-                        "estudianteId": 1,
-                        "nombres": "Cesar Steven",
-                        "apellidos": "Carrasco",
+                        "codigo": "EST-001",
                         "notaFinal": 5.40,
                         "enRiesgo": True,
                         "temasDeficientes": ["Historias de Usuario"],

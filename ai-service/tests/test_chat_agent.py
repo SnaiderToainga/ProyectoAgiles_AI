@@ -5,6 +5,7 @@ from app.main import app
 from app.schemas import (
     ContextoCursoChat,
     EstudianteChatDto,
+    MensajeChat,
     SolicitudChat,
 )
 from app.services.chat_service import ChatService
@@ -14,36 +15,28 @@ client = TestClient(app)
 
 ESTUDIANTES_PRUEBA = [
     EstudianteChatDto(
-        estudianteId=1,
-        nombres="Cesar Steven",
-        apellidos="Carrasco",
+        codigo="EST-001",
         notaFinal=5.40,
         enRiesgo=True,
         componentes={"Tareas": 6.0, "APE": 4.5, "Examen": 5.75},
         temasDeficientes=["Historias de Usuario e INVEST"],
     ),
     EstudianteChatDto(
-        estudianteId=2,
-        nombres="Estiven Sebastian",
-        apellidos="Chiluisa",
+        codigo="EST-002",
         notaFinal=8.90,
         enRiesgo=False,
         componentes={"Tareas": 9.0, "APE": 8.5, "Examen": 9.2},
         temasDeficientes=[],
     ),
     EstudianteChatDto(
-        estudianteId=3,
-        nombres="Cristian Fernando",
-        apellidos="Sivinta",
+        codigo="EST-003",
         notaFinal=6.80,
         enRiesgo=True,
         componentes={"Tareas": 7.0, "APE": 6.5, "Examen": 7.0},
         temasDeficientes=["Diagramas de Secuencia"],
     ),
     EstudianteChatDto(
-        estudianteId=4,
-        nombres="Snaider Alexander",
-        apellidos="Toainga",
+        codigo="EST-004",
         notaFinal=7.50,
         enRiesgo=False,
         componentes={"Tareas": 8.0, "APE": 7.0, "Examen": 7.5},
@@ -82,11 +75,14 @@ def test_tool_estudiantes_en_riesgo():
     assert resultado["totalEnRiesgo"] == 2
     # Debe ordenar de menor a mayor: primero 5.40 y luego 6.80
     assert resultado["estudiantes"][0]["notaFinal"] == 5.40
+    assert resultado["estudiantes"][0]["codigo"] == "EST-001"
     assert resultado["estudiantes"][1]["notaFinal"] == 6.80
+    assert resultado["estudiantes"][1]["codigo"] == "EST-003"
 
 
 def test_tool_diagnostico_estudiante():
     diag = ChatTools.tool_diagnostico_estudiante(ESTUDIANTES_PRUEBA[0])
+    assert diag["codigo"] == "EST-001"
     assert diag["nivelRiesgo"] == "Alto"
     assert diag["horasTutoriaSugeridas"] == 4
     assert "Historias de Usuario e INVEST" in diag["temasDeficientes"]
@@ -127,7 +123,9 @@ def test_endpoint_chat_modo_estudiante():
 
     data = response.json()
     assert data["modo"] == "estudiante"
-    assert "Carrasco" in data["respuesta"] or "5.40" in data["respuesta"]
+    # Debe responder con el código del alumno y su calificación real (sin nombres personales)
+    assert "EST-001" in data["respuesta"]
+    assert "5.40" in data["respuesta"]
 
 
 def test_gemini_chat_con_mock():
@@ -150,3 +148,163 @@ def test_gemini_chat_con_mock():
     assert respuesta.esFallback is False
     assert "2 estudiantes" in respuesta.respuesta
     assert "RNF-08" in respuesta.advertenciaEtica
+
+
+# ---------------------------------------------------------------------------
+# Pruebas Nuevas Exigidas por el DoD / Code Review de Privacidad y Calidad
+# ---------------------------------------------------------------------------
+
+def test_sin_componentes_no_inventa_notas():
+    """Verifica que sin componentes reales no devuelva valores quemados (como 5.80 en APE)."""
+    estudiantes_sin_comp = [
+        EstudianteChatDto(codigo="EST-010", notaFinal=6.0, enRiesgo=True, componentes={}),
+    ]
+    res = ChatTools.tool_analisis_componentes(None, estudiantes_sin_comp)
+    assert res["disponible"] is False
+    assert res["componentes"] == {}
+    assert res["componenteCritico"] is None
+    assert res["promedioComponenteCritico"] is None
+    assert "No hay notas" in res["motivo"]
+
+    # En el servicio determinista / fallback, no debe contener '5.80' ni 'APE' inventado
+    service = ChatService()
+    service.client = None
+    service.api_key = ""
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Cuál es el componente más bajo?",
+        estudiantesCurso=estudiantes_sin_comp,
+    )
+    resp = service.procesar_chat(solicitud)
+    assert "5.80" not in resp.respuesta
+    assert "no hay notas por componente" in resp.respuesta.lower()
+
+
+def test_con_componentes_reales_detecta_mas_bajo():
+    """Verifica que con componentes reales detecte el componente con promedio más bajo."""
+    estudiantes = [
+        EstudianteChatDto(
+            codigo="EST-001",
+            notaFinal=6.5,
+            componentes={"Tareas": 8.0, "APE": 5.0, "Examen": 7.0},
+        ),
+        EstudianteChatDto(
+            codigo="EST-002",
+            notaFinal=7.5,
+            componentes={"Tareas": 8.5, "APE": 5.5, "Examen": 8.0},
+        ),
+    ]
+    res = ChatTools.tool_analisis_componentes(None, estudiantes)
+    assert res["disponible"] is True
+    assert res["componenteCritico"] == "APE"
+    assert res["promedioComponenteCritico"] == 5.25
+
+
+def test_componente_sin_notas_no_cuenta_como_cero():
+    """Un estudiante sin componentes o componente sin notas no penaliza a 0."""
+    estudiantes = [
+        EstudianteChatDto(
+            codigo="EST-001",
+            notaFinal=8.0,
+            componentes={"Tareas": 8.0, "APE": 7.0},
+        ),
+        EstudianteChatDto(
+            codigo="EST-002",
+            notaFinal=8.0,
+            componentes=None,
+        ),
+    ]
+    res = ChatTools.tool_analisis_componentes(None, estudiantes)
+    assert res["disponible"] is True
+    assert res["componentes"]["Tareas"] == 8.0
+    assert res["componentes"]["APE"] == 7.0
+
+
+def test_gemini_mock_no_contiene_datos_personales():
+    """Valida que el prompt generado para Gemini no contenga nombres, apellidos ni emails."""
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = SimpleNamespace(
+        text="Respuesta válida del modelo."
+    )
+    service.client = fake_client
+
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Qué estudiantes necesitan refuerzo?",
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+
+    service.procesar_chat(solicitud)
+    assert fake_client.models.generate_content.called
+    call_args = fake_client.models.generate_content.call_args
+    prompt_enviado = call_args.kwargs.get("contents", "")
+
+    # Verificar que NO viajen datos personales de los integrantes
+    for nombre_prohibido in ["Carrasco", "Chiluisa", "Sivinta", "Toainga", "carlos.docente", "@uta.edu.ec"]:
+        assert nombre_prohibido not in prompt_enviado
+
+    # Verificar que viaje el código anónimo
+    assert "EST-001" in prompt_enviado
+
+
+def test_peticion_con_nombres_devuelve_422():
+    """Garantiza el cumplimiento de RNF-02 mediante Pydantic extra='forbid': rechaza nombres/apellidos."""
+    payload_invalido = {
+        "modo": "curso",
+        "mensaje": "Consulta general",
+        "estudiantesCurso": [
+            {
+                "codigo": "EST-001",
+                "nombres": "Cesar",
+                "apellidos": "Carrasco",
+                "notaFinal": 5.4,
+            }
+        ],
+    }
+
+    response = client.post("/api/agent/chat", json=payload_invalido)
+    assert response.status_code == 422
+    # El error de validación debe indicar que los campos adicionales están prohibidos
+    errores = response.json()["detail"]
+    assert any("extra_forbidden" in str(err) for err in errores)
+
+
+def test_anonimizacion_texto_libre_e_historial_sin_fugas():
+    """
+    RNF-02: Valida que ninguna variante de nombres ('Cesar', 'Carrasco', 'Cesar Steven Carrasco Manotoa')
+    aparezca en el mensaje ni en el historial enviado a Gemini.
+    """
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = SimpleNamespace(
+        text="Diagnóstico orientado para los alumnos en consulta."
+    )
+    service.client = fake_client
+
+    # Simulación de mensaje e historial enviados por el frontend tras anonimización
+    # "¿Cómo va Cesar? ¿Y Carrasco? ¿Qué tal Cesar Steven Carrasco Manotoa?" -> "¿Cómo va EST-001? ¿Y EST-001? ¿Qué tal EST-001?"
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Cómo va EST-001? ¿Y EST-001? ¿Qué tal EST-001?",
+        historial=[
+            MensajeChat(rol="user", contenido="¿Qué componentes debe recuperar EST-001?"),
+            MensajeChat(rol="assistant", contenido="EST-001 debe reforzar el componente APE."),
+        ],
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+
+    service.procesar_chat(solicitud)
+    assert fake_client.models.generate_content.called
+    call_args = fake_client.models.generate_content.call_args
+    prompt_enviado = call_args.kwargs.get("contents", "")
+
+    # Afirmar categóricamente que ni 'Cesar', ni 'Carrasco', ni la combinación completa figuren en el prompt
+    for fuga in ["Cesar", "Carrasco", "Cesar Steven Carrasco Manotoa", "Steven", "Manotoa"]:
+        assert fuga not in prompt_enviado
+
+    assert "EST-001" in prompt_enviado

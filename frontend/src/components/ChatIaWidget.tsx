@@ -11,7 +11,12 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import clienteAxios from '../api/clienteAxios'
-import type { MateriaDto, ResumenAcademicoEstudianteDto } from '../types/academico'
+import { crearAnonimizador } from '../utils/anonimizador'
+import {
+  NOMBRE_COMPONENTE,
+  type MateriaDto,
+  type ResumenAcademicoEstudianteDto,
+} from '../types/academico'
 
 export interface MensajeChatUi {
   id: string
@@ -27,7 +32,9 @@ interface ChatIaWidgetProps {
   estudiantes?: ResumenAcademicoEstudianteDto[]
   estudiantePreseleccionado?: ResumenAcademicoEstudianteDto | null
   abiertoExterno?: boolean
+  desactivado?: boolean
   onCerrar?: () => void
+  onAbrir?: () => void
 }
 
 export function ChatIaWidget({
@@ -36,13 +43,16 @@ export function ChatIaWidget({
   estudiantes = [],
   estudiantePreseleccionado = null,
   abiertoExterno,
+  desactivado = false,
   onCerrar,
+  onAbrir,
 }: ChatIaWidgetProps) {
   const [abiertoInterno, setAbiertoInterno] = useState(false)
   const abierto = abiertoExterno !== undefined ? abiertoExterno : abiertoInterno
 
   const setAbierto = (val: boolean) => {
     setAbiertoInterno(val)
+    if (val && onAbrir) onAbrir()
     if (!val && onCerrar) onCerrar()
   }
 
@@ -99,10 +109,35 @@ export function ChatIaWidget({
           '¿Qué temas requieren una clase de refuerzo urgente?',
         ]
       : [
-          `¿Cuál es el diagnóstico pedagógico de ${estudianteActual?.nombres || 'este estudiante'}?`,
+          '¿Cuál es el diagnóstico pedagógico y de refuerzo de este estudiante?',
           '¿Qué componentes debe recuperar prioritariamente?',
           'Sugiere un plan semanal de estudio para este estudiante.',
         ]
+
+  // Extraer componentes evaluativos reales con calificaciones efectivas (excluye ceros de componentes sin evaluar)
+  const componentesReales = (e: ResumenAcademicoEstudianteDto): Record<string, number> => {
+    if (!e.componentes) return {}
+    return Object.fromEntries(
+      e.componentes
+        .filter((c) => c.evaluaciones && c.evaluaciones.some((ev) => ev.nota !== null))
+        .map((c) => [NOMBRE_COMPONENTE[c.tipo] || String(c.tipo), Number(c.promedioComponente.toFixed(2))])
+    )
+  }
+
+  // Anonimizador local robusto exclusivo del navegador (RNF-02)
+  const mapaEstudianteIdACodigo = new Map<number, string>()
+  const estudiantesParaAnonimizar = estudiantes.map((e, idx) => {
+    const cod = `EST-${String(idx + 1).padStart(3, '0')}`
+    mapaEstudianteIdACodigo.set(e.estudianteId, cod)
+    return {
+      nombres: e.nombres,
+      apellidos: e.apellidos,
+      codigo: cod,
+    }
+  })
+
+  const { anonimizar: anonimizarTexto, desanonimizar: desanonimizarTexto } =
+    crearAnonimizador(estudiantesParaAnonimizar)
 
   async function enviarMensaje(textoAEnviar?: string) {
     const texto = (textoAEnviar || mensajeInput).trim()
@@ -142,37 +177,35 @@ export function ChatIaWidget({
 
     const estudianteDto = estudianteActual
       ? {
-          estudianteId: estudianteActual.estudianteId,
-          nombres: estudianteActual.nombres,
-          apellidos: estudianteActual.apellidos,
+          codigo: mapaEstudianteIdACodigo.get(estudianteActual.estudianteId) || 'EST-001',
           notaFinal: estudianteActual.notaFinalParcial,
           enRiesgo: estudianteActual.enRiesgo,
+          componentes: componentesReales(estudianteActual),
           temasDeficientes: estudianteActual.temasDeficientes.map((t) => t.nombreTema),
         }
       : null
 
     const payload = {
       modo,
-      mensaje: texto,
-      historial: mensajes.map((m) => ({ rol: m.rol, contenido: m.texto })),
+      mensaje: anonimizarTexto(texto),
+      historial: mensajes.map((m) => ({ rol: m.rol, contenido: anonimizarTexto(m.texto) })),
       contextoCurso,
       estudianteSeleccionado: estudianteDto,
-      estudiantesCurso: estudiantes.map((e) => ({
-        estudianteId: e.estudianteId,
-        nombres: e.nombres,
-        apellidos: e.apellidos,
+      estudiantesCurso: estudiantes.map((e, idx) => ({
+        codigo: mapaEstudianteIdACodigo.get(e.estudianteId) || `EST-${String(idx + 1).padStart(3, '0')}`,
         notaFinal: e.notaFinalParcial,
         enRiesgo: e.enRiesgo,
+        componentes: componentesReales(e),
         temasDeficientes: e.temasDeficientes.map((t) => t.nombreTema),
       })),
     }
 
     try {
-      const { data } = await clienteAxios.post('/agent/chat', payload)
+      const { data } = await clienteAxios.post('/agent/chat', payload, { timeout: 35000 })
       const respuestaIa: MensajeChatUi = {
         id: String(Date.now() + 1),
         rol: 'assistant',
-        texto: data.respuesta || 'Análisis completado.',
+        texto: desanonimizarTexto(data.respuesta || 'Análisis completado.'),
         hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         esFallback: data.esFallback,
       }
@@ -229,12 +262,24 @@ export function ChatIaWidget({
       {/* Botón Flotante para Abrir Chat (Superpuesto garantizado con fixed y z-[9999]) */}
       {!abierto && (
         <button
-          onClick={() => setAbierto(true)}
+          onClick={() => {
+            if (desactivado) return
+            setAbierto(true)
+          }}
+          disabled={desactivado}
           style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
-          className="bg-[#8B151A] hover:bg-[#6E1014] text-white p-3.5 rounded-full shadow-2xl hover:scale-105 transition-all duration-200 flex items-center gap-2 group cursor-pointer border-2 border-white"
-          title="Abrir Asistente IA SISRA"
+          className={`${
+            desactivado
+              ? 'bg-gray-400 opacity-60 cursor-not-allowed'
+              : 'bg-[#8B151A] hover:bg-[#6E1014] hover:scale-105 cursor-pointer shadow-2xl'
+          } text-white p-3.5 rounded-full transition-all duration-200 flex items-center gap-2 group border-2 border-white`}
+          title={
+            desactivado
+              ? 'Asistente IA deshabilitado: requiere conexión con servidor oficial'
+              : 'Abrir Asistente IA SISRA'
+          }
         >
-          <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+          <Sparkles className={`w-5 h-5 ${desactivado ? 'text-gray-200' : 'text-amber-300 animate-pulse'}`} />
           <span className="text-xs font-bold tracking-wide pr-1">
             Tutor IA
           </span>
@@ -450,11 +495,11 @@ export function ChatIaWidget({
               </button>
             </form>
 
-            {/* Aviso Ético RNF-08 / CA-07.4 */}
+            {/* Aviso Ético RNF-08 / RNF-02 */}
             <div className="mt-1.5 flex items-start gap-1 text-[9px] text-[#71717a] leading-tight">
               <AlertCircle className="w-3 h-3 text-[#a1a1aa] shrink-0 mt-0.5" />
               <span>
-                Orientativo. Constituye apoyo pedagógico; la valoración definitiva corresponde al docente titular.
+                Orientativo (RNF-08 / RNF-02). Contexto anonimizado. Por privacidad, no ingrese nombres o datos sensibles en el texto libre.
               </span>
             </div>
           </div>

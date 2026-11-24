@@ -28,7 +28,8 @@ class ChatService:
         self.client: Optional[genai.Client] = None
         if self.api_key:
             try:
-                timeout_ms = max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000)
+                # Presupuesto estricto de máximo 28 segundos para respetar el límite global
+                timeout_ms = min(max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000), 28000)
                 self.client = genai.Client(
                     api_key=self.api_key,
                     http_options=types.HttpOptions(timeout=timeout_ms),
@@ -92,7 +93,7 @@ class ChatService:
             "1. Utiliza estrictamente los datos verificados que se te proporcionan en el contexto. No inventes notas ni nombres.\n"
             "2. El modelo de calificación UTA es: 30% Tareas, 30% APE, 40% Examen. La nota mínima de aprobación es 7.00/10.00.\n"
             "3. Mantén un tono formal, académico, constructivo y conciso.\n"
-            "4. Respeta el principio de privacidad: no reveles identificadores sensibles innecesarios.\n"
+            "4. Respeta el principio de privacidad (RNF-02): trabaja exclusivamente con códigos de estudiante anónimos (ej. EST-001) y nunca menciones nombres personales.\n"
             "5. Recuerda siempre que tu función es consultiva y orientativa."
         )
 
@@ -112,11 +113,29 @@ Historial de la conversación reciente:
 
 Instrucción:
 Responde de forma clara y directa a la pregunta del docente, estructurando los puntos clave con viñetas si es necesario.
-Si se consultó por estudiantes en riesgo, enumera nombres, nota exacta y temas débiles.
+Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. EST-001), nota exacta y temas débiles. No menciones nombres.
 """
 
-        modelos = [settings.GEMINI_MODEL, "gemini-2.5-flash", "gemini-1.5-flash"]
-        for mod in modelos:
+        # 4.2 y 4.3: Presupuesto global estricto de 28s y modelo de respaldo unificado con gemini_service.py
+        PRESUPUESTO_TOTAL_S = 28.0
+        TIEMPO_MINIMO_LLAMADA_S = 3.0
+
+        modelos_a_probar = [settings.GEMINI_MODEL]
+        if "gemini-3.1-flash-lite" not in modelos_a_probar:
+            modelos_a_probar.append("gemini-3.1-flash-lite")
+
+        for mod in modelos_a_probar:
+            tiempo_transcurrido = time.time() - inicio
+            tiempo_restante_s = PRESUPUESTO_TOTAL_S - tiempo_transcurrido
+
+            # Si ya no existe tiempo suficiente para una llamada útil, conmutar directamente a fallback
+            if tiempo_restante_s < TIEMPO_MINIMO_LLAMADA_S:
+                logger.warning(
+                    f"Presupuesto de tiempo agotado ({tiempo_transcurrido:.2f}s de {PRESUPUESTO_TOTAL_S}s). "
+                    "Activando inmediatamente fallback local determinista."
+                )
+                break
+
             try:
                 resp = self.client.models.generate_content(
                     model=mod,
@@ -162,7 +181,7 @@ Si se consultó por estudiantes en riesgo, enumera nombres, nota exacta y temas 
             temas = ", ".join(diag["temasDeficientes"]) if diag["temasDeficientes"] else "ninguno con reporte crítico"
 
             return (
-                f"Diagnóstico para el estudiante {diag['nombreCompleto']}:\n\n"
+                f"Diagnóstico para el estudiante {diag['codigo']}:\n\n"
                 f"• Calificación actual: {nota:.2f} / 10.00 pts (Estado: {estado}).\n"
                 f"• Nivel de atención sugerido: {diag['nivelRiesgo']}.\n"
                 f"• Temas que requieren refuerzo: {temas}.\n"
@@ -191,10 +210,16 @@ Si se consultó por estudiantes en riesgo, enumera nombres, nota exacta y temas 
             msg += "Estudiantes con necesidad de tutoría y plan de refuerzo:\n"
             for est in lista:
                 temas_str = f" [Temas: {', '.join(est['temasDeficientes'])}]" if est['temasDeficientes'] else ""
-                msg += f"  - {est['nombreCompleto']}: {est['notaFinal']:.2f} pts{temas_str}\n"
+                msg += f"  - {est['codigo']}: {est['notaFinal']:.2f} pts{temas_str}\n"
 
         if "analisis_componentes" in datos:
             comp_info = datos["analisis_componentes"]
-            msg += f"\nComponente con mayor dificultad formativa: {comp_info.get('componenteCritico', 'APE')} (promedio: {comp_info.get('promedioComponenteCritico', 0.0)})."
+            if comp_info.get("disponible"):
+                msg += (
+                    f"\nComponente con mayor dificultad: {comp_info['componenteCritico']} "
+                    f"(promedio: {comp_info['promedioComponenteCritico']:.2f})."
+                )
+            else:
+                msg += f"\n{comp_info.get('motivo', 'No hay notas por componente registradas.')}"
 
         return msg
