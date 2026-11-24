@@ -29,6 +29,38 @@ jobs:
     - name: Ejecutar Suite de Pruebas Unitarias (xUnit)
       run: dotnet test backend/EduMonitor.Tests/EduMonitor.Tests.csproj --configuration Release --no-build --verbosity normal
 
+  ai-service-test:
+    name: Probar Microservicio de IA (FastAPI / PyTest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ai-service
+
+    env:
+      # Las pruebas usan el motor local y clientes simulados; nunca una clave real.
+      GEMINI_API_KEY: ""
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+    - name: Descargar codigo del repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+        cache-dependency-path: ai-service/requirements.txt
+
+    - name: Instalar dependencias de Python
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Ejecutar Suite de Pruebas (PyTest)
+      run: python -m pytest -v
+
   frontend-build:
     name: Validar y Empaquetar Frontend (React 19)
     runs-on: ubuntu-latest
@@ -48,6 +80,11 @@ jobs:
       run: |
         cd frontend
         npm install
+
+    - name: Ejecutar Pruebas Unitarias Frontend (Vitest)
+      run: |
+        cd frontend
+        npm test
 
     - name: Compilar Frontend Vite y Typecheck
       run: |

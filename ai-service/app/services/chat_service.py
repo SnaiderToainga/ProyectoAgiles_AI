@@ -4,16 +4,20 @@ from typing import List, Optional
 from google import genai
 from google.genai import types
 from app.config import settings
+from app.prompts import (
+    AVISO_ETICO_RNF08,
+    SECCION_HECHOS,
+    SECCION_INFERENCIAS,
+    SECCION_RECOMENDACIONES,
+    SYSTEM_PROMPT_CHAT,
+)
 from app.schemas import RespuestaChat, SolicitudChat
 from app.services.chat_tools import ChatTools
 
 logger = logging.getLogger(__name__)
 
-AVISO_ETICO_RNF08 = (
-    "Aviso Pedagógico (RNF-08): Las respuestas y recomendaciones de este asistente "
-    "tienen carácter orientativo como apoyo a la toma de decisiones docentes. La evaluación "
-    "definitiva y la asignación de calificaciones corresponden con exclusividad al docente titular."
-)
+# Temperatura conservadora acordada en el diseño del agente (Sprint 2, sección 2.6.4)
+TEMPERATURA_CHAT = 0.2
 
 
 class ChatService:
@@ -83,37 +87,30 @@ class ChatService:
                 tiempoRespuestaMs=duracion_ms,
             )
 
-        # 3. Llamar a Gemini con System Prompt e inyección de datos deterministas
-        system_instruction = (
-            "Eres el Asistente Pedagógico de EduMonitor AI para la Universidad Técnica de Ambato (UTA), "
-            "Facultad de Ingeniería en Sistemas, Electrónica e Industrial (FISEI). "
-            "Tu objetivo es ayudar al docente a interpretar calificaciones, identificar vacíos formativos "
-            "y sugerir estrategias de refuerzo escolar.\n"
-            "DIRECTRICES OBLIGATORIAS:\n"
-            "1. Utiliza estrictamente los datos verificados que se te proporcionan en el contexto. No inventes notas ni nombres.\n"
-            "2. El modelo de calificación UTA es: 30% Tareas, 30% APE, 40% Examen. La nota mínima de aprobación es 7.00/10.00.\n"
-            "3. Mantén un tono formal, académico, constructivo y conciso.\n"
-            "4. Respeta el principio de privacidad (RNF-02): trabaja exclusivamente con códigos de estudiante anónimos (ej. EST-001) y nunca menciones nombres personales.\n"
-            "5. Recuerda siempre que tu función es consultiva y orientativa."
-        )
-
+        # 3. Llamar a Gemini con el System Prompt ético (T-13.6) e inyección de datos deterministas
         historial_str = ""
         for m in solicitud.historial[-4:]:  # Últimas 4 interacciones para mantener contexto
             historial_str += f"- {m.rol}: {m.contenido}\n"
 
+        # La pregunta y el historial se delimitan como datos para que no actúen como instrucciones.
         prompt = f"""
-Pregunta del Docente: "{solicitud.mensaje}"
 Modo actual: {solicitud.modo}
 
-Datos Académicos Verificados por el Sistema:
+<datos_verificados>
 {datos_contexto}
+</datos_verificados>
 
-Historial de la conversación reciente:
-{historial_str}
+<historial>
+{historial_str}</historial>
+
+<pregunta_docente>
+{solicitud.mensaje}
+</pregunta_docente>
 
 Instrucción:
-Responde de forma clara y directa a la pregunta del docente, estructurando los puntos clave con viñetas si es necesario.
+Responde a la pregunta del docente usando las secciones "{SECCION_HECHOS}", "{SECCION_INFERENCIAS}" y "{SECCION_RECOMENDACIONES}".
 Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. EST-001), nota exacta y temas débiles. No menciones nombres.
+Si la pregunta requiere un dato que no está en <datos_verificados>, indícalo en lugar de suponerlo.
 """
 
         # 4.2 y 4.3: Presupuesto global estricto de 28s y modelo de respaldo unificado con gemini_service.py
@@ -141,8 +138,8 @@ Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. E
                     model=mod,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        temperature=0.3,
+                        system_instruction=SYSTEM_PROMPT_CHAT,
+                        temperature=TEMPERATURA_CHAT,
                         max_output_tokens=1000,
                     ),
                 )
@@ -172,22 +169,53 @@ Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. E
             tiempoRespuestaMs=duracion_ms,
         )
 
+    @staticmethod
+    def _formatear_secciones(hechos: List[str], inferencias: List[str], recomendaciones: List[str]) -> str:
+        """Presenta la respuesta separando hechos, inferencias y recomendaciones (RF-09 / RNF-08)."""
+        bloques = []
+        for titulo, lineas in (
+            (SECCION_HECHOS, hechos),
+            (SECCION_INFERENCIAS, inferencias),
+            (SECCION_RECOMENDACIONES, recomendaciones),
+        ):
+            bloques.append(f"{titulo}:\n" + "\n".join(f"• {linea}" for linea in lineas))
+        return "\n\n".join(bloques)
+
     def _generar_respuesta_local(self, solicitud: SolicitudChat, datos: dict) -> str:
-        """Genera una respuesta determinista en lenguaje natural utilizando los datos de las Tools."""
+        """Genera una respuesta determinista con los datos de las Tools, sin intervención del modelo."""
         if solicitud.modo == "estudiante" and "diagnostico_estudiante" in datos:
             diag = datos["diagnostico_estudiante"]
             nota = diag["notaFinal"]
-            estado = "en riesgo académico (< 7.00)" if diag["enRiesgo"] else "aprobado"
-            temas = ", ".join(diag["temasDeficientes"]) if diag["temasDeficientes"] else "ninguno con reporte crítico"
+            estado = "en riesgo académico (< 7.00)" if diag["enRiesgo"] else "aprobado (>= 7.00)"
+            temas = ", ".join(diag["temasDeficientes"]) if diag["temasDeficientes"] else "ninguno registrado"
 
-            return (
-                f"Diagnóstico para el estudiante {diag['codigo']}:\n\n"
-                f"• Calificación actual: {nota:.2f} / 10.00 pts (Estado: {estado}).\n"
-                f"• Nivel de atención sugerido: {diag['nivelRiesgo']}.\n"
-                f"• Temas que requieren refuerzo: {temas}.\n"
-                f"• Recomendación pedagógica: {diag['enfoquePedagogico']}, con una dedicación estimada "
-                f"de {diag['horasTutoriaSugeridas']} horas semanales de tutoría."
-            )
+            hechos = [
+                f"Estudiante {diag['codigo']}: calificación actual {nota:.2f} / 10.00 pts.",
+                f"Estado según la regla institucional: {estado}.",
+                f"Temas con evaluaciones deficientes: {temas}.",
+            ]
+            componentes = diag.get("componentes") or {}
+            if componentes:
+                detalle = ", ".join(f"{k} {v:.2f}" for k, v in componentes.items())
+                hechos.append(f"Promedios por componente con notas registradas: {detalle}.")
+
+            inferencias = [
+                f"Nivel de atención estimado: {diag['nivelRiesgo']} (confianza media). Se calcula solo "
+                "a partir de la nota ponderada; no considera asistencia, contexto personal ni "
+                "evaluaciones aún no registradas.",
+            ]
+            if not componentes:
+                inferencias.append(
+                    "No hay notas por componente para identificar qué tipo de evaluación explica el resultado."
+                )
+
+            recomendaciones = [
+                f"Sugerencia: {diag['enfoquePedagogico'][:1].lower()}{diag['enfoquePedagogico'][1:]}, "
+                "con una dedicación orientativa de "
+                f"{diag['horasTutoriaSugeridas']} horas semanales de tutoría.",
+                "Contrastar con su desempeño en clase antes de definir el plan; la decisión corresponde al docente.",
+            ]
+            return self._formatear_secciones(hechos, inferencias, recomendaciones)
 
         resumen = datos.get("resumen_curso", {})
         total = resumen.get("totalEstudiantes", 0)
@@ -197,29 +225,61 @@ Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. E
         tasa = resumen.get("tasaAprobacionPct", 0.0)
         materia = resumen.get("materia", "la asignatura")
 
-        msg = (
-            f"Resumen académico de {materia}:\n\n"
-            f"• Total estudiantes: {total}\n"
-            f"• Promedio general del curso: {prom:.2f} / 10.00 pts\n"
-            f"• Estudiantes aprobados: {aprobados} ({tasa}%)\n"
-            f"• Estudiantes en riesgo (< 7.00): {en_riesgo} ({100 - tasa:.1f}%)\n\n"
-        )
+        if total == 0:
+            return self._formatear_secciones(
+                [f"No hay estudiantes con calificaciones registradas en {materia}."],
+                ["No dispongo de datos suficientes para interpretar el rendimiento del curso."],
+                ["Sincronizar las calificaciones desde Moodle y repetir la consulta."],
+            )
 
-        if "estudiantes_riesgo" in datos and datos["estudiantes_riesgo"]["estudiantes"]:
+        hechos = [
+            f"Asignatura: {materia}. Estudiantes evaluados: {total}.",
+            f"Promedio general del curso: {prom:.2f} / 10.00 pts.",
+            f"Aprobados (>= 7.00): {aprobados} ({tasa}%). En riesgo (< 7.00): {en_riesgo} ({100 - tasa:.1f}%).",
+        ]
+        inferencias: List[str] = []
+        recomendaciones: List[str] = []
+
+        if "estudiantes_riesgo" in datos:
             lista = datos["estudiantes_riesgo"]["estudiantes"]
-            msg += "Estudiantes con necesidad de tutoría y plan de refuerzo:\n"
-            for est in lista:
-                temas_str = f" [Temas: {', '.join(est['temasDeficientes'])}]" if est['temasDeficientes'] else ""
-                msg += f"  - {est['codigo']}: {est['notaFinal']:.2f} pts{temas_str}\n"
+            if lista:
+                hechos.append("Estudiantes en riesgo, de menor a mayor nota:")
+                for est in lista:
+                    temas_str = f" [Temas: {', '.join(est['temasDeficientes'])}]" if est["temasDeficientes"] else ""
+                    hechos.append(f"{est['codigo']}: {est['notaFinal']:.2f} pts{temas_str}")
+                destinatarios = "el estudiante en riesgo" if len(lista) == 1 else f"los {len(lista)} estudiantes en riesgo"
+                recomendaciones.append(f"Considerar priorizar tutorías o planes de refuerzo para {destinatarios}.")
+            else:
+                hechos.append("Ningún estudiante tiene una nota menor a 7.00.")
 
         if "analisis_componentes" in datos:
             comp_info = datos["analisis_componentes"]
             if comp_info.get("disponible"):
-                msg += (
-                    f"\nComponente con mayor dificultad: {comp_info['componenteCritico']} "
-                    f"(promedio: {comp_info['promedioComponenteCritico']:.2f})."
+                hechos.append(
+                    f"Componente con el promedio más bajo: {comp_info['componenteCritico']} "
+                    f"({comp_info['promedioComponenteCritico']:.2f})."
+                )
+                inferencias.append(
+                    f"El componente {comp_info['componenteCritico']} podría concentrar la mayor dificultad "
+                    "formativa (confianza media); el promedio no muestra si se debe a pocos casos extremos."
+                )
+                recomendaciones.append(
+                    f"Revisar las actividades de {comp_info['componenteCritico']} con notas más bajas "
+                    "antes de planificar el refuerzo."
                 )
             else:
-                msg += f"\n{comp_info.get('motivo', 'No hay notas por componente registradas.')}"
+                inferencias.append(comp_info.get("motivo", "No hay notas por componente registradas."))
 
-        return msg
+        if en_riesgo > 0:
+            inferencias.append(
+                f"Un {100 - tasa:.1f}% del curso está bajo el umbral institucional (confianza alta en la cifra); "
+                "las causas no pueden determinarse solo con las notas."
+            )
+        else:
+            inferencias.append("El curso no presenta estudiantes en riesgo según las notas registradas.")
+
+        if not recomendaciones:
+            recomendaciones.append("Mantener el seguimiento con cada nueva sincronización de notas.")
+        recomendaciones.append("Estas sugerencias son orientativas; la decisión corresponde al docente.")
+
+        return self._formatear_secciones(hechos, inferencias, recomendaciones)

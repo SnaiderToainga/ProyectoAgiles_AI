@@ -3,6 +3,7 @@ import logging
 from google import genai
 from google.genai import types
 from app.config import settings
+from app.prompts import SYSTEM_PROMPT_PLAN
 from app.schemas import RespuestaPlan, SolicitudPlan
 from app.services.fallback_service import FallbackService
 
@@ -31,11 +32,7 @@ class GeminiService:
             logger.warning("Gemini API Key no configurada. Activando motor Fallback.")
             return FallbackService.generar_plan_contingencia(solicitud)
 
-        system_instruction = (
-            "Eres un tutor y pedagogo universitario de la carrera de Ingeniería de Software "
-            "de la Universidad Técnica de Ambato (UTA). Analiza el rendimiento académico "
-            "anonimizado de un estudiante y genera un plan de refuerzo formal en español."
-        )
+        system_instruction = SYSTEM_PROMPT_PLAN
 
         ids_esperados = [t.id for t in solicitud.temasCriticos]
         prompt = f"""
