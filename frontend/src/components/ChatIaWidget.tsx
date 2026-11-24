@@ -11,6 +11,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import clienteAxios from '../api/clienteAxios'
+import { crearAnonimizador } from '../utils/anonimizador'
 import {
   NOMBRE_COMPONENTE,
   type MateriaDto,
@@ -123,45 +124,20 @@ export function ChatIaWidget({
     )
   }
 
-  // Mapa local exclusivo del cliente para anonimización RNF-02
-  const mapaCodigoANombre = new Map<string, string>()
+  // Anonimizador local robusto exclusivo del navegador (RNF-02)
   const mapaEstudianteIdACodigo = new Map<number, string>()
-  const listaReemplazo: { patron: RegExp; codigo: string }[] = []
-
-  estudiantes.forEach((e, idx) => {
+  const estudiantesParaAnonimizar = estudiantes.map((e, idx) => {
     const cod = `EST-${String(idx + 1).padStart(3, '0')}`
-    const nombreCompleto = `${e.apellidos} ${e.nombres}`.trim()
-    mapaCodigoANombre.set(cod, nombreCompleto)
     mapaEstudianteIdACodigo.set(e.estudianteId, cod)
-    if (nombreCompleto) {
-      listaReemplazo.push({
-        patron: new RegExp(nombreCompleto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
-        codigo: cod,
-      })
-    }
-    if (e.apellidos && e.apellidos.trim().length > 2) {
-      listaReemplazo.push({
-        patron: new RegExp(e.apellidos.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
-        codigo: cod,
-      })
+    return {
+      nombres: e.nombres,
+      apellidos: e.apellidos,
+      codigo: cod,
     }
   })
 
-  const anonimizarTexto = (str: string): string => {
-    let out = str
-    for (const r of listaReemplazo) {
-      out = out.replace(r.patron, r.codigo)
-    }
-    return out
-  }
-
-  const desanonimizarTexto = (str: string): string => {
-    let out = str
-    mapaCodigoANombre.forEach((nombre, cod) => {
-      out = out.replaceAll(cod, nombre)
-    })
-    return out
-  }
+  const { anonimizar: anonimizarTexto, desanonimizar: desanonimizarTexto } =
+    crearAnonimizador(estudiantesParaAnonimizar)
 
   async function enviarMensaje(textoAEnviar?: string) {
     const texto = (textoAEnviar || mensajeInput).trim()

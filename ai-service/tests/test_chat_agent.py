@@ -5,6 +5,7 @@ from app.main import app
 from app.schemas import (
     ContextoCursoChat,
     EstudianteChatDto,
+    MensajeChat,
     SolicitudChat,
 )
 from app.services.chat_service import ChatService
@@ -269,3 +270,41 @@ def test_peticion_con_nombres_devuelve_422():
     # El error de validación debe indicar que los campos adicionales están prohibidos
     errores = response.json()["detail"]
     assert any("extra_forbidden" in str(err) for err in errores)
+
+
+def test_anonimizacion_texto_libre_e_historial_sin_fugas():
+    """
+    RNF-02: Valida que ninguna variante de nombres ('Cesar', 'Carrasco', 'Cesar Steven Carrasco Manotoa')
+    aparezca en el mensaje ni en el historial enviado a Gemini.
+    """
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = SimpleNamespace(
+        text="Diagnóstico orientado para los alumnos en consulta."
+    )
+    service.client = fake_client
+
+    # Simulación de mensaje e historial enviados por el frontend tras anonimización
+    # "¿Cómo va Cesar? ¿Y Carrasco? ¿Qué tal Cesar Steven Carrasco Manotoa?" -> "¿Cómo va EST-001? ¿Y EST-001? ¿Qué tal EST-001?"
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Cómo va EST-001? ¿Y EST-001? ¿Qué tal EST-001?",
+        historial=[
+            MensajeChat(rol="user", contenido="¿Qué componentes debe recuperar EST-001?"),
+            MensajeChat(rol="assistant", contenido="EST-001 debe reforzar el componente APE."),
+        ],
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+
+    service.procesar_chat(solicitud)
+    assert fake_client.models.generate_content.called
+    call_args = fake_client.models.generate_content.call_args
+    prompt_enviado = call_args.kwargs.get("contents", "")
+
+    # Afirmar categóricamente que ni 'Cesar', ni 'Carrasco', ni la combinación completa figuren en el prompt
+    for fuga in ["Cesar", "Carrasco", "Cesar Steven Carrasco Manotoa", "Steven", "Manotoa"]:
+        assert fuga not in prompt_enviado
+
+    assert "EST-001" in prompt_enviado

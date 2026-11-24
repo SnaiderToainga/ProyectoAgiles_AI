@@ -115,8 +115,14 @@ Responde de forma clara y directa a la pregunta del docente, estructurando los p
 Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. EST-001), nota exacta y temas débiles. No menciones nombres.
 """
 
-        modelos = [settings.GEMINI_MODEL, "gemini-2.5-flash", "gemini-1.5-flash"]
+        # Timeout coherente: limitar a 28s totales (por debajo del timeout de 35s del cliente web)
+        # y usar máximo 1 modelo de respaldo para evitar demoras excesivas.
+        tiempo_limite_total_s = 28.0
+        modelos = [settings.GEMINI_MODEL, "gemini-1.5-flash"]
         for mod in modelos:
+            if time.time() - inicio > tiempo_limite_total_s:
+                logger.warning("Límite de tiempo para IA alcanzado (28s). Activando fallback local determinista.")
+                break
             try:
                 resp = self.client.models.generate_content(
                     model=mod,
