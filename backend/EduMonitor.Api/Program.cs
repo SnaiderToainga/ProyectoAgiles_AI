@@ -6,19 +6,16 @@ using EduMonitor.Infrastructure.Data;
 using EduMonitor.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // DbContext SQL Server Express
 builder.Services.AddDbContext<EduMonitorDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
-           .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddDbContext<AcademicoDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("AcademicoConnection"))
-           .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("AcademicoConnection")));
 
 // Servicios de Catálogo y Sincronización Moodle
 builder.Services.AddScoped<CatalogoService>();
