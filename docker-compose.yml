@@ -43,6 +43,7 @@ services:
       # Entorno de demostracion: restablece las cuentas de ejemplo (Admin123!). No usar en produccion.
       ASPNETCORE_ENVIRONMENT: Development
       Development__ResetExamplePasswords: "true"
+      Development__MoodleDocenteId: ${MOODLE_DOCENTE_ID:-3}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
