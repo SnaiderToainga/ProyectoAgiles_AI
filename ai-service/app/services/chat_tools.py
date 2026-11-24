@@ -81,8 +81,7 @@ class ChatTools:
 
         detalle = [
             {
-                "estudianteId": e.estudianteId,
-                "nombreCompleto": f"{e.apellidos} {e.nombres}",
+                "codigo": e.codigo,
                 "notaFinal": e.notaFinal,
                 "temasDeficientes": e.temasDeficientes,
                 "componentes": e.componentes or {},
@@ -120,8 +119,7 @@ class ChatTools:
             enfoque = "Profundización autónoma y proyectos de extensión"
 
         return {
-            "estudianteId": estudiante.estudianteId,
-            "nombreCompleto": f"{estudiante.apellidos} {estudiante.nombres}",
+            "codigo": estudiante.codigo,
             "notaFinal": nota,
             "enRiesgo": en_riesgo,
             "nivelRiesgo": nivel,
@@ -141,6 +139,7 @@ class ChatTools:
             comps = contexto.componentesPromedios
             comp_mas_bajo = min(comps.items(), key=lambda x: x[1])
             return {
+                "disponible": True,
                 "componentes": comps,
                 "componenteCritico": comp_mas_bajo[0],
                 "promedioComponenteCritico": comp_mas_bajo[1],
@@ -157,15 +156,17 @@ class ChatTools:
             promedios = {k: round(sum(v) / len(v), 2) for k, v in acum.items()}
             comp_mas_bajo = min(promedios.items(), key=lambda x: x[1])
             return {
+                "disponible": True,
                 "componentes": promedios,
                 "componenteCritico": comp_mas_bajo[0],
                 "promedioComponenteCritico": comp_mas_bajo[1],
             }
 
-        # Valores estándar por defecto de la ponderación oficial FISEI
+        # Cuando no hay notas por componente registradas, no inventar valores
         return {
-            "componentes": {"Tareas": 7.50, "APE": 5.80, "Examen": 6.10},
-            "componenteCritico": "APE",
-            "promedioComponenteCritico": 5.80,
-            "nota": "Ponderación oficial: 30% Tareas, 30% APE, 40% Examen.",
+            "disponible": False,
+            "componentes": {},
+            "componenteCritico": None,
+            "promedioComponenteCritico": None,
+            "motivo": "No hay notas por componente registradas.",
         }

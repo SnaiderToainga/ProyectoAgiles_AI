@@ -468,8 +468,21 @@ export function DashboardPage() {
             Tutoría IA
           </Link>
           <button
-            onClick={() => setChatAbierto(true)}
-            className="px-3.5 py-2 bg-gradient-to-r from-[#8B151A] to-[#6E1014] text-white rounded text-xs font-semibold shadow-sm hover:shadow transition flex items-center gap-1.5 cursor-pointer"
+            onClick={() => {
+              if (esModoFallback) return
+              setChatAbierto(true)
+            }}
+            disabled={esModoFallback}
+            className={`px-3.5 py-2 rounded text-xs font-semibold shadow-sm transition flex items-center gap-1.5 ${
+              esModoFallback
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-[#8B151A] to-[#6E1014] text-white hover:shadow cursor-pointer'
+            }`}
+            title={
+              esModoFallback
+                ? 'Asistente IA deshabilitado con datos demostrativos'
+                : 'Abrir Asistente Tutor IA'
+            }
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
             Asistente Tutor IA
@@ -665,6 +678,8 @@ export function DashboardPage() {
         estudiantes={estudiantesParaGrafico}
         estudiantePreseleccionado={estudianteParaChat}
         abiertoExterno={chatAbierto}
+        desactivado={esModoFallback}
+        onAbrir={() => setChatAbierto(true)}
         onCerrar={() => setChatAbierto(false)}
       />
     </div>
