@@ -87,10 +87,10 @@ Crear el archivo `ai-service/.env` a partir de `ai-service/.env.example`:
 # Clave de API de Google Gemini (Dejar vacía para activar automáticamente el motor de contingencia local)
 GEMINI_API_KEY=tu_api_key_de_google_gemini
 
-# Modelo LLM oficial
+# Modelo LLM oficial (respaldo unificado: gemini-3.1-flash-lite)
 GEMINI_MODEL=gemini-2.5-flash
 
-# Timeout límite en segundos (mínimo 10 segundos)
+# Timeout límite en segundos (presupuesto global del servicio: 28 segundos)
 GEMINI_TIMEOUT_SECONDS=15
 
 # Orígenes permitidos para CORS
@@ -175,7 +175,13 @@ cd ai-service
 .\.venv\Scripts\pytest -v
 ```
 
-### 3. Verificación de Compilación y Calidad Frontend (TypeScript & Oxlint)
+### 3. Pruebas Unitarias de Anonimización y Privacidad Frontend (Vitest)
+```powershell
+cd frontend
+npm test
+```
+
+### 4. Verificación de Compilación y Calidad Frontend (TypeScript & Oxlint)
 ```powershell
 cd frontend
 npm run lint

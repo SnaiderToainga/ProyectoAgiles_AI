@@ -28,7 +28,8 @@ class ChatService:
         self.client: Optional[genai.Client] = None
         if self.api_key:
             try:
-                timeout_ms = max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000)
+                # Presupuesto estricto de máximo 28 segundos para respetar el límite global
+                timeout_ms = min(max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000), 28000)
                 self.client = genai.Client(
                     api_key=self.api_key,
                     http_options=types.HttpOptions(timeout=timeout_ms),
@@ -115,14 +116,26 @@ Responde de forma clara y directa a la pregunta del docente, estructurando los p
 Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. EST-001), nota exacta y temas débiles. No menciones nombres.
 """
 
-        # Timeout coherente: limitar a 28s totales (por debajo del timeout de 35s del cliente web)
-        # y usar máximo 1 modelo de respaldo para evitar demoras excesivas.
-        tiempo_limite_total_s = 28.0
-        modelos = [settings.GEMINI_MODEL, "gemini-1.5-flash"]
-        for mod in modelos:
-            if time.time() - inicio > tiempo_limite_total_s:
-                logger.warning("Límite de tiempo para IA alcanzado (28s). Activando fallback local determinista.")
+        # 4.2 y 4.3: Presupuesto global estricto de 28s y modelo de respaldo unificado con gemini_service.py
+        PRESUPUESTO_TOTAL_S = 28.0
+        TIEMPO_MINIMO_LLAMADA_S = 3.0
+
+        modelos_a_probar = [settings.GEMINI_MODEL]
+        if "gemini-3.1-flash-lite" not in modelos_a_probar:
+            modelos_a_probar.append("gemini-3.1-flash-lite")
+
+        for mod in modelos_a_probar:
+            tiempo_transcurrido = time.time() - inicio
+            tiempo_restante_s = PRESUPUESTO_TOTAL_S - tiempo_transcurrido
+
+            # Si ya no existe tiempo suficiente para una llamada útil, conmutar directamente a fallback
+            if tiempo_restante_s < TIEMPO_MINIMO_LLAMADA_S:
+                logger.warning(
+                    f"Presupuesto de tiempo agotado ({tiempo_transcurrido:.2f}s de {PRESUPUESTO_TOTAL_S}s). "
+                    "Activando inmediatamente fallback local determinista."
+                )
                 break
+
             try:
                 resp = self.client.models.generate_content(
                     model=mod,
