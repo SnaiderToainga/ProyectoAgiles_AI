@@ -1,5 +1,6 @@
 from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
+from app.prompts import AVISO_ETICO_RNF08
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +130,7 @@ class SolicitudChat(BaseModel):
 class RespuestaChat(BaseModel):
     respuesta: str = Field(..., min_length=1, description="Respuesta analítica y pedagógica generada por el asistente")
     advertenciaEtica: str = Field(
-        default="Aviso Pedagógico (RNF-08): Las respuestas y recomendaciones de este asistente tienen carácter orientativo como apoyo a la toma de decisiones docentes. La evaluación definitiva y la calificación corresponden con exclusividad al docente titular.",
+        default=AVISO_ETICO_RNF08,
         description="Aviso ético de incertidumbre pedagógica conforme a RNF-08",
     )
     modo: Literal["curso", "estudiante"]
