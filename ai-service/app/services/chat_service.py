@@ -73,6 +73,12 @@ class ChatService:
                     solicitud.contextoCurso, solicitud.estudiantesCurso
                 )
 
+            if any(k in msg_lower for k in ["tema", "unidad", "actividad", "evaluacion", "evaluación", "mal", "fall", "refuerz", "resumen"]):
+                tools_ejecutadas.append("tool_analisis_temas")
+                datos_contexto["analisis_temas"] = ChatTools.tool_analisis_temas(
+                    solicitud.estudiantesCurso
+                )
+
         # 2. Si no hay cliente Gemini configurado o falla, usar Fallback Determinista
         if not self.client or not self.api_key:
             logger.info("Gemini no configurado para chat. Usando respuesta determinista local.")
@@ -110,6 +116,7 @@ Modo actual: {solicitud.modo}
 Instrucción:
 Responde a la pregunta del docente usando las secciones "{SECCION_HECHOS}", "{SECCION_INFERENCIAS}" y "{SECCION_RECOMENDACIONES}".
 Si se consultó por estudiantes en riesgo, enumera códigos de estudiante (ej. EST-001), nota exacta y temas débiles. No menciones nombres.
+Si en <datos_verificados> hay actividades específicas o análisis por tema (`actividadesDeficientes`, `detallePorTema`, `analisis_temas`), detalla exactamente en qué actividad y tema está el rezago con sus notas.
 Si la pregunta requiere un dato que no está en <datos_verificados>, indícalo en lugar de suponerlo.
 """
 
@@ -140,7 +147,8 @@ Si la pregunta requiere un dato que no está en <datos_verificados>, indícalo e
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_PROMPT_CHAT,
                         temperature=TEMPERATURA_CHAT,
-                        max_output_tokens=1000,
+                        max_output_tokens=2048,
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                     ),
                 )
                 if resp and resp.text:
@@ -198,6 +206,13 @@ Si la pregunta requiere un dato que no está en <datos_verificados>, indícalo e
             if componentes:
                 detalle = ", ".join(f"{k} {v:.2f}" for k, v in componentes.items())
                 hechos.append(f"Promedios por componente con notas registradas: {detalle}.")
+            actividades_def = diag.get("actividadesDeficientes") or []
+            if actividades_def:
+                acts_str = "; ".join(
+                    f"{a['nombre']} ({a['nota']:.2f} pts" + (f" - {', '.join(a['temas'])}" if a.get("temas") else "") + ")"
+                    for a in actividades_def[:4]
+                )
+                hechos.append(f"Actividades con nota menor a 7.00: {acts_str}.")
 
             inferencias = [
                 f"Nivel de atención estimado: {diag['nivelRiesgo']} (confianza media). Se calcula solo "
@@ -269,6 +284,20 @@ Si la pregunta requiere un dato que no está en <datos_verificados>, indícalo e
                 )
             else:
                 inferencias.append(comp_info.get("motivo", "No hay notas por componente registradas."))
+
+        if "analisis_temas" in datos:
+            temas_info = datos["analisis_temas"]
+            if temas_info.get("disponible") and temas_info.get("temas"):
+                top_temas = ", ".join(
+                    f"{t['tema']} (promedio {t['promedioTema']:.2f})"
+                    if t.get("promedioTema") is not None
+                    else f"{t['tema']} ({t['estudiantesConDeficiencia']} est. con rezago)"
+                    for t in temas_info["temas"][:3]
+                )
+                hechos.append(f"Temas con mayor dificultad observada: {top_temas}.")
+                recomendaciones.append(
+                    f"Priorizar el repaso del tema «{temas_info['temaCritico']}» en la próxima sesión."
+                )
 
         if en_riesgo > 0:
             inferencias.append(

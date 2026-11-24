@@ -308,3 +308,61 @@ def test_anonimizacion_texto_libre_e_historial_sin_fugas():
         assert fuga not in prompt_enviado
 
     assert "EST-001" in prompt_enviado
+
+
+def test_chat_detalle_por_actividad_y_tema_en_modo_estudiante():
+    payload = {
+        "modo": "estudiante",
+        "mensaje": "¿En qué tema y actividad específica está mal este estudiante?",
+        "contextoCurso": CONTEXTO_PRUEBA.model_dump(),
+        "estudianteSeleccionado": {
+            "codigo": "EST-010",
+            "notaFinal": 5.60,
+            "enRiesgo": True,
+            "componentes": {"Tareas": 5.65, "APE": 5.80, "Examen": 5.40},
+            "temasDeficientes": ["Fundamentos y roles Scrum"],
+            "evaluaciones": [
+                {
+                    "nombre": "Evaluación 1.1: Manifiesto Ágil",
+                    "componente": "Tareas",
+                    "nota": 5.50,
+                    "temas": ["Fundamentos y roles Scrum"],
+                },
+                {
+                    "nombre": "Taller APE 1: Planning Poker",
+                    "componente": "APE",
+                    "nota": 7.50,
+                    "temas": ["Historias de usuario y estimación"],
+                },
+            ],
+        },
+        "estudiantesCurso": [],
+    }
+    response = client.post("/api/agent/chat", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert "tool_diagnostico_estudiante" in body["toolsEjecutadas"]
+    assert "Evaluación 1.1: Manifiesto Ágil" in body["respuesta"]
+    assert "Fundamentos y roles Scrum" in body["respuesta"]
+
+
+def test_chat_gemini_desactiva_thinking_y_amplia_tokens_para_no_truncar():
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = SimpleNamespace(
+        text="Hechos verificados:\n- Datos completos.\n\nInferencias:\n- Confianza alta.\n\nRecomendaciones:\n- Refuerzo."
+    )
+    service.client = fake_client
+
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Qué temas tienen mayor dificultad en el curso?",
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+    resp = service.procesar_chat(solicitud)
+    assert "tool_analisis_temas" in resp.toolsEjecutadas
+    cfg = fake_client.models.generate_content.call_args.kwargs["config"]
+    assert cfg.max_output_tokens >= 2048
+    assert cfg.thinking_config.thinking_budget == 0

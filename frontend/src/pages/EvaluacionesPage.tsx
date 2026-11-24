@@ -498,6 +498,19 @@ export function EvaluacionesPage() {
                             {est.apellidos} {est.nombres}
                           </p>
                           <p className="text-[11px] text-[#71717a]">{est.correo}</p>
+                          {est.temasDeficientes.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {est.temasDeficientes.map((t) => (
+                                <span
+                                  key={t.temaId}
+                                  className="inline-block bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                >
+                                  {t.nombreTema}
+                                  {t.notaObtenida !== null ? ` (${t.notaObtenida.toFixed(2)})` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-right font-medium text-[#18181b]">
                           {(compTareas?.promedioComponente ?? 0).toFixed(2)}
@@ -564,22 +577,36 @@ export function EvaluacionesPage() {
                                     comp.evaluaciones.map((ev) => (
                                       <div
                                         key={ev.itemEvaluacionId}
-                                        className="flex justify-between items-center text-[11px] border-t border-[#f4f4f5] pt-1"
+                                        className="border-t border-[#f4f4f5] pt-1 space-y-0.5"
                                       >
-                                        <span className="text-[#3f3f46] truncate pr-2">
-                                          {ev.nombre}
-                                        </span>
-                                        <span
-                                          className={`font-semibold shrink-0 ${
-                                            ev.nota === null
-                                              ? 'text-[#71717a] italic'
-                                              : ev.esDeficiente
-                                              ? 'text-red-700'
-                                              : 'text-[#18181b]'
-                                          }`}
-                                        >
-                                          {ev.nota === null ? 'Sin nota' : `${ev.nota.toFixed(2)} / 10`}
-                                        </span>
+                                        <div className="flex justify-between items-center text-[11px]">
+                                          <span className="text-[#3f3f46] truncate pr-2">
+                                            {ev.nombre}
+                                          </span>
+                                          <span
+                                            className={`font-semibold shrink-0 ${
+                                              ev.nota === null
+                                                ? 'text-[#71717a] italic'
+                                                : ev.esDeficiente
+                                                ? 'text-red-700'
+                                                : 'text-[#18181b]'
+                                            }`}
+                                          >
+                                            {ev.nota === null ? 'Sin nota' : `${ev.nota.toFixed(2)} / 10`}
+                                          </span>
+                                        </div>
+                                        {ev.temas && ev.temas.length > 0 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {ev.temas.map((tm) => (
+                                              <span
+                                                key={tm.temaId}
+                                                className="text-[10px] text-[#52525b] bg-[#f4f4f5] px-1.5 py-0.2 rounded"
+                                              >
+                                                Tema: {tm.nombre}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
                                     ))
                                   )}

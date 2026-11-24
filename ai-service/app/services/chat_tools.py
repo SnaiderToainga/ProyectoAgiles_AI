@@ -118,6 +118,29 @@ class ChatTools:
             dedicacion = 1
             enfoque = "Profundización autónoma y proyectos de extensión"
 
+        actividades_deficientes = [
+            {
+                "nombre": ev.nombre,
+                "componente": ev.componente,
+                "nota": round(ev.nota, 2),
+                "temas": ev.temas,
+            }
+            for ev in estudiante.evaluaciones
+            if ev.nota < 7.0
+        ]
+        actividades_deficientes.sort(key=lambda x: x["nota"])
+
+        detalle_por_tema: Dict[str, List[Dict]] = {}
+        for ev in estudiante.evaluaciones:
+            for tema in ev.temas or ["Sin tema asignado"]:
+                detalle_por_tema.setdefault(tema, []).append(
+                    {
+                        "actividad": ev.nombre,
+                        "componente": ev.componente,
+                        "nota": round(ev.nota, 2),
+                    }
+                )
+
         return {
             "codigo": estudiante.codigo,
             "notaFinal": nota,
@@ -127,6 +150,74 @@ class ChatTools:
             "enfoquePedagogico": enfoque,
             "temasDeficientes": estudiante.temasDeficientes,
             "componentes": estudiante.componentes or {},
+            "actividadesDeficientes": actividades_deficientes,
+            "detallePorTema": {
+                tema: {
+                    "promedioTema": round(sum(a["nota"] for a in acts) / len(acts), 2),
+                    "actividades": acts,
+                }
+                for tema, acts in detalle_por_tema.items()
+            },
+        }
+
+    @staticmethod
+    def tool_analisis_temas(estudiantes: List[EstudianteChatDto]) -> Dict:
+        """Agrega calificaciones por tema curricular para detectar en qué tema hay mayor rezago."""
+        acum_temas: Dict[str, Dict] = {}
+        for e in estudiantes:
+            for ev in e.evaluaciones:
+                for tema in ev.temas:
+                    registro = acum_temas.setdefault(
+                        tema,
+                        {
+                            "notas": [],
+                            "reprobaciones": 0,
+                            "estudiantesEnRiesgo": set(),
+                            "actividades": set(),
+                        },
+                    )
+                    registro["notas"].append(ev.nota)
+                    registro["actividades"].add(ev.nombre)
+                    if ev.nota < 7.0:
+                        registro["reprobaciones"] += 1
+                        registro["estudiantesEnRiesgo"].add(e.codigo)
+
+        if not acum_temas:
+            # Respaldo con conteo de temasDeficientes si no llegaron evaluaciones detalladas
+            conteo_temas: Dict[str, int] = {}
+            for e in estudiantes:
+                for tema in e.temasDeficientes:
+                    conteo_temas[tema] = conteo_temas.get(tema, 0) + 1
+            if not conteo_temas:
+                return {"disponible": False, "temas": [], "motivo": "No hay detalle de temas registrado."}
+            ordenados = sorted(conteo_temas.items(), key=lambda x: x[1], reverse=True)
+            return {
+                "disponible": True,
+                "temas": [
+                    {"tema": t, "estudiantesConDeficiencia": c, "promedioTema": None, "actividades": []}
+                    for t, c in ordenados
+                ],
+                "temaCritico": ordenados[0][0],
+            }
+
+        resumen_temas = []
+        for tema, info in acum_temas.items():
+            notas = info["notas"]
+            resumen_temas.append(
+                {
+                    "tema": tema,
+                    "promedioTema": round(sum(notas) / len(notas), 2),
+                    "estudiantesConDeficiencia": len(info["estudiantesEnRiesgo"]),
+                    "evaluacionesBajoUmbral": info["reprobaciones"],
+                    "actividades": sorted(info["actividades"]),
+                }
+            )
+        resumen_temas.sort(key=lambda x: (x["promedioTema"], -x["estudiantesConDeficiencia"]))
+        return {
+            "disponible": True,
+            "temaCritico": resumen_temas[0]["tema"],
+            "promedioTemaCritico": resumen_temas[0]["promedioTema"],
+            "temas": resumen_temas,
         }
 
     @staticmethod
