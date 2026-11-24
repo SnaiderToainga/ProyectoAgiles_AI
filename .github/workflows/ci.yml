@@ -81,6 +81,11 @@ jobs:
         cd frontend
         npm install
 
+    - name: Ejecutar Pruebas Unitarias Frontend (Vitest)
+      run: |
+        cd frontend
+        npm test
+
     - name: Compilar Frontend Vite y Typecheck
       run: |
         cd frontend
