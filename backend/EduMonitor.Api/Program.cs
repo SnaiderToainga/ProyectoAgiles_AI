@@ -6,16 +6,19 @@ using EduMonitor.Infrastructure.Data;
 using EduMonitor.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // DbContext SQL Server Express
 builder.Services.AddDbContext<EduMonitorDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+           .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
 builder.Services.AddDbContext<AcademicoDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("AcademicoConnection")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("AcademicoConnection"))
+           .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
 // Servicios de Catálogo y Sincronización Moodle
 builder.Services.AddScoped<CatalogoService>();
@@ -82,6 +85,14 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 
 var app = builder.Build();
+
+// Migraciones automaticas opcionales (despliegue con Docker Compose)
+if (builder.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<EduMonitorDbContext>().Database.Migrate();
+    scope.ServiceProvider.GetRequiredService<AcademicoDbContext>().Database.Migrate();
+}
 
 // Inicializador de contraseñas reales con Salt PBKDF2
 if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Development:ResetExamplePasswords"))

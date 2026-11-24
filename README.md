@@ -1,4 +1,4 @@
-﻿# SISRA — EduMonitor AI
+# SISRA — EduMonitor AI
 > **Sistema Inteligente de Seguimiento y Refuerzo Académico**  
 > Proyecto de la Facultad de Ingeniería en Sistemas, Electrónica e Industrial (FISEI)  
 > **Universidad Técnica de Ambato (UTA)**  
@@ -159,6 +159,15 @@ npm install
 npm run dev
 ```
 *Abre tu navegador en `http://localhost:5173` para interactuar con la plataforma.*
+
+
+### Alternativa: Despliegue unificado con Docker Compose (T-13.7)
+Levanta SQL Server, AI Service, Backend API y Gateway YARP con un solo comando. El Gateway (`http://localhost:5000`) es el unico servicio expuesto y exige JWT en `/api/academico`, `/api/moodle` y `/api/agent`:
+```powershell
+Copy-Item .env.example .env      # ajustar MSSQL_SA_PASSWORD, JWT_KEY, GEMINI_API_KEY y MOODLE_TOKEN
+docker compose up -d --build
+```
+La API aplica las migraciones al iniciar (`Database__MigrateOnStartup`). Moodle sigue en `docker/moodle` (Paso 1) y el frontend se inicia con `npm run dev` (Paso 6).
 
 ---
 

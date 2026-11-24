@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -39,13 +39,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// 4. Puerto por defecto para ejecucion local; en Docker se define con ASPNETCORE_URLS
+if (string.IsNullOrWhiteSpace(builder.Configuration["ASPNETCORE_URLS"]) && string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
+{
+    builder.WebHost.UseUrls("http://localhost:5000");
+}
+
 var app = builder.Build();
 
 app.UseCors("CorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// 4. Mapear el enrutador de YARP
+// 5. Mapear el enrutador de YARP
 app.MapReverseProxy();
 
-app.Run("http://localhost:5000");
+app.Run();
