@@ -32,8 +32,8 @@ class ChatService:
         self.client: Optional[genai.Client] = None
         if self.api_key:
             try:
-                # Presupuesto estricto de máximo 28 segundos para respetar el límite global
-                timeout_ms = min(max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000), 28000)
+                # Límite por llamada de máximo 14s para respuestas ágiles y fallback rápido ante saturación
+                timeout_ms = min(max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000), 14000)
                 self.client = genai.Client(
                     api_key=self.api_key,
                     http_options=types.HttpOptions(timeout=timeout_ms),
@@ -120,8 +120,8 @@ Si en <datos_verificados> hay actividades específicas o análisis por tema (`ac
 Si la pregunta requiere un dato que no está en <datos_verificados>, indícalo en lugar de suponerlo.
 """
 
-        # 4.2 y 4.3: Presupuesto global estricto de 28s y modelo de respaldo unificado con gemini_service.py
-        PRESUPUESTO_TOTAL_S = 28.0
+        # 4.2 y 4.3: Presupuesto ágil de 18s (respeta el límite global <= 28s)
+        PRESUPUESTO_TOTAL_S = 18.0
         TIEMPO_MINIMO_LLAMADA_S = 3.0
 
         modelos_a_probar = [settings.GEMINI_MODEL]

@@ -195,6 +195,17 @@ function MensajeAsistenteFormateado({ texto }: { texto: string }) {
   )
 }
 
+const MENSAJE_BIENVENIDA = (): MensajeChatUi => ({
+  id: 'bienvenida',
+  rol: 'assistant',
+  texto:
+    'Hola, docente. Puedo analizar el rendimiento del curso por componente y por tema curricular, o profundizar en las actividades específicas donde cada estudiante necesita refuerzo.',
+  hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+})
+
+const storageKeyChat = (matId: number) => `edumonitor_chat_v1_${matId}`
+const STORAGE_KEY_ABIERTO = 'edumonitor_chat_abierto_v1'
+
 export function ChatIaWidget({
   materias,
   materiaSeleccionadaId,
@@ -206,41 +217,93 @@ export function ChatIaWidget({
   onAbrir,
 }: ChatIaWidgetProps) {
   const navigate = useNavigate()
-  const [abiertoInterno, setAbiertoInterno] = useState(false)
+  const [abiertoInterno, setAbiertoInterno] = useState(() => {
+    try {
+      return sessionStorage.getItem(STORAGE_KEY_ABIERTO) === '1'
+    } catch {
+      return false
+    }
+  })
   const abierto = abiertoExterno !== undefined ? abiertoExterno : abiertoInterno
 
   const setAbierto = (val: boolean) => {
     setAbiertoInterno(val)
+    try {
+      if (val) sessionStorage.setItem(STORAGE_KEY_ABIERTO, '1')
+      else sessionStorage.removeItem(STORAGE_KEY_ABIERTO)
+    } catch {
+      // Ignorar si sessionStorage no esta disponible
+    }
     if (val && onAbrir) onAbrir()
     if (!val && onCerrar) onCerrar()
   }
 
-  const [modo, setModo] = useState<'curso' | 'estudiante'>('curso')
   const [materiaId, setMateriaId] = useState<number>(
     materiaSeleccionadaId || materias[0]?.id || 1
   )
+
+  const cargarEstadoGuardado = (matId: number) => {
+    try {
+      const raw = sessionStorage.getItem(storageKeyChat(matId))
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          mensajes?: MensajeChatUi[]
+          modo?: 'curso' | 'estudiante'
+          estudianteId?: number | null
+        }
+        if (Array.isArray(parsed.mensajes) && parsed.mensajes.length > 0) {
+          return parsed
+        }
+      }
+    } catch {
+      // Ignorar JSON corrupto
+    }
+    return null
+  }
+
+  const guardadoInicial = cargarEstadoGuardado(materiaId)
+  const [modo, setModo] = useState<'curso' | 'estudiante'>(guardadoInicial?.modo || 'curso')
   const [estudianteId, setEstudianteId] = useState<number | null>(
-    estudiantePreseleccionado?.estudianteId || null
+    estudiantePreseleccionado?.estudianteId ?? guardadoInicial?.estudianteId ?? null
   )
   const [mensajeInput, setMensajeInput] = useState('')
   const [cargando, setCargando] = useState(false)
-  const [mensajes, setMensajes] = useState<MensajeChatUi[]>([
-    {
-      id: 'bienvenida',
-      rol: 'assistant',
-      texto:
-        'Hola, docente. Puedo analizar el rendimiento del curso por componente y por tema curricular, o profundizar en las actividades específicas donde cada estudiante necesita refuerzo.',
-      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
-  ])
+  const [mensajes, setMensajes] = useState<MensajeChatUi[]>(
+    guardadoInicial?.mensajes || [MENSAJE_BIENVENIDA()]
+  )
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (materiaSeleccionadaId) {
+    if (materiaSeleccionadaId && materiaSeleccionadaId !== materiaId) {
       setMateriaId(materiaSeleccionadaId)
+      const prev = cargarEstadoGuardado(materiaSeleccionadaId)
+      if (prev) {
+        setMensajes(prev.mensajes || [MENSAJE_BIENVENIDA()])
+        setModo(prev.modo || 'curso')
+        setEstudianteId(prev.estudianteId ?? null)
+      } else {
+        setMensajes([MENSAJE_BIENVENIDA()])
+        setModo('curso')
+        setEstudianteId(null)
+      }
     }
-  }, [materiaSeleccionadaId])
+  }, [materiaSeleccionadaId, materiaId])
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        storageKeyChat(materiaId),
+        JSON.stringify({
+          mensajes: mensajes.slice(-30),
+          modo,
+          estudianteId,
+        })
+      )
+    } catch {
+      // Ignorar limite de cuota
+    }
+  }, [mensajes, modo, estudianteId, materiaId])
 
   useEffect(() => {
     if (estudiantePreseleccionado) {
@@ -506,16 +569,22 @@ export function ChatIaWidget({
 
             <div className="flex items-center gap-1">
               <button
-                onClick={() =>
-                  setMensajes([
+                onClick={() => {
+                  const reinicio: MensajeChatUi[] = [
                     {
                       id: 'reinicio',
                       rol: 'assistant',
                       texto: 'Conversación reiniciada. ¿En qué tema o estudiante deseas enfocarte ahora?',
                       hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     },
-                  ])
-                }
+                  ]
+                  setMensajes(reinicio)
+                  try {
+                    sessionStorage.removeItem(storageKeyChat(materiaId))
+                  } catch {
+                    // Ignorar
+                  }
+                }}
                 title="Limpiar conversación"
                 className="p-1 text-white/70 hover:text-white rounded hover:bg-white/10 transition"
               >
@@ -674,7 +743,11 @@ export function ChatIaWidget({
                         <button
                           type="button"
                           onClick={() => {
-                            setAbierto(false)
+                            try {
+                              sessionStorage.setItem(STORAGE_KEY_ABIERTO, '1')
+                            } catch {
+                              // Ignorar
+                            }
                             navigate(`/tutoria?materia=${materiaActual?.id || 1}&estudiante=${m.estudianteIdMensaje}`)
                           }}
                           className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#8B151A]/10 hover:bg-[#8B151A] hover:text-white text-[#8B151A] px-2.5 py-1 rounded transition cursor-pointer"

@@ -18,8 +18,8 @@ class GeminiService:
         self.client = None
         if self.api_key:
             try:
-                # Google GenAI exige un deadline mínimo de 10 segundos (10000 ms)
-                timeout_ms = max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000)
+                # Google GenAI exige un deadline mínimo de 10 segundos (10000 ms); tope de 14s para evitar esperas largas
+                timeout_ms = min(max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000), 14000)
                 self.client = genai.Client(
                     api_key=self.api_key,
                     http_options=types.HttpOptions(timeout=timeout_ms),
@@ -65,6 +65,7 @@ Reglas obligatorias:
                         response_mime_type="application/json",
                         response_schema=RespuestaPlan,
                         temperature=0.2,
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                     ),
                 )
 

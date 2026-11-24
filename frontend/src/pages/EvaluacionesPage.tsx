@@ -33,6 +33,7 @@ export function EvaluacionesPage() {
   const [cargandoDatos, setCargandoDatos] = useState(false)
   const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [sincronizando, setSincronizando] = useState(false)
+  const [publicandoLote, setPublicandoLote] = useState(false)
   const [alertaSync, setAlertaSync] = useState<AlertaEstado | null>(null)
   const [estudianteExpandidoId, setEstudianteExpandidoId] = useState<number | null>(null)
 
@@ -128,6 +129,16 @@ export function EvaluacionesPage() {
     )
   }, [evaluaciones, parcialActual])
 
+  const pendientesPublicar = useMemo(
+    () => evaluacionesVisibles.filter((ev) => !ev.publicado),
+    [evaluacionesVisibles]
+  )
+
+  const aprobablesRapido = useMemo(
+    () => pendientesPublicar.filter((ev) => ev.tipo !== 0 && ev.temaIds.length > 0),
+    [pendientesPublicar]
+  )
+
   const metricasCurso = useMemo(() => {
     if (rendimiento.length === 0) {
       return {
@@ -197,6 +208,62 @@ export function EvaluacionesPage() {
       })
     } finally {
       setSincronizando(false)
+    }
+  }
+
+  const publicarEvaluacionRapida = async (ev: EvaluacionDto) => {
+    if (!materiaActual || !parcialActual || publicandoLote) return
+    if (ev.tipo === 0 || ev.temaIds.length === 0) {
+      abrirModalClasificar(ev)
+      return
+    }
+    setPublicandoLote(true)
+    try {
+      await clienteAxios.put(`/academico/evaluaciones/${ev.id}/clasificacion`, {
+        parcialId: parcialActual.id,
+        tipo: ev.tipo,
+        temaIds: ev.temaIds,
+      })
+      await cargarDatosCurso(materiaActual.id, parcialActual.id)
+      setAlertaSync({
+        tipo: 'exito',
+        mensaje: `Actividad "${ev.nombre}" aprobada y publicada en el cálculo 30/30/40.`,
+      })
+    } catch {
+      setAlertaSync({
+        tipo: 'error',
+        mensaje: `No se pudo publicar la actividad "${ev.nombre}". Intenta editarla manualmente.`,
+      })
+    } finally {
+      setPublicandoLote(false)
+    }
+  }
+
+  const publicarTodasPendientes = async () => {
+    if (!materiaActual || !parcialActual || publicandoLote || aprobablesRapido.length === 0) return
+    setPublicandoLote(true)
+    try {
+      await Promise.all(
+        aprobablesRapido.map((ev) =>
+          clienteAxios.put(`/academico/evaluaciones/${ev.id}/clasificacion`, {
+            parcialId: parcialActual.id,
+            tipo: ev.tipo,
+            temaIds: ev.temaIds,
+          })
+        )
+      )
+      await cargarDatosCurso(materiaActual.id, parcialActual.id)
+      setAlertaSync({
+        tipo: 'exito',
+        mensaje: `Se aprobaron y publicaron ${aprobablesRapido.length} actividad(es) en el cálculo 30/30/40.`,
+      })
+    } catch {
+      setAlertaSync({
+        tipo: 'error',
+        mensaje: 'No se pudieron aprobar todas las actividades pendientes. Revisa e intenta nuevamente.',
+      })
+    } finally {
+      setPublicandoLote(false)
     }
   }
 
@@ -367,6 +434,32 @@ export function EvaluacionesPage() {
           }`}
         >
           {alertaSync.mensaje}
+        </div>
+      )}
+
+      {/* Aviso interactivo para aprobar actividades importadas de Moodle en 1 clic */}
+      {pendientesPublicar.length > 0 && (
+        <div className="p-3.5 rounded-md border border-amber-300 bg-amber-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="text-xs text-amber-900">
+            <p className="font-semibold">
+              Hay {pendientesPublicar.length} actividad(es) de este parcial pendientes de aprobar para reflejarse en el cálculo 30/30/40.
+            </p>
+            <p className="text-[11px] text-amber-800 mt-0.5">
+              Ya traen su clasificación preliminar y temas vinculados desde Moodle; puedes editarlas individualmente abajo o aprobarlas todas juntas.
+            </p>
+          </div>
+          {aprobablesRapido.length > 0 && (
+            <button
+              type="button"
+              onClick={publicarTodasPendientes}
+              disabled={publicandoLote}
+              className="shrink-0 px-3.5 py-2 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded text-xs font-semibold transition cursor-pointer"
+            >
+              {publicandoLote
+                ? 'Publicando actividades...'
+                : `Aprobar y publicar todas (${aprobablesRapido.length})`}
+            </button>
+          )}
         </div>
       )}
 
@@ -627,13 +720,27 @@ export function EvaluacionesPage() {
 
       {/* Tabla de Actividades Académicas Registradas / Importadas */}
       <div className="bg-white rounded-md border border-[#e4e4e7] overflow-hidden">
-        <div className="p-4 border-b border-[#e4e4e7] flex items-center justify-between">
-          <h2 className="font-bold text-sm text-[#18181b]">
-            Actividades de Evaluación — {materiaActual.nombre}
-          </h2>
-          <span className="text-xs text-[#71717a]">
-            {evaluacionesVisibles.length} actividad(es)
-          </span>
+        <div className="p-4 border-b border-[#e4e4e7] flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-bold text-sm text-[#18181b]">
+              Actividades de Evaluación — {materiaActual.nombre}
+            </h2>
+            <p className="text-[11px] text-[#71717a]">
+              {evaluacionesVisibles.length} actividad(es) • {pendientesPublicar.length} pendiente(s) de publicar
+            </p>
+          </div>
+          {aprobablesRapido.length > 0 && (
+            <button
+              type="button"
+              onClick={publicarTodasPendientes}
+              disabled={publicandoLote}
+              className="px-3 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded text-[11px] font-semibold transition cursor-pointer"
+            >
+              {publicandoLote
+                ? 'Publicando...'
+                : `Aprobar pendientes (${aprobablesRapido.length})`}
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -659,7 +766,18 @@ export function EvaluacionesPage() {
                   const temas = temasDisponibles.filter((t) => ev.temaIds.includes(t.id))
                   return (
                     <tr key={ev.id} className="hover:bg-[#fafafa] transition">
-                      <td className="py-3 px-4 font-medium text-[#18181b]">{ev.nombre}</td>
+                      <td className="py-3 px-4">
+                        <p className="font-medium text-[#18181b]">{ev.nombre}</p>
+                        <span
+                          className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                            ev.publicado
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                          }`}
+                        >
+                          {ev.publicado ? 'Publicada en cálculo' : 'Pendiente de aprobar'}
+                        </span>
+                      </td>
                       <td className="py-3 px-4">
                         <span
                           className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
@@ -698,13 +816,25 @@ export function EvaluacionesPage() {
                         </div>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => abrirModalClasificar(ev)}
-                          className="text-xs font-semibold text-[#8B151A] hover:underline cursor-pointer"
-                        >
-                          {ev.tipo === 0 ? 'Clasificar' : 'Editar'}
-                        </button>
+                        <div className="flex items-center justify-center gap-3">
+                          {!ev.publicado && ev.tipo !== 0 && ev.temaIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => publicarEvaluacionRapida(ev)}
+                              disabled={publicandoLote}
+                              className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50 cursor-pointer"
+                            >
+                              Publicar
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => abrirModalClasificar(ev)}
+                            className="text-xs font-semibold text-[#8B151A] hover:underline cursor-pointer"
+                          >
+                            {ev.tipo === 0 ? 'Clasificar' : 'Editar'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
