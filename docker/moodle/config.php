@@ -14,5 +14,7 @@ $CFG->wwwroot = 'http://localhost:8080';
 $CFG->dataroot = '/var/moodledata';
 $CFG->admin = 'admin';
 $CFG->directorypermissions = 02770;
+// Paquetes de idioma incluidos en la imagen (español).
+$CFG->langotherroot = '/opt/moodle-lang';
 $CFG->passwordpolicy = 1;
 require_once(__DIR__ . '/lib/setup.php');

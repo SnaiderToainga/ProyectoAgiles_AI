@@ -60,6 +60,24 @@ tres estudiantes y tres ítems manuales (Tarea, APE, Examen) con notas originale
 No se fabrican entregas: las notas ausentes de esos ítems serán NoDeterminado en el backend.
 La clasificación curricular de los ítems importados se realiza luego mediante los endpoints académicos.
 
+## Identidad visual SISRA
+
+`scripts/branding.php` se ejecuta en cada arranque, después de `provision.php`, y solo aplica lo que
+haya cambiado. Usa el tema estándar Boost configurado, sin temas de terceros:
+
+- Nombre del sitio «SISRA · Aula Virtual FISEI», zona horaria America/Guayaquil e interfaz en
+  español (paquete oficial `es` de Moodle 4.5, descargado al construir la imagen en `/opt/moodle-lang`).
+- Logo, logo compacto, favicon, fondo de acceso e imágenes de curso propios en `branding/` (SVG),
+  más estilos en `branding/sisra.scss` (azul `#1F3B73` y rojo `#8B151A`).
+- Categorías «Octubre 2026 – Febrero 2027 → SOFTWARE → Cuarto Semestre» con SOF-401 y SOF-402;
+  la categoría inicial «Category 1» queda oculta si está vacía.
+- Página principal con buscador de cursos, árbol de categorías y bloque «Usuarios en línea».
+- Acceso sin botón de invitado y con el aviso «Entorno académico de pruebas».
+
+No usa logos, fotografías ni marcas institucionales oficiales; el entorno debe seguir siendo
+reconocible como laboratorio. Los códigos de curso no cambian, por lo que la sincronización de la API
+no se ve afectada. Para aplicar cambios de `branding/`: `docker compose up -d --build`.
+
 ## Servicio REST e integración
 
 Servicio restringido `edumonitor_sprint1`, autorizado solo para el docente piloto, quien tiene rol
