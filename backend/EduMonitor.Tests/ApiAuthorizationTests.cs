@@ -70,6 +70,17 @@ public class ApiAuthorizationTests
         Assert.Equal(HttpStatusCode.Forbidden,(await c.GetAsync("/api/auth/auditoria")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,(await c.PostAsJsonAsync("/api/academico/evaluaciones",new{parcialId=1,nombre="Sin temas",tipo=1,temaIds=Array.Empty<int>()})).StatusCode);
     }
+    [Fact] public async Task GestionDeUsuariosSoloParaAdministrador()
+    {
+        using var f=new Factory();using var c=f.CreateClient();
+        var alta=new{nombreCompleto="Ing. Prueba",email="prueba.alta@example.invalid",password="Docente#2026x",rol="Docente"};
+        Assert.Equal(HttpStatusCode.Unauthorized,(await c.PostAsJsonAsync("/api/auth/usuarios",alta)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,(await c.PutAsJsonAsync("/api/auth/usuarios/1/moodle",new{moodleUserId=3})).StatusCode);
+        c.DefaultRequestHeaders.Authorization=new("Bearer",Token("Docente",77));
+        Assert.Equal(HttpStatusCode.Forbidden,(await c.GetAsync("/api/auth/usuarios")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,(await c.PostAsJsonAsync("/api/auth/usuarios",alta)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,(await c.PutAsJsonAsync("/api/auth/usuarios/1/moodle",new{moodleUserId=3})).StatusCode);
+    }
     private static string Token(string role,int user)=>new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
         "EduMonitorApi","EduMonitorClient",[new(ClaimTypes.NameIdentifier,user.ToString()),new(ClaimTypes.Role,role)],
         expires:DateTime.UtcNow.AddMinutes(5),signingCredentials:new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Factory.Key)),SecurityAlgorithms.HmacSha256)));
