@@ -78,6 +78,7 @@ export interface ResumenAcademicoEstudianteDto {
   enRiesgo: boolean
   componentes: ComponentePonderadoDto[]
   temasDeficientes: TemaCriticoDto[]
+  fotoUrl?: string | null
 }
 
 export interface SincronizacionDto {
@@ -170,4 +171,101 @@ export const PONDERACION_COMPONENTE: Record<TipoItemEvaluacion, string> = {
   1: '30%',
   2: '30%',
   3: '40%',
+}
+
+export interface MembreteInstitucionalDto {
+  universidad: string
+  facultad: string
+  carrera: string
+  sistema: string
+  tituloReporte: string
+  materiaCodigo: string
+  materiaNombre: string
+  periodoLectivo: string
+  parcialId: number
+  parcialNumero: number
+  docenteTitular: string
+  docenteCorreo: string
+  fechaEmisionUtc: string
+}
+
+export interface FirmaDocenteDto {
+  nombreDocente: string
+  correoDocente: string
+  cargo: string
+  etiquetaCasillero: string
+  leyendaConformidad: string
+  lineaFirma: string
+}
+
+export interface PiePaginaReporteDto {
+  textoInstitucional: string
+  plantillaNumeracion: string
+  numeracionInicial: string
+  totalPaginasEstimadas: number
+  registrosPorPagina: number
+  paginas: string[]
+  codigoDocumento: string
+  fechaEmisionUtc: string
+}
+
+export interface ResumenEstadisticoReporteDto {
+  totalEstudiantes: number
+  totalAprobados: number
+  totalEnRiesgo: number
+  porcentajeAprobados: number
+  porcentajeEnRiesgo: number
+  promedioGeneralCurso: number
+  promedioTareasCurso: number
+  aporteTareasCurso: number
+  promedioApeCurso: number
+  aporteApeCurso: number
+  promedioExamenCurso: number
+  aporteExamenCurso: number
+  umbralAprobacion: number
+}
+
+export interface FilaMatrizConsolidadaDto {
+  numeroOrden: number
+  estudianteId: number
+  nombres: string
+  apellidos: string
+  nombreCompleto: string
+  correo: string
+  fotoUrl?: string | null
+  promedioTareas: number
+  aporteTareas: number
+  promedioApe: number
+  aporteApe: number
+  promedioExamen: number
+  aporteExamen: number
+  notaFinalParcial: number
+  enRiesgo: boolean
+  estadoAcademico: string
+  componentes: ComponentePonderadoDto[]
+  temasDeficientes: TemaCriticoDto[]
+  planRefuerzoVigente: PlanRefuerzoDto | null
+}
+
+export interface ReporteConsolidadoCursoDto {
+  cursoId: number
+  parcialId: number
+  parcialNumero: number
+  membrete: MembreteInstitucionalDto
+  resumenEstadistico: ResumenEstadisticoReporteDto
+  estudiantes: FilaMatrizConsolidadaDto[]
+  bloqueFirma: FirmaDocenteDto
+  piePagina: PiePaginaReporteDto
+}
+
+export interface ReporteIndividualTutoriaDto {
+  cursoId: number
+  parcialId: number
+  parcialNumero: number
+  membrete: MembreteInstitucionalDto
+  estudiante: FilaMatrizConsolidadaDto
+  causaPrincipalRendimiento: string
+  planRefuerzo: PlanRefuerzoDto | null
+  bloqueFirma: FirmaDocenteDto
+  piePagina: PiePaginaReporteDto
 }
