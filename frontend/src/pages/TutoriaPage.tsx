@@ -2,15 +2,26 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import clienteAxios from '../api/clienteAxios'
+import { AvatarEstudiante } from '../components/AvatarEstudiante'
+import { exportarPdfReporteIndividual } from '../utils/pdfReportesAcademicos'
 import {
   NOMBRE_COMPONENTE,
   type CrearPlanRefuerzoRequest,
   type MateriaDto,
   type PlanRefuerzoDto,
+  type ReporteIndividualTutoriaDto,
   type RespuestaPlanIa,
   type ResumenAcademicoEstudianteDto,
   type SolicitudPlanIa,
 } from '../types/academico'
+
+function extraerMensajeErrorApi(error: unknown): string | undefined {
+  if (!axios.isAxiosError(error)) return undefined
+  const data = error.response?.data
+  if (!data || typeof data !== 'object') return undefined
+  const payload = data as { detail?: string; title?: string; mensaje?: string }
+  return payload.detail || payload.title || payload.mensaje
+}
 
 export function TutoriaPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -36,6 +47,7 @@ export function TutoriaPage() {
   const [cargando, setCargando] = useState(true)
   const [cargandoCurso, setCargandoCurso] = useState(false)
   const [generandoIa, setGenerandoIa] = useState(false)
+  const [exportandoPdf, setExportandoPdf] = useState(false)
   const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [alertaPlan, setAlertaPlan] = useState<string | null>(null)
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
@@ -187,11 +199,25 @@ export function TutoriaPage() {
     }
   }, [estudianteActual])
 
-  const handleAprobarYGenerarPdf = () => {
-    setMensajeExito('Plan aprobado y consolidado. Abriendo vista de impresión / guardado PDF...')
-    setTimeout(() => {
-      window.print()
-    }, 400)
+  const handleAprobarYGenerarPdf = async () => {
+    if (!materiaActual || !parcialActual || !estudianteActual || exportandoPdf) return
+    setExportandoPdf(true)
+    setAlertaPlan(null)
+    try {
+      const { data } = await clienteAxios.get<ReporteIndividualTutoriaDto>(
+        `/academico/materias/${materiaActual.id}/estudiantes/${estudianteActual.estudianteId}/reporte-tutoria`,
+        { params: { parcialId: parcialActual.id } }
+      )
+      await exportarPdfReporteIndividual(data, planActual?.diagnosticoGeneral)
+      setMensajeExito(
+        `Informe oficial PDF de tutoría generado para ${estudianteActual.apellidos} ${estudianteActual.nombres}.`
+      )
+    } catch (error) {
+      const detalle = extraerMensajeErrorApi(error)
+      setAlertaPlan(detalle || 'No se pudo generar el informe oficial de tutoría en PDF.')
+    } finally {
+      setExportandoPdf(false)
+    }
   }
 
   const handleAbrirEditar = () => {
@@ -204,9 +230,13 @@ export function TutoriaPage() {
   const handleGuardarEdicion = (e: React.FormEvent) => {
     e.preventDefault()
     if (planActual) {
-      planActual.diagnosticoGeneral = diagnosticoEditado
+      setPlanesGuardados((prev) =>
+        prev.map((p) =>
+          p.id === planActual.id ? { ...p, diagnosticoGeneral: diagnosticoEditado } : p
+        )
+      )
       setModalEditar(false)
-      setMensajeExito('Diagnóstico cualitativo actualizado y re-persistido para el estudiante.')
+      setMensajeExito('Diagnóstico cualitativo actualizado y listo para exportar en PDF.')
     }
   }
 
@@ -439,10 +469,19 @@ export function TutoriaPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-[#18181b]">
-                        {est.apellidos} {est.nombres}
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 text-[11px] font-bold">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <AvatarEstudiante
+                          nombres={est.nombres}
+                          apellidos={est.apellidos}
+                          fotoUrl={est.fotoUrl}
+                          enRiesgo={est.enRiesgo}
+                          size="sm"
+                        />
+                        <span className="text-xs font-bold text-[#18181b] truncate">
+                          {est.apellidos} {est.nombres}
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 text-[11px] font-bold shrink-0">
                         {est.notaFinalParcial.toFixed(2)}
                       </span>
                     </div>
@@ -468,17 +507,26 @@ export function TutoriaPage() {
               {/* Resumen de Brechas y Botón Generar Plan */}
               <div className="bg-white border border-[#e4e4e7] rounded-md p-5 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-bold text-[#18181b]">
-                      {estudianteActual.apellidos} {estudianteActual.nombres}
-                    </h2>
-                    <p className="text-xs text-[#52525b]">
-                      Promedio Parcial {parcialActual.numero}:{' '}
-                      <strong className="text-red-700">
-                        {estudianteActual.notaFinalParcial.toFixed(2)} / 10.00
-                      </strong>{' '}
-                      • Condición: <strong>En Riesgo</strong>
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <AvatarEstudiante
+                      nombres={estudianteActual.nombres}
+                      apellidos={estudianteActual.apellidos}
+                      fotoUrl={estudianteActual.fotoUrl}
+                      enRiesgo={estudianteActual.enRiesgo}
+                      size="lg"
+                    />
+                    <div>
+                      <h2 className="text-sm font-bold text-[#18181b]">
+                        {estudianteActual.apellidos} {estudianteActual.nombres}
+                      </h2>
+                      <p className="text-xs text-[#52525b]">
+                        Promedio Parcial {parcialActual.numero}:{' '}
+                        <strong className="text-red-700">
+                          {estudianteActual.notaFinalParcial.toFixed(2)} / 10.00
+                        </strong>{' '}
+                        • Condición: <strong>En Riesgo</strong>
+                      </p>
+                    </div>
                   </div>
 
                   <button
@@ -684,12 +732,13 @@ export function TutoriaPage() {
                       <button
                         type="button"
                         onClick={handleAprobarYGenerarPdf}
-                        className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        disabled={exportandoPdf}
+                        className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                         </svg>
-                        Aprobar y Generar PDF
+                        {exportandoPdf ? 'Generando PDF...' : 'Aprobar y Generar PDF'}
                       </button>
 
                       <button

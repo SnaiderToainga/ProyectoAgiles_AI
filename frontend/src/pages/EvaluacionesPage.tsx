@@ -2,11 +2,28 @@ import { Fragment, useState, useEffect, useMemo, useCallback, type FormEvent } f
 import { Link, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import clienteAxios from '../api/clienteAxios'
+import { AvatarEstudiante } from '../components/AvatarEstudiante'
+import {
+  FiltrosCascada,
+  type EstadoFiltroAcademico,
+  type TemaCascadaOption,
+} from '../components/FiltrosCascada'
+import {
+  calcularMetricasGrupo,
+  calcularRendimientoFiltrado,
+  obtenerEvaluacionesEnAlcance,
+} from '../utils/calculoFiltrosAcademicos'
+import {
+  exportarPdfMatrizConsolidada,
+  exportarPdfReporteIndividual,
+} from '../utils/pdfReportesAcademicos'
 import {
   NOMBRE_COMPONENTE,
   PONDERACION_COMPONENTE,
   type EvaluacionDto,
   type MateriaDto,
+  type ReporteConsolidadoCursoDto,
+  type ReporteIndividualTutoriaDto,
   type ResumenAcademicoEstudianteDto,
   type SincronizacionDto,
   type TipoItemEvaluacion,
@@ -15,6 +32,14 @@ import {
 interface AlertaEstado {
   tipo: 'exito' | 'advertencia' | 'error'
   mensaje: string
+}
+
+function extraerMensajeErrorApi(error: unknown): string | undefined {
+  if (!axios.isAxiosError(error)) return undefined
+  const data = error.response?.data
+  if (!data || typeof data !== 'object') return undefined
+  const payload = data as { detail?: string; title?: string; mensaje?: string }
+  return payload.detail || payload.title || payload.mensaje
 }
 
 export function EvaluacionesPage() {
@@ -36,6 +61,17 @@ export function EvaluacionesPage() {
   const [publicandoLote, setPublicandoLote] = useState(false)
   const [alertaSync, setAlertaSync] = useState<AlertaEstado | null>(null)
   const [estudianteExpandidoId, setEstudianteExpandidoId] = useState<number | null>(null)
+  const [exportandoMatrizPdf, setExportandoMatrizPdf] = useState(false)
+  const [exportandoEstPdfId, setExportandoEstPdfId] = useState<number | null>(null)
+
+  // Filtros en cascada y paginación (T-12.6, T-12.7, T-12.8)
+  const [unidadFiltroId, setUnidadFiltroId] = useState<number | null>(null)
+  const [temaFiltroId, setTemaFiltroId] = useState<number | null>(null)
+  const [actividadFiltroId, setActividadFiltroId] = useState<number | null>(null)
+  const [estadoFiltro, setEstadoFiltro] = useState<EstadoFiltroAcademico>('todos')
+  const [busquedaEstudiante, setBusquedaEstudiante] = useState('')
+  const [paginaActual, setPaginaActual] = useState(1)
+  const [tamanoPagina, setTamanoPagina] = useState(10)
 
   // Modal de creación o clasificación de evaluación
   const [mostrarModal, setMostrarModal] = useState(false)
@@ -111,16 +147,25 @@ export function EvaluacionesPage() {
     cargarDatosCurso(materiaActual.id, parcialActual.id)
   }, [materiaActual, parcialActual, cargarDatosCurso])
 
-  const temasDisponibles = useMemo(() => {
+  const temasDisponibles = useMemo<TemaCascadaOption[]>(() => {
     if (!parcialActual) return []
     return parcialActual.unidades.flatMap((u) =>
       u.temas.map((t) => ({
         id: t.id,
         codigo: `U${u.numero}`,
         nombre: t.nombre,
+        unidadId: u.id,
       }))
     )
   }, [parcialActual])
+
+  const temasCascada = useMemo(
+    () =>
+      unidadFiltroId === null
+        ? temasDisponibles
+        : temasDisponibles.filter((t) => t.unidadId === unidadFiltroId),
+    [temasDisponibles, unidadFiltroId]
+  )
 
   const evaluacionesVisibles = useMemo(() => {
     if (!parcialActual) return []
@@ -128,6 +173,11 @@ export function EvaluacionesPage() {
       (ev) => ev.parcialId === parcialActual.id || ev.parcialId === null
     )
   }, [evaluaciones, parcialActual])
+
+  const evaluacionesPublicadas = useMemo(
+    () => evaluacionesVisibles.filter((ev) => ev.publicado && ev.tipo !== 0),
+    [evaluacionesVisibles]
+  )
 
   const pendientesPublicar = useMemo(
     () => evaluacionesVisibles.filter((ev) => !ev.publicado),
@@ -139,46 +189,154 @@ export function EvaluacionesPage() {
     [pendientesPublicar]
   )
 
-  const metricasCurso = useMemo(() => {
-    if (rendimiento.length === 0) {
-      return {
-        promTareas: '0.00',
-        aporteTareas: '0.00',
-        promApe: '0.00',
-        aporteApe: '0.00',
-        promExamen: '0.00',
-        aporteExamen: '0.00',
-        promedioCurso: '0.00',
-        totalEnRiesgo: 0,
+  const actividadesCascada = useMemo(
+    () =>
+      obtenerEvaluacionesEnAlcance(
+        evaluacionesPublicadas,
+        parcialActual,
+        unidadFiltroId,
+        temaFiltroId,
+        null
+      ),
+    [evaluacionesPublicadas, parcialActual, unidadFiltroId, temaFiltroId]
+  )
+
+  const evaluacionesEnAlcance = useMemo(
+    () =>
+      obtenerEvaluacionesEnAlcance(
+        evaluacionesPublicadas,
+        parcialActual,
+        unidadFiltroId,
+        temaFiltroId,
+        actividadFiltroId
+      ),
+    [evaluacionesPublicadas, parcialActual, unidadFiltroId, temaFiltroId, actividadFiltroId]
+  )
+
+  const actividadesTabla = useMemo(
+    () =>
+      obtenerEvaluacionesEnAlcance(
+        evaluacionesVisibles,
+        parcialActual,
+        unidadFiltroId,
+        temaFiltroId,
+        actividadFiltroId
+      ),
+    [evaluacionesVisibles, parcialActual, unidadFiltroId, temaFiltroId, actividadFiltroId]
+  )
+
+  const hayFiltroCurricular =
+    unidadFiltroId !== null || temaFiltroId !== null || actividadFiltroId !== null
+
+  const filasRendimiento = useMemo(
+    () =>
+      calcularRendimientoFiltrado(
+        rendimiento,
+        evaluacionesEnAlcance,
+        actividadFiltroId,
+        hayFiltroCurricular,
+        estadoFiltro,
+        busquedaEstudiante
+      ),
+    [
+      rendimiento,
+      evaluacionesEnAlcance,
+      actividadFiltroId,
+      hayFiltroCurricular,
+      estadoFiltro,
+      busquedaEstudiante,
+    ]
+  )
+
+  const actividadSeleccionada = useMemo(
+    () =>
+      actividadFiltroId !== null
+        ? evaluacionesPublicadas.find((e) => e.id === actividadFiltroId) ?? null
+        : null,
+    [evaluacionesPublicadas, actividadFiltroId]
+  )
+
+  const metricasCurso = useMemo(
+    () => calcularMetricasGrupo(filasRendimiento, actividadSeleccionada),
+    [filasRendimiento, actividadSeleccionada]
+  )
+
+  const totalPaginas = Math.max(1, Math.ceil(filasRendimiento.length / tamanoPagina))
+  const paginaSegura = Math.min(paginaActual, totalPaginas)
+  const indiceInicio = (paginaSegura - 1) * tamanoPagina
+  const filasPaginadas = useMemo(
+    () => filasRendimiento.slice(indiceInicio, indiceInicio + tamanoPagina),
+    [filasRendimiento, indiceInicio, tamanoPagina]
+  )
+
+  const exportarMatrizPdf = async () => {
+    if (!materiaActual || !parcialActual || exportandoMatrizPdf) return
+    setExportandoMatrizPdf(true)
+    setAlertaSync(null)
+    try {
+      const { data } = await clienteAxios.get<ReporteConsolidadoCursoDto>(
+        `/academico/materias/${materiaActual.id}/parciales/${parcialActual.id}/reporte-consolidado`
+      )
+      const etiquetasFiltro: string[] = []
+      if (unidadFiltroId !== null) {
+        const u = parcialActual.unidades.find((x) => x.id === unidadFiltroId)
+        if (u) etiquetasFiltro.push(`Unidad ${u.numero}`)
       }
+      if (temaFiltroId !== null) {
+        const t = temasDisponibles.find((x) => x.id === temaFiltroId)
+        if (t) etiquetasFiltro.push(`Tema: ${t.nombre}`)
+      }
+      if (actividadSeleccionada) {
+        etiquetasFiltro.push(`Actividad: ${actividadSeleccionada.nombre}`)
+      }
+      await exportarPdfMatrizConsolidada(
+        data,
+        etiquetasFiltro.length > 0 ? etiquetasFiltro.join(' • ') : undefined
+      )
+      setAlertaSync({
+        tipo: 'exito',
+        mensaje: `Matriz consolidada PDF de ${materiaActual.codigo} (Parcial ${parcialActual.numero}) descargada correctamente.`,
+      })
+    } catch (error) {
+      const detalle = extraerMensajeErrorApi(error)
+      setAlertaSync({
+        tipo: 'error',
+        mensaje: detalle || 'No se pudo generar la matriz consolidada en PDF.',
+      })
+    } finally {
+      setExportandoMatrizPdf(false)
     }
+  }
 
-    const avgComp = (tipo: TipoItemEvaluacion) => {
-      const total = rendimiento.reduce((acc, est) => {
-        const comp = est.componentes.find((c) => c.tipo === tipo)
-        return acc + (comp ? comp.promedioComponente : 0)
-      }, 0)
-      return total / rendimiento.length
+  const exportarIndividualPdf = async (estudianteId: number) => {
+    if (!materiaActual || !parcialActual || exportandoEstPdfId !== null) return
+    setExportandoEstPdfId(estudianteId)
+    setAlertaSync(null)
+    try {
+      const { data } = await clienteAxios.get<ReporteIndividualTutoriaDto>(
+        `/academico/materias/${materiaActual.id}/estudiantes/${estudianteId}/reporte-tutoria`,
+        { params: { parcialId: parcialActual.id } }
+      )
+      await exportarPdfReporteIndividual(data)
+    } catch (error) {
+      const detalle = extraerMensajeErrorApi(error)
+      setAlertaSync({
+        tipo: 'error',
+        mensaje: detalle || 'No se pudo generar el reporte individual del estudiante en PDF.',
+      })
+    } finally {
+      setExportandoEstPdfId(null)
     }
+  }
 
-    const promTareas = avgComp(1)
-    const promApe = avgComp(2)
-    const promExamen = avgComp(3)
-    const promedioCurso =
-      rendimiento.reduce((acc, est) => acc + est.notaFinalParcial, 0) / rendimiento.length
-    const totalEnRiesgo = rendimiento.filter((est) => est.enRiesgo).length
-
-    return {
-      promTareas: promTareas.toFixed(2),
-      aporteTareas: (promTareas * 0.3).toFixed(2),
-      promApe: promApe.toFixed(2),
-      aporteApe: (promApe * 0.3).toFixed(2),
-      promExamen: promExamen.toFixed(2),
-      aporteExamen: (promExamen * 0.4).toFixed(2),
-      promedioCurso: promedioCurso.toFixed(2),
-      totalEnRiesgo,
-    }
-  }, [rendimiento])
+  const limpiarFiltrosCascada = () => {
+    setUnidadFiltroId(null)
+    setTemaFiltroId(null)
+    setActividadFiltroId(null)
+    setEstadoFiltro('todos')
+    setBusquedaEstudiante('')
+    setPaginaActual(1)
+  }
 
   const sincronizarMoodle = async () => {
     if (!materiaActual || !parcialActual || sincronizando) return
@@ -189,17 +347,27 @@ export function EvaluacionesPage() {
       const { data } = await clienteAxios.post<SincronizacionDto>(
         `/moodle/sync-notas/${materiaActual.id}`
       )
-      await cargarDatosCurso(materiaActual.id, parcialActual.id)
+      const { data: materiasActualizadas } = await clienteAxios.get<MateriaDto[]>(
+        '/academico/materias'
+      )
+      setMaterias(materiasActualizadas)
+      const materiaActualizada = materiasActualizadas.find((m) => m.id === materiaActual.id)
+      const parcialActualizadoId =
+        materiaActualizada?.parciales.find((p) => p.numero === parcialActual.numero)?.id ??
+        materiaActualizada?.parciales[0]?.id ??
+        parcialActual.id
+
+      setUnidadFiltroId(null)
+      setTemaFiltroId(null)
+      setActividadFiltroId(null)
+      setPaginaActual(1)
+      await cargarDatosCurso(materiaActual.id, parcialActualizadoId)
       setAlertaSync({
         tipo: 'exito',
         mensaje: `Calificaciones actualizadas desde Moodle (${data.calificaciones} calificaciones y ${data.items} actividades sincronizadas).`,
       })
     } catch (error) {
-      const detalle =
-        axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
-          ? (error.response.data as { detail?: string; mensaje?: string }).detail ||
-            (error.response.data as { mensaje?: string }).mensaje
-          : undefined
+      const detalle = extraerMensajeErrorApi(error)
       setAlertaSync({
         tipo: 'advertencia',
         mensaje:
@@ -324,11 +492,7 @@ export function EvaluacionesPage() {
       setMostrarModal(false)
       await cargarDatosCurso(materiaActual.id, parcialActual.id)
     } catch (error) {
-      const msg =
-        axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response?.data
-          ? (error.response.data as { detail?: string; mensaje?: string }).detail ||
-            (error.response.data as { mensaje?: string }).mensaje
-          : undefined
+      const msg = extraerMensajeErrorApi(error)
       setErrorValidacion(msg || 'No se pudo guardar la evaluación en el servidor.')
     } finally {
       setGuardando(false)
@@ -355,6 +519,10 @@ export function EvaluacionesPage() {
                 onClick={() => {
                   setMateriaActivaId(m.id)
                   setAlertaSync(null)
+                  setUnidadFiltroId(null)
+                  setTemaFiltroId(null)
+                  setActividadFiltroId(null)
+                  setPaginaActual(1)
                   setSearchParams({ materia: String(m.id) })
                 }}
                 className={`px-4 py-2 rounded text-xs font-semibold transition cursor-pointer ${
@@ -376,7 +544,13 @@ export function EvaluacionesPage() {
               <button
                 key={p.id}
                 type="button"
-                onClick={() => setParcialNumero(p.numero)}
+                onClick={() => {
+                  setParcialNumero(p.numero)
+                  setUnidadFiltroId(null)
+                  setTemaFiltroId(null)
+                  setActividadFiltroId(null)
+                  setPaginaActual(1)
+                }}
                 className={`px-3 py-1 rounded text-xs font-semibold transition cursor-pointer ${
                   activo
                     ? 'bg-white text-[#8B151A] shadow-xs'
@@ -413,6 +587,15 @@ export function EvaluacionesPage() {
 
           <button
             type="button"
+            onClick={exportarMatrizPdf}
+            disabled={exportandoMatrizPdf || cargandoDatos}
+            className="px-3.5 py-2 border border-[#8B151A] text-[#8B151A] hover:bg-red-50 disabled:opacity-60 rounded text-xs font-semibold transition cursor-pointer"
+          >
+            {exportandoMatrizPdf ? 'Generando PDF...' : 'Exportar Matriz PDF'}
+          </button>
+
+          <button
+            type="button"
             onClick={abrirModalNueva}
             className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer"
           >
@@ -421,7 +604,7 @@ export function EvaluacionesPage() {
         </div>
       </div>
 
-      {/* Notificación de Sincronización Moodle */}
+      {/* Notificación de Sincronización Moodle / Exportación PDF */}
       {alertaSync && (
         <div
           role="alert"
@@ -463,7 +646,55 @@ export function EvaluacionesPage() {
         </div>
       )}
 
-      {/* Tarjetas de Ponderación Oficial (30% Tareas, 30% APE, 40% Examen) */}
+      {/* Filtros en Cascada: Parcial -> Unidad -> Tema -> Actividad (T-12.6 / T-12.7) */}
+      <FiltrosCascada
+        parciales={materiaActual.parciales}
+        parcialNumero={parcialActual.numero}
+        unidades={parcialActual.unidades}
+        unidadId={unidadFiltroId}
+        temas={temasCascada}
+        temaId={temaFiltroId}
+        actividades={actividadesCascada}
+        actividadId={actividadFiltroId}
+        estadoFiltro={estadoFiltro}
+        busqueda={busquedaEstudiante}
+        totalActividadesFiltradas={evaluacionesEnAlcance.length}
+        totalEstudiantesFiltrados={filasRendimiento.length}
+        totalEstudiantesCurso={rendimiento.length}
+        onParcialChange={(num) => {
+          setParcialNumero(num)
+          setUnidadFiltroId(null)
+          setTemaFiltroId(null)
+          setActividadFiltroId(null)
+          setPaginaActual(1)
+        }}
+        onUnidadChange={(id) => {
+          setUnidadFiltroId(id)
+          setTemaFiltroId(null)
+          setActividadFiltroId(null)
+          setPaginaActual(1)
+        }}
+        onTemaChange={(id) => {
+          setTemaFiltroId(id)
+          setActividadFiltroId(null)
+          setPaginaActual(1)
+        }}
+        onActividadChange={(id) => {
+          setActividadFiltroId(id)
+          setPaginaActual(1)
+        }}
+        onEstadoChange={(est) => {
+          setEstadoFiltro(est)
+          setPaginaActual(1)
+        }}
+        onBusquedaChange={(q) => {
+          setBusquedaEstudiante(q)
+          setPaginaActual(1)
+        }}
+        onLimpiarFiltros={limpiarFiltrosCascada}
+      />
+
+      {/* Tarjetas de Ponderación Oficial en Vivo (T-12.8: 30% Tareas, 30% APE, 40% Examen) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-md p-4 border border-[#e4e4e7]">
           <div className="flex justify-between items-center">
@@ -519,7 +750,9 @@ export function EvaluacionesPage() {
           }`}
         >
           <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-[#8B151A]">Promedio del Curso</span>
+            <span className="text-xs font-semibold text-[#8B151A]">
+              {hayFiltroCurricular ? 'Promedio del Alcance' : 'Promedio del Curso'}
+            </span>
             <span
               className={`text-[11px] font-bold px-2 py-0.5 rounded ${
                 metricasCurso.totalEnRiesgo > 0
@@ -535,24 +768,73 @@ export function EvaluacionesPage() {
             <span className="text-xs font-normal text-[#71717a]">/ 10.00 pts</span>
           </p>
           <p className="text-[11px] text-[#52525b] mt-1">
-            Estudiantes evaluados: <strong className="text-[#18181b]">{rendimiento.length}</strong>
+            Evaluados: <strong className="text-[#18181b]">{filasRendimiento.length}</strong> • Aprobación:{' '}
+            <strong className="text-[#18181b]">{metricasCurso.porcentajeAprobados}%</strong>
           </p>
         </div>
       </div>
 
-      {/* Tabla Dinámica de Calificaciones Reales por Estudiante */}
+      {/* Panel de Métricas de Actividad Específica Aislada (CA-06.5) */}
+      {metricasCurso.actividadAislada && (
+        <div
+          role="region"
+          aria-label="Resumen de actividad específica seleccionada"
+          className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center"
+        >
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B151A]">
+              Actividad Aislada • {NOMBRE_COMPONENTE[metricasCurso.actividadAislada.tipo]} (
+              {PONDERACION_COMPONENTE[metricasCurso.actividadAislada.tipo]})
+            </span>
+            <h2 className="text-sm font-bold text-[#18181b] mt-0.5">
+              {metricasCurso.actividadAislada.nombre}
+            </h2>
+          </div>
+
+          <div className="bg-[#fafafa] border border-[#e4e4e7] rounded p-3">
+            <span className="text-[11px] font-semibold text-[#52525b]">
+              Promedio del Grupo (Escala 0–10)
+            </span>
+            <p className="text-xl font-bold text-[#18181b] mt-0.5">
+              {metricasCurso.actividadAislada.promedioActividad}{' '}
+              <span className="text-xs font-normal text-[#71717a]">/ 10.00</span>
+            </p>
+          </div>
+
+          <div className="bg-[#fafafa] border border-[#e4e4e7] rounded p-3">
+            <span className="text-[11px] font-semibold text-[#52525b]">
+              Tasa de Entrega de la Actividad
+            </span>
+            <p className="text-xl font-bold text-[#8B151A] mt-0.5">
+              {metricasCurso.actividadAislada.tasaEntregaPorcentaje}%{' '}
+              <span className="text-xs font-normal text-[#52525b]">
+                ({metricasCurso.actividadAislada.entregados} de{' '}
+                {metricasCurso.actividadAislada.totalEstudiantes} entregaron)
+              </span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Tabla Dinámica de Calificaciones Reales por Estudiante con Avatares y Paginación */}
       <div className="bg-white rounded-md border border-[#e4e4e7] overflow-hidden">
-        <div className="p-4 border-b border-[#e4e4e7] flex items-center justify-between">
+        <div className="p-4 border-b border-[#e4e4e7] flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="font-bold text-sm text-[#18181b]">
               Calificaciones Reales por Estudiante — Parcial {parcialActual.numero}
             </h2>
             <p className="text-[11px] text-[#71717a]">
-              Ponderación institucional: 30% Tareas • 30% APE • 40% Examen
+              {metricasCurso.actividadAislada
+                ? `Vista aislada: ${metricasCurso.actividadAislada.nombre} (Escala normalizada 0 a 10)`
+                : hayFiltroCurricular
+                ? 'Promedios recalculados en vivo según el filtro curricular seleccionado'
+                : 'Ponderación institucional: 30% Tareas • 30% APE • 40% Examen'}
             </p>
           </div>
           <span className="text-xs text-[#71717a]">
-            {cargandoDatos ? 'Actualizando...' : `${rendimiento.length} estudiante(s)`}
+            {cargandoDatos
+              ? 'Actualizando...'
+              : `${filasRendimiento.length} de ${rendimiento.length} estudiante(s)`}
           </span>
         </div>
 
@@ -561,6 +843,11 @@ export function EvaluacionesPage() {
             <thead className="bg-[#f4f4f5] text-[#52525b] border-b border-[#e4e4e7]">
               <tr>
                 <th className="py-2.5 px-4 font-semibold">Estudiante</th>
+                {metricasCurso.actividadAislada && (
+                  <th className="py-2.5 px-4 font-semibold text-right text-[#8B151A]">
+                    Nota Actividad (0–10)
+                  </th>
+                )}
                 <th className="py-2.5 px-4 font-semibold text-right">Tareas (30%)</th>
                 <th className="py-2.5 px-4 font-semibold text-right">APE (30%)</th>
                 <th className="py-2.5 px-4 font-semibold text-right">Examen (40%)</th>
@@ -570,66 +857,112 @@ export function EvaluacionesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e4e4e7]">
-              {rendimiento.length === 0 ? (
+              {filasPaginadas.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-6 px-4 text-center text-[#71717a]">
-                    No hay estudiantes matriculados o sincronizados en esta asignatura. Presiona &quot;Sincronizar con Moodle&quot; para importar calificaciones reales.
+                  <td
+                    colSpan={metricasCurso.actividadAislada ? 8 : 7}
+                    className="py-6 px-4 text-center text-[#71717a]"
+                  >
+                    {rendimiento.length === 0
+                      ? 'No hay estudiantes matriculados o sincronizados en esta asignatura. Presiona "Sincronizar con Moodle" para importar calificaciones reales.'
+                      : 'Ningún estudiante coincide con los filtros curriculares o de búsqueda actuales.'}
                   </td>
                 </tr>
               ) : (
-                rendimiento.map((est) => {
-                  const compTareas = est.componentes.find((c) => c.tipo === 1)
-                  const compApe = est.componentes.find((c) => c.tipo === 2)
-                  const compExamen = est.componentes.find((c) => c.tipo === 3)
+                filasPaginadas.map((fila) => {
+                  const est = fila.estudiante
+                  const compTareas = fila.componentesFiltrados.find((c) => c.tipo === 1)
+                  const compApe = fila.componentesFiltrados.find((c) => c.tipo === 2)
+                  const compExamen = fila.componentesFiltrados.find((c) => c.tipo === 3)
                   const expandido = estudianteExpandidoId === est.estudianteId
 
                   return (
                     <Fragment key={est.estudianteId}>
                       <tr className="hover:bg-[#fafafa] transition">
                         <td className="py-3 px-4">
-                          <p className="font-semibold text-[#18181b]">
-                            {est.apellidos} {est.nombres}
-                          </p>
-                          <p className="text-[11px] text-[#71717a]">{est.correo}</p>
-                          {est.temasDeficientes.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {est.temasDeficientes.map((t) => (
-                                <span
-                                  key={t.temaId}
-                                  className="inline-block bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[10px] font-medium"
-                                >
-                                  {t.nombreTema}
-                                  {t.notaObtenida !== null ? ` (${t.notaObtenida.toFixed(2)})` : ''}
-                                </span>
-                              ))}
+                          <div className="flex items-center gap-3">
+                            <AvatarEstudiante
+                              nombres={est.nombres}
+                              apellidos={est.apellidos}
+                              fotoUrl={est.fotoUrl}
+                              enRiesgo={fila.enRiesgoFiltrado}
+                              size="sm"
+                            />
+                            <div className="min-w-0">
+                              <p className="font-semibold text-[#18181b] truncate">
+                                {est.apellidos} {est.nombres}
+                              </p>
+                              <p className="text-[11px] text-[#71717a] truncate">{est.correo}</p>
+                              {est.temasDeficientes.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {est.temasDeficientes.map((t) => (
+                                    <span
+                                      key={t.temaId}
+                                      className="inline-block bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                    >
+                                      {t.nombreTema}
+                                      {t.notaObtenida !== null ? ` (${t.notaObtenida.toFixed(2)})` : ''}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
+                        </td>
+                        {metricasCurso.actividadAislada && (
+                          <td className="py-3 px-4 text-right font-bold">
+                            {fila.notaActividadAislada !== null ? (
+                              <span
+                                className={
+                                  fila.notaActividadAislada < 7 ? 'text-red-700' : 'text-[#18181b]'
+                                }
+                              >
+                                {fila.notaActividadAislada.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                                Sin entregar
+                              </span>
+                            )}
+                          </td>
+                        )}
+                        <td className="py-3 px-4 text-right font-medium text-[#18181b]">
+                          {compTareas && compTareas.evaluaciones.length > 0
+                            ? compTareas.promedioComponente.toFixed(2)
+                            : '—'}
                         </td>
                         <td className="py-3 px-4 text-right font-medium text-[#18181b]">
-                          {(compTareas?.promedioComponente ?? 0).toFixed(2)}
+                          {compApe && compApe.evaluaciones.length > 0
+                            ? compApe.promedioComponente.toFixed(2)
+                            : '—'}
                         </td>
                         <td className="py-3 px-4 text-right font-medium text-[#18181b]">
-                          {(compApe?.promedioComponente ?? 0).toFixed(2)}
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium text-[#18181b]">
-                          {(compExamen?.promedioComponente ?? 0).toFixed(2)}
+                          {compExamen && compExamen.evaluaciones.length > 0
+                            ? compExamen.promedioComponente.toFixed(2)
+                            : '—'}
                         </td>
                         <td className="py-3 px-4 text-right font-bold text-[#18181b]">
-                          {est.notaFinalParcial.toFixed(2)}
+                          {fila.notaFiltrada.toFixed(2)}
                         </td>
                         <td className="py-3 px-4 text-center">
                           <span
                             className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
-                              est.enRiesgo
+                              fila.enRiesgoFiltrado
                                 ? 'bg-red-100 text-red-700'
                                 : 'bg-emerald-100 text-emerald-700'
                             }`}
                           >
-                            {est.enRiesgo ? 'En Riesgo' : 'Aprobado'}
+                            {metricasCurso.actividadAislada && !fila.entregoActividad
+                              ? 'Pendiente'
+                              : fila.esCriticoFiltrado
+                              ? 'Crítico'
+                              : fila.enRiesgoFiltrado
+                              ? 'En Riesgo'
+                              : 'Aprobado'}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-3">
+                          <div className="flex items-center justify-center gap-2.5">
                             <button
                               type="button"
                               onClick={() =>
@@ -638,6 +971,14 @@ export function EvaluacionesPage() {
                               className="text-[11px] font-semibold text-[#52525b] hover:text-[#18181b] cursor-pointer"
                             >
                               {expandido ? 'Ocultar' : 'Detalle'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => exportarIndividualPdf(est.estudianteId)}
+                              disabled={exportandoEstPdfId === est.estudianteId}
+                              className="text-[11px] font-semibold text-[#18181b] hover:text-[#8B151A] hover:underline disabled:opacity-50 cursor-pointer"
+                            >
+                              {exportandoEstPdfId === est.estudianteId ? '...' : 'PDF'}
                             </button>
                             {est.enRiesgo && (
                               <Link
@@ -652,9 +993,12 @@ export function EvaluacionesPage() {
                       </tr>
                       {expandido && (
                         <tr key={`${est.estudianteId}-detalle`} className="bg-[#fafafa]">
-                          <td colSpan={7} className="px-4 py-3">
+                          <td
+                            colSpan={metricasCurso.actividadAislada ? 8 : 7}
+                            className="px-4 py-3"
+                          >
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              {est.componentes.map((comp) => (
+                              {fila.componentesFiltrados.map((comp) => (
                                 <div
                                   key={comp.tipo}
                                   className="bg-white border border-[#e4e4e7] rounded p-3 space-y-1.5"
@@ -664,7 +1008,7 @@ export function EvaluacionesPage() {
                                   </p>
                                   {comp.evaluaciones.length === 0 ? (
                                     <p className="text-[11px] text-[#71717a] italic">
-                                      Sin actividades clasificadas.
+                                      Sin actividades en el alcance seleccionado.
                                     </p>
                                   ) : (
                                     comp.evaluaciones.map((ev) => (
@@ -716,9 +1060,71 @@ export function EvaluacionesPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Controles de Paginación (CA-06.5) */}
+        {filasRendimiento.length > 0 && (
+          <div className="px-4 py-3 border-t border-[#e4e4e7] bg-[#fafafa] flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-[#52525b]">
+              <span>
+                Mostrando <strong className="text-[#18181b]">{indiceInicio + 1}</strong>–
+                <strong className="text-[#18181b]">
+                  {Math.min(indiceInicio + tamanoPagina, filasRendimiento.length)}
+                </strong>{' '}
+                de <strong className="text-[#18181b]">{filasRendimiento.length}</strong> estudiantes
+              </span>
+              <select
+                aria-label="Estudiantes por página"
+                value={tamanoPagina}
+                onChange={(e) => {
+                  setTamanoPagina(Number(e.target.value))
+                  setPaginaActual(1)
+                }}
+                className="px-2 py-1 border border-[#d4d4d8] rounded bg-white text-[#18181b] text-xs"
+              >
+                <option value={5}>5 / pág.</option>
+                <option value={10}>10 / pág.</option>
+                <option value={15}>15 / pág.</option>
+                <option value={25}>25 / pág.</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={paginaSegura <= 1}
+                onClick={() => setPaginaActual((p) => Math.max(1, p - 1))}
+                className="px-2.5 py-1 border border-[#d4d4d8] rounded bg-white text-[#18181b] hover:bg-[#f4f4f5] disabled:opacity-40 cursor-pointer"
+              >
+                Anterior
+              </button>
+              {Array.from({ length: totalPaginas }, (_, idx) => idx + 1).map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setPaginaActual(num)}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold cursor-pointer ${
+                    num === paginaSegura
+                      ? 'bg-[#8B151A] text-white'
+                      : 'border border-[#d4d4d8] bg-white text-[#18181b] hover:bg-[#f4f4f5]'
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={paginaSegura >= totalPaginas}
+                onClick={() => setPaginaActual((p) => Math.min(totalPaginas, p + 1))}
+                className="px-2.5 py-1 border border-[#d4d4d8] rounded bg-white text-[#18181b] hover:bg-[#f4f4f5] disabled:opacity-40 cursor-pointer"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Tabla de Actividades Académicas Registradas / Importadas */}
+      {/* Tabla de Actividades Académicas Registradas / Importadas en el Alcance */}
       <div className="bg-white rounded-md border border-[#e4e4e7] overflow-hidden">
         <div className="p-4 border-b border-[#e4e4e7] flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -726,7 +1132,7 @@ export function EvaluacionesPage() {
               Actividades de Evaluación — {materiaActual.nombre}
             </h2>
             <p className="text-[11px] text-[#71717a]">
-              {evaluacionesVisibles.length} actividad(es) • {pendientesPublicar.length} pendiente(s) de publicar
+              {actividadesTabla.length} de {evaluacionesVisibles.length} actividad(es) • {pendientesPublicar.length} pendiente(s) de publicar
             </p>
           </div>
           {aprobablesRapido.length > 0 && (
@@ -736,9 +1142,7 @@ export function EvaluacionesPage() {
               disabled={publicandoLote}
               className="px-3 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded text-[11px] font-semibold transition cursor-pointer"
             >
-              {publicandoLote
-                ? 'Publicando...'
-                : `Aprobar pendientes (${aprobablesRapido.length})`}
+              {publicandoLote ? 'Publicando...' : `Aprobar pendientes (${aprobablesRapido.length})`}
             </button>
           )}
         </div>
@@ -755,14 +1159,14 @@ export function EvaluacionesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e4e4e7]">
-              {evaluacionesVisibles.length === 0 ? (
+              {actividadesTabla.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-5 px-4 text-center text-[#71717a]">
-                    No existen actividades registradas para este parcial.
+                    No existen actividades registradas para este alcance o parcial.
                   </td>
                 </tr>
               ) : (
-                evaluacionesVisibles.map((ev) => {
+                actividadesTabla.map((ev) => {
                   const temas = temasDisponibles.filter((t) => ev.temaIds.includes(t.id))
                   return (
                     <tr key={ev.id} className="hover:bg-[#fafafa] transition">
