@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type {
   EvaluacionDto,
   FirmaDocenteDto,
@@ -15,6 +15,7 @@ import {
 import {
   aplicarBloqueFirmaYPieUta,
   crearDocumentoPdfUta,
+  descargarPdfSeguro,
   normalizarTextoPdf,
 } from './pdfPlantillaUta'
 
@@ -301,5 +302,60 @@ describe('calculoFiltrosAcademicos (T-12.7 y T-12.8)', () => {
     expect(metricas.actividadAislada?.tasaEntregaPorcentaje).toBe('50.0')
     expect(metricas.actividadAislada?.promedioActividad).toBe('9.00')
     expect(metricas.totalEnRiesgo).toBe(1)
+  })
+})
+
+describe('validación PDF cross-browser y paginación sin solapamiento (T-11.6 / CA-05.4)', () => {
+  const membreteBase: MembreteInstitucionalDto = {
+    universidad: 'Universidad Técnica de Ambato',
+    facultad: 'FISEI',
+    carrera: 'Ingeniería en Software',
+    sistema: 'SISRA EduMonitor AI',
+    tituloReporte: 'Informe Oficial de Rendimiento',
+    materiaCodigo: 'SOF-401',
+    materiaNombre: 'Metodologías Ágiles',
+    periodoLectivo: '2026-2',
+    parcialId: 1,
+    parcialNumero: 1,
+    docenteTitular: 'Ing. Diego Proaño',
+    docenteCorreo: 'd.proano@uta.edu.ec',
+    fechaEmisionUtc: '2026-11-24T20:00:00Z',
+  }
+
+  const firmaBase: FirmaDocenteDto = {
+    nombreDocente: 'Ing. Diego Proaño',
+    correoDocente: 'd.proano@uta.edu.ec',
+    cargo: 'Docente Titular',
+    etiquetaCasillero: 'Firma y Rúbrica del Docente Titular',
+    leyendaConformidad: 'Certifico que las calificaciones corresponden a registros oficiales.',
+    lineaFirma: '______________________',
+  }
+
+  const pieBase: PiePaginaReporteDto = {
+    textoInstitucional: 'Universidad Técnica de Ambato - FISEI',
+    plantillaNumeracion: 'Página {0} de {1}',
+    numeracionInicial: 'Página 1 de 1',
+    totalPaginasEstimadas: 1,
+    registrosPorPagina: 20,
+    paginas: ['Página 1 de 1'],
+    codigoDocumento: 'UTA-FISEI-SOF-401-P1',
+    fechaEmisionUtc: '2026-11-24T20:00:00Z',
+  }
+
+  it('agrega página nueva para el bloque de firma cuando finalY supera el límite seguro (> 236mm)', async () => {
+    const { doc } = await crearDocumentoPdfUta(membreteBase, pieBase.codigoDocumento)
+    expect(doc.getNumberOfPages()).toBe(1)
+
+    aplicarBloqueFirmaYPieUta(doc, 240, firmaBase, pieBase)
+    expect(doc.getNumberOfPages()).toBe(2)
+  })
+
+  it('sanitiza nombres de archivo con tildes y espacios en descargarPdfSeguro para Chrome y Firefox', async () => {
+    const { doc } = await crearDocumentoPdfUta(membreteBase, pieBase.codigoDocumento)
+    const saveSpy = vi.spyOn(doc, 'save').mockImplementation(() => doc)
+
+    descargarPdfSeguro(doc, 'Informe Tutoría SOF-401 — Peña Álvaro')
+    expect(saveSpy).toHaveBeenCalledWith('Informe_Tutoria_SOF-401_Pena_Alvaro.pdf')
+    saveSpy.mockRestore()
   })
 })
