@@ -1,6 +1,6 @@
 # Script para levantar todos los servicios de EduMonitor AI
 Write-Host "Iniciando Docker (MariaDB y Moodle)..." -ForegroundColor Cyan
-docker start edumonitor-cristian-sprint1-mariadb-1 edumonitor-cristian-sprint1-moodle-1
+docker compose -f "$PSScriptRoot\docker\moodle\compose.yaml" start
 
 Write-Host "Iniciando Microservicio de IA (:8000)..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\ai-service'; .\.venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"

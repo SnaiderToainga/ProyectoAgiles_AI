@@ -32,8 +32,21 @@ docker compose ps
 No continuar con up si 8080 lo ocupa un servicio ajeno; no detener ese servicio.
 Primer arranque instala el esquema con CLI oficial, crea cursos y matrículas mediante APIs core,
 configura REST y guarda el token. Los reinicios reutilizan los volúmenes `mariadb_data` y `moodle_data`.
-Proyecto Compose: `edumonitor-cristian-sprint1`; no comparte volúmenes con otros proyectos.
+Proyecto Compose: `edumonitor-moodle`; no comparte volúmenes con otros proyectos.
 No ejecutar `down -v`, `system prune` ni borrar los volúmenes.
+
+### Migración desde el nombre anterior
+
+Hasta noviembre de 2026 el proyecto se llamaba `edumonitor-cristian-sprint1`. Si tu equipo aún
+tiene esos volúmenes, copia los datos al nombre nuevo antes del primer `up` (conserva usuarios,
+cursos, notas y el token REST; no borra los volúmenes antiguos):
+
+```powershell
+./Migrar-Volumenes.ps1
+docker compose up -d --build --wait --wait-timeout 900
+```
+
+Cuando compruebes que Moodle funciona, puedes eliminar los volúmenes y contenedores antiguos.
 
 Acceso: http://localhost:8080. Usuario administrador `edumonitoradmin`, contraseña en la variable
 MOODLE_ADMIN_PASSWORD de `.env`. Docente `docente.sprint1`, estudiantes `estudiante.uno`,
