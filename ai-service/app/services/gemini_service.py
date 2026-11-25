@@ -52,21 +52,25 @@ Reglas obligatorias:
 """
 
         modelos_a_probar = [settings.GEMINI_MODEL]
-        if "gemini-3.1-flash-lite" not in modelos_a_probar:
-            modelos_a_probar.append("gemini-3.1-flash-lite")
+        for respaldo in ("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"):
+            if respaldo not in modelos_a_probar:
+                modelos_a_probar.append(respaldo)
 
         for modelo in modelos_a_probar:
             try:
+                config_kwargs = {
+                    "system_instruction": system_instruction,
+                    "response_mime_type": "application/json",
+                    "response_schema": RespuestaPlan,
+                    "temperature": 0.2,
+                }
+                if "lite" not in modelo.lower():
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
                 response = self.client.models.generate_content(
                     model=modelo,
                     contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        response_mime_type="application/json",
-                        response_schema=RespuestaPlan,
-                        temperature=0.2,
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
-                    ),
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
 
                 contenido = (response.text or "").strip()

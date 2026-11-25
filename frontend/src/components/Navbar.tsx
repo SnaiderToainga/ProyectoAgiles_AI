@@ -1,5 +1,7 @@
 import { useLocation } from 'react-router-dom'
+import { Sparkles } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useChatIa } from '../context/ChatIaContext'
 
 interface NavbarProps {
   onToggleMobileMenu?: () => void
@@ -7,6 +9,7 @@ interface NavbarProps {
 
 export function Navbar({ onToggleMobileMenu }: NavbarProps) {
   const { user } = useAuth()
+  const { abierto, toggleChat, esModoFallback } = useChatIa()
   const location = useLocation()
 
   // Determinar la miga de pan / título según la ruta activa
@@ -48,14 +51,40 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps) {
         </nav>
       </div>
 
-      {/* Lado derecho: Rol y contexto institucional */}
-      <div className="text-right">
-        <p className="text-xs font-semibold text-zinc-800 leading-tight">
-          {user?.rol || 'Docente'}
-        </p>
-        <p className="text-[10px] text-zinc-400 mt-0.5">
-          FISEI · Universidad Técnica de Ambato
-        </p>
+      {/* Lado derecho: Botón Copiloto IA persistente + Rol institucional */}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={toggleChat}
+          disabled={esModoFallback}
+          title={
+            esModoFallback
+              ? 'Copiloto IA en modo demostración sin backend conectado'
+              : abierto
+              ? 'Ocultar panel de Copiloto IA'
+              : 'Abrir panel lateral de Copiloto IA (permanece abierto al navegar)'
+          }
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+            esModoFallback
+              ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+              : abierto
+              ? 'bg-[#18181b] text-white shadow-xs'
+              : 'bg-[#8B151A] hover:bg-[#6E1014] text-white shadow-xs'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+          <span className="hidden sm:inline">{abierto ? 'Ocultar Copiloto IA' : 'Copiloto IA'}</span>
+          <span className="sm:hidden">IA</span>
+        </button>
+
+        <div className="text-right hidden sm:block pl-2 border-l border-zinc-200">
+          <p className="text-xs font-semibold text-zinc-800 leading-tight">
+            {user?.rol || 'Docente'}
+          </p>
+          <p className="text-[10px] text-zinc-400 mt-0.5">
+            FISEI · Universidad Técnica de Ambato
+          </p>
+        </div>
       </div>
     </header>
   )

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useChatIa } from '../context/ChatIaContext'
 import clienteAxios from '../api/clienteAxios'
 import { RendimientoBarChart } from '../components/RendimientoBarChart'
-import { ChatIaWidget } from '../components/ChatIaWidget'
 import { AvatarEstudiante } from '../components/AvatarEstudiante'
 import {
   Sparkles,
@@ -346,17 +346,16 @@ const MATERIAS_PILOTO_FALLBACK: ResumenMateria[] = [
 
 export function DashboardPage() {
   const { user } = useAuth()
+  const {
+    abierto: chatAbierto,
+    setAbierto: setChatAbierto,
+    toggleChat,
+    actualizarContextoChat,
+    abrirChatConEstudiante,
+  } = useChatIa()
   const [resumenes, setResumenes] = useState<ResumenMateria[]>([])
   const [materiasOriginales, setMateriasOriginales] = useState<MateriaDto[]>([])
   const [materiaActivaId, setMateriaActivaId] = useState<number | null>(null)
-  const [estudianteParaChat, setEstudianteParaChat] = useState<ResumenAcademicoEstudianteDto | null>(null)
-  const [chatAbierto, setChatAbierto] = useState(() => {
-    try {
-      return sessionStorage.getItem('edumonitor_chat_abierto_v1') === '1'
-    } catch {
-      return false
-    }
-  })
   const [tabPrioridad, setTabPrioridad] = useState<'riesgo' | 'temas'>('riesgo')
   const [cargando, setCargando] = useState(true)
   const [esModoFallback, setEsModoFallback] = useState(false)
@@ -451,6 +450,29 @@ export function DashboardPage() {
     return resumenSeleccionado.estudiantes
   }, [resumenSeleccionado])
 
+  useEffect(() => {
+    if (cargando) return
+    const mapaRendimientos: Record<number, ResumenAcademicoEstudianteDto[]> = {}
+    for (const r of resumenes) {
+      mapaRendimientos[r.materia.id] = r.estudiantes
+    }
+    actualizarContextoChat({
+      materias: materiasOriginales,
+      materiaId: materiaActivaId,
+      estudiantes: estudiantesParaGrafico,
+      rendimientosPorMateria: mapaRendimientos,
+      esModoFallback,
+    })
+  }, [
+    cargando,
+    resumenes,
+    materiasOriginales,
+    materiaActivaId,
+    estudiantesParaGrafico,
+    esModoFallback,
+    actualizarContextoChat,
+  ])
+
   const estudiantesEnRiesgoLista = useMemo(
     () =>
       [...estudiantesParaGrafico]
@@ -476,16 +498,8 @@ export function DashboardPage() {
     return [...mapa.values()].sort((a, b) => b.cantidad - a.cantidad || a.peorNota - b.peorNota)
   }, [estudiantesParaGrafico])
 
-  const panelLateralActivo = chatAbierto && !esModoFallback
-
   return (
-    <div
-      className={
-        panelLateralActivo
-          ? 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_390px] gap-5 items-start'
-          : 'space-y-5'
-      }
-    >
+    <div className="space-y-5 min-w-0">
       <div className="space-y-5 min-w-0">
         {/* Encabezado Docente */}
         <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-lg p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xs">
@@ -521,7 +535,7 @@ export function DashboardPage() {
               type="button"
               onClick={() => {
                 if (esModoFallback) return
-                setChatAbierto((prev) => !prev)
+                toggleChat()
               }}
               disabled={esModoFallback}
               className={`px-3.5 py-1.5 rounded text-xs font-semibold shadow-sm transition flex items-center gap-1.5 ${
@@ -704,8 +718,7 @@ export function DashboardPage() {
               }
               cargando={cargando}
               onSeleccionarEstudiante={(est) => {
-                setEstudianteParaChat(est)
-                setChatAbierto(true)
+                abrirChatConEstudiante(est, resumenSeleccionado?.materia.id)
               }}
             />
           </div>
@@ -784,8 +797,7 @@ export function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            setEstudianteParaChat(est)
-                            setChatAbierto(true)
+                            abrirChatConEstudiante(est, resumenSeleccionado?.materia.id)
                           }}
                           disabled={esModoFallback}
                           className="text-[#52525b] hover:text-[#18181b] cursor-pointer disabled:opacity-50"
@@ -951,19 +963,6 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
-
-      {/* Asistente IA: acoplado a la derecha en desktop (xl) o flotante en móvil / cerrado */}
-      <ChatIaWidget
-        materias={materiasOriginales}
-        materiaSeleccionadaId={materiaActivaId || undefined}
-        estudiantes={estudiantesParaGrafico}
-        estudiantePreseleccionado={estudianteParaChat}
-        abiertoExterno={chatAbierto}
-        desactivado={esModoFallback}
-        modoPanelLateral={true}
-        onAbrir={() => setChatAbierto(true)}
-        onCerrar={() => setChatAbierto(false)}
-      />
     </div>
   )
 }

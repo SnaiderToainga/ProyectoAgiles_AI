@@ -2,6 +2,7 @@ import { Fragment, useState, useEffect, useMemo, useCallback, type FormEvent } f
 import { Link, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import clienteAxios from '../api/clienteAxios'
+import { useChatIa } from '../context/ChatIaContext'
 import { AvatarEstudiante } from '../components/AvatarEstudiante'
 import {
   FiltrosCascada,
@@ -43,6 +44,7 @@ function extraerMensajeErrorApi(error: unknown): string | undefined {
 }
 
 export function EvaluacionesPage() {
+  const { actualizarContextoChat } = useChatIa()
   const [searchParams, setSearchParams] = useSearchParams()
   const materiaQuery = searchParams.get('materia')
 
@@ -146,6 +148,16 @@ export function EvaluacionesPage() {
     setEstudianteExpandidoId(null)
     cargarDatosCurso(materiaActual.id, parcialActual.id)
   }, [materiaActual, parcialActual, cargarDatosCurso])
+
+  useEffect(() => {
+    if (materias.length === 0) return
+    actualizarContextoChat({
+      materias,
+      materiaId: materiaActual?.id ?? null,
+      estudiantes: rendimiento,
+      esModoFallback: false,
+    })
+  }, [materias, materiaActual?.id, rendimiento, actualizarContextoChat])
 
   const temasDisponibles = useMemo<TemaCascadaOption[]>(() => {
     if (!parcialActual) return []

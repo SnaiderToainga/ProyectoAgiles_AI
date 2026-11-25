@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import clienteAxios from '../api/clienteAxios'
 import { useAuth } from '../context/AuthContext'
+import { useChatIa } from '../context/ChatIaContext'
 import { AvatarEstudiante } from '../components/AvatarEstudiante'
 import { exportarPdfReporteIndividual } from '../utils/pdfReportesAcademicos'
 import {
@@ -57,6 +58,7 @@ function extraerMensajeErrorApi(error: unknown): string | undefined {
 
 export function TutoriaPage() {
   const { user } = useAuth()
+  const { actualizarContextoChat } = useChatIa()
   const [searchParams, setSearchParams] = useSearchParams()
   const materiaQuery = searchParams.get('materia')
   const parcialQuery = searchParams.get('parcial')
@@ -172,6 +174,16 @@ export function TutoriaPage() {
     if (!materiaActual || !parcialActual) return
     cargarTutoriaCurso(materiaActual.id, parcialActual.id)
   }, [materiaActual, parcialActual, cargarTutoriaCurso])
+
+  useEffect(() => {
+    if (materias.length === 0) return
+    actualizarContextoChat({
+      materias,
+      materiaId: materiaActual?.id ?? null,
+      estudiantes: rendimiento,
+      esModoFallback: false,
+    })
+  }, [materias, materiaActual?.id, rendimiento, actualizarContextoChat])
 
   const estudiantesEnRiesgo = useMemo(
     () => rendimiento.filter((e) => e.enRiesgo).sort((a, b) => a.notaFinalParcial - b.notaFinalParcial),

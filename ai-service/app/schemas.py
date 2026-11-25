@@ -146,4 +146,5 @@ class RespuestaChat(BaseModel):
     modo: Literal["curso", "estudiante"]
     esFallback: bool = False
     toolsEjecutadas: List[str] = Field(default_factory=list)
+    sugerenciasSeguimiento: List[str] = Field(default_factory=list)
     tiempoRespuestaMs: int = Field(0, ge=0)
