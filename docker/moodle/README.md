@@ -110,8 +110,9 @@ Token y IDs quedan en `.local/moodle-connection.json` (ignorado). El token se co
 y no se imprime. Copiar ese JSON solo a `.local/` del worktree académico, nunca al repositorio.
 El backend usa POST con wstoken en el cuerpo, no en URLs.
 
-`Test-Persistence.ps1` consulta REST real, verifica 2 cursos y 4 participantes por curso, ejecuta
-`docker compose restart` sin eliminar volúmenes y repite las consultas con los mismos IDs/token.
+`Test-Persistence.ps1` consulta REST real, verifica los 2 cursos piloto con el docente y al menos un
+estudiante matriculados, ejecuta `docker compose restart` sin eliminar volúmenes y comprueba que
+después del reinicio se obtengan los mismos cursos y el mismo número de participantes con el mismo token.
 Para detener el entorno: `docker compose stop`; para retomarlo: `docker compose start`.
 No cambiar credenciales .env de un volumen ya inicializado esperando que se modifiquen en la base.
 Un primer arranque interrumpido durante la instalación requiere inspección de logs; no borrar datos
