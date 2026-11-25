@@ -308,3 +308,137 @@ def test_anonimizacion_texto_libre_e_historial_sin_fugas():
         assert fuga not in prompt_enviado
 
     assert "EST-001" in prompt_enviado
+
+
+def test_chat_detalle_por_actividad_y_tema_en_modo_estudiante():
+    payload = {
+        "modo": "estudiante",
+        "mensaje": "¿En qué tema y actividad específica está mal este estudiante?",
+        "contextoCurso": CONTEXTO_PRUEBA.model_dump(),
+        "estudianteSeleccionado": {
+            "codigo": "EST-010",
+            "notaFinal": 5.60,
+            "enRiesgo": True,
+            "componentes": {"Tareas": 5.65, "APE": 5.80, "Examen": 5.40},
+            "temasDeficientes": ["Fundamentos y roles Scrum"],
+            "evaluaciones": [
+                {
+                    "nombre": "Evaluación 1.1: Manifiesto Ágil",
+                    "componente": "Tareas",
+                    "nota": 5.50,
+                    "temas": ["Fundamentos y roles Scrum"],
+                },
+                {
+                    "nombre": "Taller APE 1: Planning Poker",
+                    "componente": "APE",
+                    "nota": 7.50,
+                    "temas": ["Historias de usuario y estimación"],
+                },
+            ],
+        },
+        "estudiantesCurso": [],
+    }
+    response = client.post("/api/agent/chat", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert "tool_diagnostico_estudiante" in body["toolsEjecutadas"]
+    assert "Evaluación 1.1: Manifiesto Ágil" in body["respuesta"]
+    assert "Fundamentos y roles Scrum" in body["respuesta"]
+
+
+def test_chat_gemini_desactiva_thinking_y_amplia_tokens_para_no_truncar(monkeypatch):
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = SimpleNamespace(
+        text="Hechos verificados:\n- Datos completos.\n\nInferencias:\n- Confianza alta.\n\nRecomendaciones:\n- Refuerzo."
+    )
+    service.client = fake_client
+
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Qué temas tienen mayor dificultad en el curso?",
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+
+    # 1. En modelos estándar (no-lite), debe desactivar thinking (thinking_budget == 0)
+    monkeypatch.setattr("app.services.chat_service.settings.GEMINI_MODEL", "gemini-3.5-flash")
+    resp = service.procesar_chat(solicitud)
+    assert "tool_analisis_temas" in resp.toolsEjecutadas
+    cfg = fake_client.models.generate_content.call_args.kwargs["config"]
+    assert cfg.max_output_tokens >= 2048
+    assert cfg.thinking_config.thinking_budget == 0
+
+    # 2. En modelos -lite (como gemini-3.5-flash-lite), debe omitir thinking_config para evitar 400 INVALID_ARGUMENT
+    monkeypatch.setattr("app.services.chat_service.settings.GEMINI_MODEL", "gemini-3.5-flash-lite")
+    service.procesar_chat(solicitud)
+    cfg_lite = fake_client.models.generate_content.call_args.kwargs["config"]
+    assert cfg_lite.max_output_tokens >= 2048
+    assert cfg_lite.thinking_config is None
+
+
+def test_chat_unificado_detecta_estudiante_mencionado_sin_cambiar_modo():
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = SimpleNamespace(
+        text="EST-001 tiene 5.40 y presenta dificultad en Historias de Usuario e INVEST."
+    )
+    service.client = fake_client
+
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Cómo va EST-001 y qué actividades debería reforzar?",
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+    resp = service.procesar_chat(solicitud)
+    assert resp.esFallback is False
+    prompt_enviado = fake_client.models.generate_content.call_args.kwargs["contents"]
+    assert "estudiantes_mencionados" in prompt_enviado
+    assert "EST-001" in prompt_enviado
+    assert "Historias de Usuario e INVEST" in prompt_enviado
+
+
+def test_extraer_sugerencias_contextuales_desde_respuesta_gemini():
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = SimpleNamespace(
+        text=(
+            "EST-001 requiere refuerzo en Historias de Usuario.\n"
+            "SUGERENCIAS: Crea 2 ejercicios prácticos de INVEST para EST-001 | Agenda tutoría semanal"
+        )
+    )
+    service.client = fake_client
+
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Cómo va EST-001?",
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+    resp = service.procesar_chat(solicitud)
+    assert "SUGERENCIAS:" not in resp.respuesta
+    assert resp.sugerenciasSeguimiento == [
+        "Crea 2 ejercicios prácticos de INVEST para EST-001",
+        "Agenda tutoría semanal",
+    ]
+
+
+def test_ambiguedad_marcador_estudiante_no_atribuye_notas_erroneas():
+    service = ChatService()
+    service.client = None
+    service.api_key = ""
+
+    solicitud = SolicitudChat(
+        modo="curso",
+        mensaje="¿Cómo va [ESTUDIANTE] en este parcial?",
+        contextoCurso=CONTEXTO_PRUEBA,
+        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    )
+    resp = service.procesar_chat(solicitud)
+    assert "múltiples estudiantes" in resp.respuesta
+    assert "nombre y apellido completo" in resp.respuesta
+    assert "EST-001: 5.40" not in resp.respuesta

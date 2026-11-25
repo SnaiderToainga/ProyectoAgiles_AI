@@ -228,5 +228,51 @@ public class AcademicoTests : IAsyncLifetime
         Assert.Equal("Docente Prueba", reporteInd.BloqueFirma.NombreDocente);
     }
 
+    [Fact]
+    public async Task ActualizarPlan_PersisteDiagnosticoYDetallesEnBdYSeReflejaEnReporte()
+    {
+        var service = new CatalogoService(db);
+        var curso = await db.Cursos.OrderBy(c => c.Id).FirstAsync();
+        var parcial = await db.Parciales.Where(p => p.CursoId == curso.Id).OrderBy(p => p.Numero).FirstAsync();
+        var tema = await db.Temas.Include(t => t.Unidad).FirstAsync(t => t.Unidad.ParcialId == parcial.Id);
+
+        var idExamen = await service.CrearEvaluacion(77, false, new(parcial.Id, "Examen Final", TipoItemEvaluacion.Examen, [tema.Id]));
+        var estudiante = new Estudiante { MoodleUserId = 802, Nombres = "Carlos", Apellidos = "Mendoza", Correo = "cmendoza@uta.edu.ec" };
+        db.Estudiantes.Add(estudiante);
+        await db.SaveChangesAsync();
+
+        db.Matriculas.Add(new Matricula { CursoId = curso.Id, EstudianteId = estudiante.Id });
+        db.Calificaciones.Add(new Calificacion { ItemEvaluacionId = idExamen, EstudianteId = estudiante.Id, Nota = 5.0m, Estado = EstadoCalificacion.Entregado });
+        await db.SaveChangesAsync();
+
+        var planId = await service.CrearPlan(77, false, new(
+            estudiante.Id,
+            curso.Id,
+            "Diagnóstico inicial",
+            "Alto",
+            false,
+            [new CrearDetallePlanRequest(tema.Id, "Actividad inicial", "Alta", 3, "Guía inicial")]
+        ));
+
+        var planAntes = (await service.PlanesPorCurso(77, false, curso.Id)).Single(p => p.Id == planId);
+        var detalleId = planAntes.Detalles.Single().Id;
+
+        var actualizado = await service.ActualizarPlan(77, false, planId, new(
+            "Diagnóstico ajustado por el docente titular.",
+            "Medio",
+            [new ActualizarDetallePlanRequest(detalleId, "Taller dirigido de Scrum", "Media", 5, "Diapositivas Unidad 1")]
+        ));
+
+        Assert.Equal("Diagnóstico ajustado por el docente titular.", actualizado.DiagnosticoGeneral);
+        Assert.Equal("Medio", actualizado.NivelRiesgo);
+        Assert.Single(actualizado.Detalles);
+        Assert.Equal("Taller dirigido de Scrum", actualizado.Detalles[0].ActividadSugerida);
+        Assert.Equal(5, actualizado.Detalles[0].TiempoEstimadoHoras);
+
+        var reporteInd = await service.ReporteIndividualTutoria(77, false, curso.Id, estudiante.Id, parcialId: parcial.Id);
+        Assert.Equal("Diagnóstico ajustado por el docente titular.", reporteInd.PlanRefuerzo?.DiagnosticoGeneral);
+        Assert.Equal("Taller dirigido de Scrum", reporteInd.PlanRefuerzo?.Detalles[0].ActividadSugerida);
+    }
+
     private static MoodleItemDto Item(decimal? raw) => new(1, "Tarea", "mod", "assign", 1, raw, 0, 100, null);
 }

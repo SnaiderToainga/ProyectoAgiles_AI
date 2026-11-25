@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   X,
   Send,
@@ -6,11 +7,18 @@ import {
   Bot,
   User,
   GraduationCap,
-  BookOpen,
   AlertCircle,
   RotateCcw,
+  CheckCircle2,
+  Lightbulb,
+  Compass,
+  ArrowRight,
+  FileText,
+  Copy,
+  Check,
 } from 'lucide-react'
 import clienteAxios from '../api/clienteAxios'
+import { useAuth } from '../context/AuthContext'
 import { crearAnonimizador } from '../utils/anonimizador'
 import {
   NOMBRE_COMPONENTE,
@@ -24,72 +32,345 @@ export interface MensajeChatUi {
   texto: string
   hora: string
   esFallback?: boolean
+  tiempoMs?: number
+  modoMensaje?: 'curso' | 'estudiante'
+  estudianteIdMensaje?: number | null
+  materiaIdMensaje?: number | null
+  sugerencias?: string[]
 }
 
 interface ChatIaWidgetProps {
   materias: MateriaDto[]
   materiaSeleccionadaId?: number
   estudiantes?: ResumenAcademicoEstudianteDto[]
+  rendimientosPorMateria?: Record<number, ResumenAcademicoEstudianteDto[]>
   estudiantePreseleccionado?: ResumenAcademicoEstudianteDto | null
   abiertoExterno?: boolean
   desactivado?: boolean
+  modoPanelLateral?: boolean
+  dockGlobal?: boolean
   onCerrar?: () => void
   onAbrir?: () => void
+  onLimpiarPreseleccion?: () => void
 }
+
+interface SeccionRespuesta {
+  titulo: string
+  tipo: 'hechos' | 'inferencias' | 'recomendaciones' | 'general'
+  lineas: string[]
+}
+
+function renderInlineMarkdown(texto: string): ReactNode[] {
+  const partes = texto.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/g)
+  return partes.map((parte, idx) => {
+    if (parte.startsWith('**') && parte.endsWith('**') && parte.length > 4) {
+      return (
+        <strong key={idx} className="font-semibold text-[#18181b]">
+          {parte.slice(2, -2)}
+        </strong>
+      )
+    }
+    if (parte.startsWith('*') && parte.endsWith('*') && parte.length > 2) {
+      return (
+        <em key={idx} className="italic text-[#27272a]">
+          {parte.slice(1, -1)}
+        </em>
+      )
+    }
+    if (parte.startsWith('`') && parte.endsWith('`') && parte.length > 2) {
+      return (
+        <code key={idx} className="px-1 py-0.2 rounded bg-zinc-100 text-[#8B151A] font-mono text-[11px]">
+          {parte.slice(1, -1)}
+        </code>
+      )
+    }
+    return <span key={idx}>{parte}</span>
+  })
+}
+
+function normalizarTextoBusqueda(txt: string): string {
+  return txt
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function parsearSeccionesRespuesta(texto: string): SeccionRespuesta[] {
+  const lineasRaw = texto.split(/\r?\n/)
+  const secciones: SeccionRespuesta[] = []
+  let actual: SeccionRespuesta = { titulo: '', tipo: 'general', lineas: [] }
+
+  const detectarSeccion = (lineaLimpia: string): SeccionRespuesta['tipo'] | null => {
+    const norm = lineaLimpia
+      .replace(/^#+\s*/, '')
+      .replace(/^[-*•]\s*/, '')
+      .replace(/\*\*/g, '')
+      .replace(/:$/, '')
+      .trim()
+      .toLowerCase()
+    if (norm === 'hechos verificados') return 'hechos'
+    if (norm === 'inferencias') return 'inferencias'
+    if (norm === 'recomendaciones') return 'recomendaciones'
+    return null
+  }
+
+  for (const raw of lineasRaw) {
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+
+    const tipoDetectado = detectarSeccion(trimmed)
+    if (tipoDetectado) {
+      if (actual.lineas.length > 0 || actual.titulo) {
+        secciones.push(actual)
+      }
+      const tituloVisible =
+        tipoDetectado === 'hechos'
+          ? 'Hechos verificados'
+          : tipoDetectado === 'inferencias'
+          ? 'Inferencias'
+          : 'Recomendaciones'
+      actual = { titulo: tituloVisible, tipo: tipoDetectado, lineas: [] }
+      continue
+    }
+
+    actual.lineas.push(trimmed)
+  }
+
+  if (actual.lineas.length > 0 || actual.titulo) {
+    secciones.push(actual)
+  }
+
+  return secciones
+}
+
+function renderLineaMarkdown(linea: string, idx: number, variante: 'general' | 'seccion'): ReactNode {
+  const matchTitulo = /^(#{1,4})\s+(.+)$/.exec(linea)
+  if (matchTitulo) {
+    const nivel = matchTitulo[1].length
+    return (
+      <h5
+        key={idx}
+        className={`font-bold text-[#18181b] ${
+          nivel <= 2 ? 'text-xs pt-1.5' : 'text-[11.5px] pt-1'
+        }`}
+      >
+        {renderInlineMarkdown(matchTitulo[2])}
+      </h5>
+    )
+  }
+
+  const matchNumerada = /^(\d+[.)])\s+(.+)$/.exec(linea)
+  if (matchNumerada) {
+    return (
+      <div key={idx} className="flex items-start gap-1.5 pl-0.5">
+        <span className="font-bold text-[#8B151A] shrink-0 min-w-[16px]">
+          {matchNumerada[1]}
+        </span>
+        <span>{renderInlineMarkdown(matchNumerada[2])}</span>
+      </div>
+    )
+  }
+
+  const esLista = /^[-*•]\s+/.test(linea)
+  if (esLista) {
+    const contenido = linea.replace(/^[-*•]\s+/, '')
+    return (
+      <div key={idx} className={`flex items-start gap-1.5 ${variante === 'general' ? 'pl-1' : ''}`}>
+        <span
+          className={`mt-1.5 rounded-full shrink-0 ${
+            variante === 'general'
+              ? 'w-1.5 h-1.5 bg-[#8B151A]'
+              : 'w-1 h-1 bg-current opacity-60'
+          }`}
+        />
+        <span>{renderInlineMarkdown(contenido)}</span>
+      </div>
+    )
+  }
+
+  return <p key={idx}>{renderInlineMarkdown(linea)}</p>
+}
+
+function MensajeAsistenteFormateado({ texto }: { texto: string }) {
+  const secciones = parsearSeccionesRespuesta(texto)
+
+  if (secciones.length <= 1 && secciones[0]?.tipo === 'general') {
+    return (
+      <div className="space-y-1.5 text-xs leading-relaxed text-[#27272a]">
+        {secciones[0].lineas.map((linea, i) => renderLineaMarkdown(linea, i, 'general'))}
+      </div>
+    )
+  }
+
+  const estilosSeccion: Record<
+    SeccionRespuesta['tipo'],
+    { contenedor: string; cabecera: string; icono: ReactNode }
+  > = {
+    hechos: {
+      contenedor: 'bg-sky-50/60 border-l-2 border-l-sky-600 border border-sky-100 rounded-md p-2',
+      cabecera: 'text-sky-900',
+      icono: <CheckCircle2 className="w-3.5 h-3.5 text-sky-700 shrink-0" />,
+    },
+    inferencias: {
+      contenedor: 'bg-amber-50/60 border-l-2 border-l-amber-500 border border-amber-100 rounded-md p-2',
+      cabecera: 'text-amber-900',
+      icono: <Lightbulb className="w-3.5 h-3.5 text-amber-600 shrink-0" />,
+    },
+    recomendaciones: {
+      contenedor: 'bg-emerald-50/60 border-l-2 border-l-emerald-600 border border-emerald-100 rounded-md p-2',
+      cabecera: 'text-emerald-900',
+      icono: <Compass className="w-3.5 h-3.5 text-emerald-700 shrink-0" />,
+    },
+    general: {
+      contenedor: 'bg-zinc-50 border border-zinc-200 rounded-md p-2',
+      cabecera: 'text-zinc-800',
+      icono: <Bot className="w-3.5 h-3.5 text-zinc-600 shrink-0" />,
+    },
+  }
+
+  return (
+    <div className="space-y-2">
+      {secciones.map((sec, idx) => {
+        const st = estilosSeccion[sec.tipo]
+        return (
+          <div key={idx} className={st.contenedor}>
+            {sec.titulo && (
+              <div className={`flex items-center gap-1.5 font-bold text-[11px] mb-1 ${st.cabecera}`}>
+                {st.icono}
+                <span>{sec.titulo}</span>
+              </div>
+            )}
+            <div className="space-y-1 text-[11.5px] leading-relaxed text-[#27272a]">
+              {sec.lineas.map((linea, i) => renderLineaMarkdown(linea, i, 'seccion'))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function obtenerPrimerNombre(nombreCompleto?: string): string {
+  if (!nombreCompleto) return 'Docente'
+  const sinTitulo = nombreCompleto
+    .trim()
+    .replace(/^(ing\.?|dr\.?|dra\.?|mg\.?|msc\.?|lic\.?|prof\.?|phd\.?)\s+/i, '')
+    .trim()
+  const primer = sinTitulo.split(/\s+/)[0]
+  return primer || 'Docente'
+}
+
+const MENSAJE_BIENVENIDA = (nombre = 'Docente'): MensajeChatUi => ({
+  id: 'bienvenida',
+  rol: 'assistant',
+  texto: `¡Hola, ${nombre}! Pregúntame sobre el rendimiento del curso, los temas críticos o cualquier estudiante por su nombre.`,
+  hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+})
+
+const STORAGE_KEY_CHAT_GLOBAL = 'edumonitor_chat_global_v1'
+const STORAGE_KEY_ABIERTO = 'edumonitor_chat_abierto_v1'
 
 export function ChatIaWidget({
   materias,
   materiaSeleccionadaId,
   estudiantes = [],
+  rendimientosPorMateria = {},
   estudiantePreseleccionado = null,
   abiertoExterno,
   desactivado = false,
+  modoPanelLateral = false,
+  dockGlobal = false,
   onCerrar,
   onAbrir,
+  onLimpiarPreseleccion,
 }: ChatIaWidgetProps) {
-  const [abiertoInterno, setAbiertoInterno] = useState(false)
+  const { user } = useAuth()
+  const primerNombre = obtenerPrimerNombre(user?.nombreCompleto)
+  const navigate = useNavigate()
+  const [abiertoInterno, setAbiertoInterno] = useState(() => {
+    try {
+      return sessionStorage.getItem(STORAGE_KEY_ABIERTO) === '1'
+    } catch {
+      return false
+    }
+  })
   const abierto = abiertoExterno !== undefined ? abiertoExterno : abiertoInterno
 
   const setAbierto = (val: boolean) => {
     setAbiertoInterno(val)
+    try {
+      if (val) sessionStorage.setItem(STORAGE_KEY_ABIERTO, '1')
+      else sessionStorage.removeItem(STORAGE_KEY_ABIERTO)
+    } catch {
+      // Ignorar si sessionStorage no esta disponible
+    }
     if (val && onAbrir) onAbrir()
     if (!val && onCerrar) onCerrar()
   }
 
-  const [modo, setModo] = useState<'curso' | 'estudiante'>('curso')
   const [materiaId, setMateriaId] = useState<number>(
     materiaSeleccionadaId || materias[0]?.id || 1
   )
+
+  const cargarEstadoGuardado = () => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY_CHAT_GLOBAL)
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          mensajes?: MensajeChatUi[]
+          estudianteId?: number | null
+        }
+        if (Array.isArray(parsed.mensajes) && parsed.mensajes.length > 0) {
+          return parsed
+        }
+      }
+    } catch {
+      // Ignorar JSON corrupto
+    }
+    return null
+  }
+
+  const guardadoInicial = cargarEstadoGuardado()
   const [estudianteId, setEstudianteId] = useState<number | null>(
-    estudiantePreseleccionado?.estudianteId || null
+    estudiantePreseleccionado?.estudianteId ?? guardadoInicial?.estudianteId ?? null
   )
   const [mensajeInput, setMensajeInput] = useState('')
   const [cargando, setCargando] = useState(false)
-  const [mensajes, setMensajes] = useState<MensajeChatUi[]>([
-    {
-      id: 'bienvenida',
-      rol: 'assistant',
-      texto:
-        '¡Hola, estimado docente! Soy el Asistente Pedagógico de EduMonitor AI. Puedo ayudarte a analizar el rendimiento global del curso o formular planes de tutoría específicos para cada estudiante.',
-      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
-  ])
+  const [copiadoId, setCopiadoId] = useState<string | null>(null)
+  const [mensajes, setMensajes] = useState<MensajeChatUi[]>(
+    guardadoInicial?.mensajes || [MENSAJE_BIENVENIDA(primerNombre)]
+  )
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (materiaSeleccionadaId) {
+    if (materiaSeleccionadaId && materiaSeleccionadaId !== materiaId) {
       setMateriaId(materiaSeleccionadaId)
     }
-  }, [materiaSeleccionadaId])
+  }, [materiaSeleccionadaId, materiaId])
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        STORAGE_KEY_CHAT_GLOBAL,
+        JSON.stringify({
+          mensajes: mensajes.slice(-30),
+          estudianteId,
+        })
+      )
+    } catch {
+      // Ignorar limite de cuota
+    }
+  }, [mensajes, estudianteId])
 
   useEffect(() => {
     if (estudiantePreseleccionado) {
       setEstudianteId(estudiantePreseleccionado.estudianteId)
-      setModo('estudiante')
       setAbierto(true)
+      onLimpiarPreseleccion?.()
     }
-  }, [estudiantePreseleccionado])
+  }, [estudiantePreseleccionado, onLimpiarPreseleccion])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -99,19 +380,23 @@ export function ChatIaWidget({
 
   const materiaActual = materias.find((m) => m.id === materiaId) || materias[0]
   const estudianteActual = estudiantes.find((e) => e.estudianteId === estudianteId) || null
+  const modo = estudianteActual ? 'estudiante' : 'curso'
+  const estudiantesEnRiesgoOrdenados = [...estudiantes]
+    .filter((e) => e.enRiesgo || e.notaFinalParcial < 7)
+    .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
 
   const preguntasSugeridas =
     modo === 'curso'
       ? [
           '¿Qué estudiantes están en riesgo académico (< 7.00)?',
-          '¿Cuál es el componente de evaluación más deficiente en el curso?',
+          '¿En qué tema específico tiene mayor dificultad el curso?',
+          'Sugiere una dinámica práctica de 15 minutos para reforzar el tema más bajo.',
           'Resumen de aprobación y notas generales del curso.',
-          '¿Qué temas requieren una clase de refuerzo urgente?',
         ]
       : [
-          '¿Cuál es el diagnóstico pedagógico y de refuerzo de este estudiante?',
+          '¿En qué tema y actividad específica está mal este estudiante?',
+          'Sugiere ejercicios personalizados paso a paso para este estudiante.',
           '¿Qué componentes debe recuperar prioritariamente?',
-          'Sugiere un plan semanal de estudio para este estudiante.',
         ]
 
   // Extraer componentes evaluativos reales con calificaciones efectivas (excluye ceros de componentes sin evaluar)
@@ -124,24 +409,49 @@ export function ChatIaWidget({
     )
   }
 
-  // Anonimizador local robusto exclusivo del navegador (RNF-02)
-  const mapaEstudianteIdACodigo = new Map<number, string>()
-  const estudiantesParaAnonimizar = estudiantes.map((e, idx) => {
-    const cod = `EST-${String(idx + 1).padStart(3, '0')}`
-    mapaEstudianteIdACodigo.set(e.estudianteId, cod)
-    return {
-      nombres: e.nombres,
-      apellidos: e.apellidos,
-      codigo: cod,
-    }
-  })
+  // Extraer actividades individuales con su nota y temas asociados para análisis granular (RNF-02 sin PII)
+  const evaluacionesDetalladas = (e: ResumenAcademicoEstudianteDto) => {
+    if (!e.componentes) return []
+    return e.componentes.flatMap((c) =>
+      (c.evaluaciones || [])
+        .filter((ev) => ev.nota !== null)
+        .map((ev) => ({
+          nombre: ev.nombre,
+          componente: NOMBRE_COMPONENTE[c.tipo] || String(c.tipo),
+          nota: Number((ev.nota ?? 0).toFixed(2)),
+          temas: (ev.temas || []).map((t) => t.nombre),
+        }))
+    )
+  }
 
-  const { anonimizar: anonimizarTexto, desanonimizar: desanonimizarTexto } =
-    crearAnonimizador(estudiantesParaAnonimizar)
-
-  async function enviarMensaje(textoAEnviar?: string) {
+  async function enviarMensaje(
+    textoAEnviar?: string,
+    override?: { modo: 'curso' | 'estudiante'; estudianteObj?: ResumenAcademicoEstudianteDto }
+  ) {
     const texto = (textoAEnviar || mensajeInput).trim()
     if (!texto || cargando) return
+
+    // Detectar automáticamente si el docente pregunta por otra asignatura (por código o nombre)
+    const consultaNorm = normalizarTextoBusqueda(texto)
+    const materiaMencionada = materias.find((m) => {
+      const codNorm = normalizarTextoBusqueda(m.codigo)
+      const nomNorm = normalizarTextoBusqueda(m.nombre)
+      return (
+        (codNorm && consultaNorm.includes(codNorm)) ||
+        (nomNorm.length >= 4 && consultaNorm.includes(nomNorm))
+      )
+    })
+    const materiaEfectiva = materiaMencionada || materiaActual
+    const estudiantesEfectivos =
+      materiaMencionada && rendimientosPorMateria[materiaMencionada.id]?.length
+        ? rendimientosPorMateria[materiaMencionada.id]
+        : estudiantes
+    if (materiaMencionada && materiaMencionada.id !== materiaId) {
+      setMateriaId(materiaMencionada.id)
+    }
+
+    const modoEfectivo = override?.modo ?? (override?.estudianteObj || estudianteActual ? 'estudiante' : 'curso')
+    const estEfectivo = override?.estudianteObj ?? estudianteActual
 
     const nuevoMensajeUsuario: MensajeChatUi = {
       id: String(Date.now()),
@@ -154,91 +464,131 @@ export function ChatIaWidget({
     setMensajeInput('')
     setCargando(true)
 
-    // Preparar contexto para la IA
-    const contextoCurso = materiaActual
+    const mapaEfectivo = new Map<number, string>()
+    const listaAnon = estudiantesEfectivos.map((e, idx) => {
+      const cod = `EST-${String(idx + 1).padStart(3, '0')}`
+      mapaEfectivo.set(e.estudianteId, cod)
+      return { nombres: e.nombres, apellidos: e.apellidos, codigo: cod }
+    })
+    // Proteger también nombres de otras asignaturas presentes en el hilo global continuo (RNF-02)
+    const idsActivos = new Set(estudiantesEfectivos.map((e) => e.estudianteId))
+    const listaAnonGlobal = [...listaAnon]
+    for (const listaOtraMat of Object.values(rendimientosPorMateria)) {
+      for (const e of listaOtraMat) {
+        if (!idsActivos.has(e.estudianteId)) {
+          idsActivos.add(e.estudianteId)
+          listaAnonGlobal.push({ nombres: e.nombres, apellidos: e.apellidos, codigo: '[ESTUDIANTE]' })
+        }
+      }
+    }
+    const { anonimizar: anonMsg, desanonimizar: desanonMsg } = crearAnonimizador(listaAnon)
+    const { anonimizar: anonHistorial } = crearAnonimizador(listaAnonGlobal)
+
+    const contextoCurso = materiaEfectiva
       ? {
-          materia: materiaActual.nombre,
-          codigo: materiaActual.codigo,
-          semestre: materiaActual.semestre,
+          materia: materiaEfectiva.nombre,
+          codigo: materiaEfectiva.codigo,
+          semestre: materiaEfectiva.semestre,
           promedioGeneral:
-            estudiantes.length > 0
+            estudiantesEfectivos.length > 0
               ? Number(
                   (
-                    estudiantes.reduce((acc, e) => acc + e.notaFinalParcial, 0) /
-                    estudiantes.length
+                    estudiantesEfectivos.reduce((acc, e) => acc + e.notaFinalParcial, 0) /
+                    estudiantesEfectivos.length
                   ).toFixed(2)
                 )
               : 0,
-          totalEstudiantes: estudiantes.length,
-          estudiantesEnRiesgo: estudiantes.filter((e) => e.enRiesgo).length,
-          aprobados: estudiantes.filter((e) => !e.enRiesgo).length,
+          totalEstudiantes: estudiantesEfectivos.length,
+          estudiantesEnRiesgo: estudiantesEfectivos.filter((e) => e.enRiesgo).length,
+          aprobados: estudiantesEfectivos.filter((e) => !e.enRiesgo).length,
         }
       : null
 
-    const estudianteDto = estudianteActual
+    const estudianteDto = estEfectivo
       ? {
-          codigo: mapaEstudianteIdACodigo.get(estudianteActual.estudianteId) || 'EST-001',
-          notaFinal: estudianteActual.notaFinalParcial,
-          enRiesgo: estudianteActual.enRiesgo,
-          componentes: componentesReales(estudianteActual),
-          temasDeficientes: estudianteActual.temasDeficientes.map((t) => t.nombreTema),
+          codigo: mapaEfectivo.get(estEfectivo.estudianteId) || 'EST-001',
+          notaFinal: estEfectivo.notaFinalParcial,
+          enRiesgo: estEfectivo.enRiesgo,
+          componentes: componentesReales(estEfectivo),
+          temasDeficientes: estEfectivo.temasDeficientes.map((t) => t.nombreTema),
+          evaluaciones: evaluacionesDetalladas(estEfectivo),
         }
       : null
+
+    const textoAnonimizado = anonMsg(texto)
+    const codigosDetectados = textoAnonimizado.match(/\bEST-\d+\b/g)
+    let estMencionadoId: number | null = estEfectivo?.estudianteId ?? null
+    if (!estMencionadoId && codigosDetectados && codigosDetectados.length === 1) {
+      for (const [idEst, cod] of mapaEfectivo.entries()) {
+        if (cod === codigosDetectados[0]) {
+          estMencionadoId = idEst
+          break
+        }
+      }
+    }
 
     const payload = {
-      modo,
-      mensaje: anonimizarTexto(texto),
-      historial: mensajes.map((m) => ({ rol: m.rol, contenido: anonimizarTexto(m.texto) })),
+      modo: modoEfectivo,
+      mensaje: textoAnonimizado,
+      historial: mensajes.map((m) => ({ rol: m.rol, contenido: anonHistorial(m.texto) })),
       contextoCurso,
       estudianteSeleccionado: estudianteDto,
-      estudiantesCurso: estudiantes.map((e, idx) => ({
-        codigo: mapaEstudianteIdACodigo.get(e.estudianteId) || `EST-${String(idx + 1).padStart(3, '0')}`,
+      estudiantesCurso: estudiantesEfectivos.map((e, idx) => ({
+        codigo: mapaEfectivo.get(e.estudianteId) || `EST-${String(idx + 1).padStart(3, '0')}`,
         notaFinal: e.notaFinalParcial,
         enRiesgo: e.enRiesgo,
         componentes: componentesReales(e),
         temasDeficientes: e.temasDeficientes.map((t) => t.nombreTema),
+        evaluaciones: evaluacionesDetalladas(e),
       })),
     }
 
     try {
       const { data } = await clienteAxios.post('/agent/chat', payload, { timeout: 35000 })
+      const sugerencias = Array.isArray(data.sugerenciasSeguimiento)
+        ? (data.sugerenciasSeguimiento as string[]).map((s) => desanonMsg(s))
+        : []
       const respuestaIa: MensajeChatUi = {
         id: String(Date.now() + 1),
         rol: 'assistant',
-        texto: desanonimizarTexto(data.respuesta || 'Análisis completado.'),
+        texto: desanonMsg(data.respuesta || 'Análisis completado.'),
         hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         esFallback: data.esFallback,
+        tiempoMs: data.tiempoRespuestaMs,
+        modoMensaje: estMencionadoId ? 'estudiante' : modoEfectivo,
+        estudianteIdMensaje: estMencionadoId,
+        materiaIdMensaje: materiaEfectiva?.id ?? null,
+        sugerencias,
       }
       setMensajes((prev) => [...prev, respuestaIa])
     } catch {
-      // Fallback local determinista si la API no está en línea
       let respuestaLocal = ''
-      if (modo === 'curso') {
-        const enRiesgo = estudiantes.filter((e) => e.enRiesgo)
-        respuestaLocal = `Actualmente en ${materiaActual?.nombre || 'el curso'}, hay ${enRiesgo.length} estudiante(s) en riesgo de un total de ${estudiantes.length}. `
+      if (modoEfectivo === 'curso') {
+        const enRiesgo = estudiantesEfectivos.filter((e) => e.enRiesgo)
+        respuestaLocal = `Actualmente en ${materiaEfectiva?.nombre || 'el curso'}, hay ${enRiesgo.length} estudiante(s) en riesgo de un total de ${estudiantesEfectivos.length}. `
         if (enRiesgo.length > 0) {
           respuestaLocal += `Los estudiantes con promedio menor a 7.00 son:\n`
           enRiesgo.forEach((e) => {
             const temas = e.temasDeficientes.map((t) => t.nombreTema).join(', ')
-            respuestaLocal += `• ${e.apellidos} ${e.nombres}: ${e.notaFinalParcial.toFixed(2)} pts${
+            respuestaLocal += `- ${e.apellidos} ${e.nombres}: ${e.notaFinalParcial.toFixed(2)} pts${
               temas ? ` (Temas: ${temas})` : ''
             }\n`
           })
         } else {
-          respuestaLocal += 'Todos los estudiantes registrados tienen promedio aprobatorio (≥ 7.00).'
+          respuestaLocal += 'Todos los estudiantes registrados tienen promedio aprobatorio (>= 7.00).'
         }
-      } else if (estudianteActual) {
-        respuestaLocal = `Diagnóstico de ${estudianteActual.apellidos} ${estudianteActual.nombres}:\n`
-        respuestaLocal += `• Nota actual: ${estudianteActual.notaFinalParcial.toFixed(2)} / 10.00 pts (${
-          estudianteActual.enRiesgo ? 'En Riesgo Académico' : 'Aprobado'
+      } else if (estEfectivo) {
+        respuestaLocal = `Diagnóstico de ${estEfectivo.apellidos} ${estEfectivo.nombres}:\n`
+        respuestaLocal += `- Nota actual: ${estEfectivo.notaFinalParcial.toFixed(2)} / 10.00 pts (${
+          estEfectivo.enRiesgo ? 'En Riesgo Académico' : 'Aprobado'
         }).\n`
-        if (estudianteActual.temasDeficientes.length > 0) {
-          respuestaLocal += `• Temas críticos donde reprobó: ${estudianteActual.temasDeficientes
-            .map((t) => t.nombreTema)
+        if (estEfectivo.temasDeficientes.length > 0) {
+          respuestaLocal += `- Temas críticos: ${estEfectivo.temasDeficientes
+            .map((t) => `${t.nombreTema}${t.notaObtenida !== null ? ` (${t.notaObtenida.toFixed(2)})` : ''}`)
             .join(', ')}.\n`
-          respuestaLocal += `• Recomendación: Programar 4 horas de tutoría práctica enfocada en estos contenidos.`
+          respuestaLocal += `- Recomendación: Programar 4 horas de tutoría práctica enfocada en estos contenidos.`
         } else {
-          respuestaLocal += '• No registra temas con deficiencias críticas identificadas.'
+          respuestaLocal += '- No registra temas con deficiencias críticas identificadas.'
         }
       } else {
         respuestaLocal = 'Por favor selecciona un estudiante del listado superior para ver su diagnóstico individual.'
@@ -250,6 +600,8 @@ export function ChatIaWidget({
         texto: respuestaLocal,
         hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         esFallback: true,
+        modoMensaje: modoEfectivo,
+        estudianteIdMensaje: estEfectivo?.estudianteId ?? null,
       }
       setMensajes((prev) => [...prev, respuestaFallback])
     } finally {
@@ -257,9 +609,16 @@ export function ChatIaWidget({
     }
   }
 
+  const analizarEstudianteDirecto = (est: ResumenAcademicoEstudianteDto) => {
+    setEstudianteId(est.estudianteId)
+    enviarMensaje(
+      `¿En qué tema y actividad específica está mal ${est.apellidos} ${est.nombres} y qué refuerzo sugieres?`,
+      { modo: 'estudiante', estudianteObj: est }
+    )
+  }
+
   return (
     <>
-      {/* Botón Flotante para Abrir Chat (Superpuesto garantizado con fixed y z-[9999]) */}
       {!abierto && (
         <button
           onClick={() => {
@@ -268,7 +627,7 @@ export function ChatIaWidget({
           }}
           disabled={desactivado}
           style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
-          className={`${
+          className={`${dockGlobal ? 'lg:hidden ' : ''}${
             desactivado
               ? 'bg-gray-400 opacity-60 cursor-not-allowed'
               : 'bg-[#8B151A] hover:bg-[#6E1014] hover:scale-105 cursor-pointer shadow-2xl'
@@ -280,32 +639,34 @@ export function ChatIaWidget({
           }
         >
           <Sparkles className={`w-5 h-5 ${desactivado ? 'text-gray-200' : 'text-amber-300 animate-pulse'}`} />
-          <span className="text-xs font-bold tracking-wide pr-1">
-            Tutor IA
-          </span>
+          <span className="text-xs font-bold tracking-wide pr-1">Tutor IA</span>
         </button>
       )}
 
-      {/* Ventana Flotante del Chat */}
       {abierto && (
         <div
-          style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
-          className="w-[95vw] sm:w-[430px] h-[600px] max-h-[85vh] bg-white rounded-xl shadow-2xl border border-[#e4e4e7] flex flex-col overflow-hidden"
+          className={
+            dockGlobal
+              ? 'fixed inset-y-0 right-0 z-50 w-full sm:w-[400px] h-full shadow-2xl lg:static lg:z-auto lg:w-full lg:h-full lg:shadow-none bg-white border-l border-[#e4e4e7] flex flex-col overflow-hidden'
+              : modoPanelLateral
+              ? 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[460px] h-[640px] max-h-[88vh] shadow-2xl xl:static xl:z-auto xl:w-full xl:h-[calc(100vh-115px)] xl:max-h-none xl:sticky xl:top-4 xl:shadow-xs bg-white rounded-xl border border-[#e4e4e7] flex flex-col overflow-hidden'
+              : 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[470px] h-[640px] max-h-[88vh] bg-white rounded-xl shadow-2xl border border-[#e4e4e7] flex flex-col overflow-hidden'
+          }
         >
           {/* Cabecera */}
-          <div className="bg-[#8B151A] text-white p-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-white/10 rounded-full">
+          <div className="bg-[#8B151A] text-white p-3.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-1.5 bg-white/10 rounded-full shrink-0">
                 <Bot className="w-4 h-4 text-amber-300" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="font-bold text-xs tracking-wide flex items-center gap-1.5">
-                  Asistente IA EduMonitor
+                  Copiloto IA EduMonitor
                   <span className="text-[10px] font-normal bg-white/20 px-1.5 py-0.2 rounded">
-                    UTA FISEI
+                    UTA
                   </span>
                 </h3>
-                <p className="text-[10px] text-white/80">
+                <p className="text-[10px] text-white/80 truncate">
                   {materiaActual ? `${materiaActual.codigo} - ${materiaActual.nombre}` : 'Análisis Pedagógico'}
                 </p>
               </div>
@@ -313,18 +674,17 @@ export function ChatIaWidget({
 
             <div className="flex items-center gap-1">
               <button
-                onClick={() =>
-                  setMensajes([
-                    {
-                      id: 'reinicio',
-                      rol: 'assistant',
-                      texto: 'Conversación reiniciada. ¿En qué puedo asistirte ahora?',
-                      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    },
-                  ])
-                }
-                title="Limpiar conversación"
-                className="p-1 text-white/70 hover:text-white rounded hover:bg-white/10 transition"
+                onClick={() => {
+                  setEstudianteId(null)
+                  setMensajes([MENSAJE_BIENVENIDA(primerNombre)])
+                  try {
+                    sessionStorage.removeItem(STORAGE_KEY_CHAT_GLOBAL)
+                  } catch {
+                    // Ignorar
+                  }
+                }}
+                title="Nueva conversación"
+                className="p-1 text-white/70 hover:text-white rounded hover:bg-white/10 transition cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
@@ -337,136 +697,247 @@ export function ChatIaWidget({
             </div>
           </div>
 
-          {/* Selector de Modo y Filtros de Contexto */}
-          <div className="p-2.5 bg-[#f4f4f5] border-b border-[#e4e4e7] flex flex-col gap-2 text-xs">
-            {/* Toggle de Modo: Curso vs Estudiante */}
-            <div className="grid grid-cols-2 bg-[#e4e4e7] p-0.5 rounded-md">
-              <button
-                onClick={() => setModo('curso')}
-                className={`py-1 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
-                  modo === 'curso'
-                    ? 'bg-white text-[#8B151A] shadow-xs'
-                    : 'text-[#71717a] hover:text-[#18181b]'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                Nivel Curso
-              </button>
-              <button
-                onClick={() => setModo('estudiante')}
-                className={`py-1 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
-                  modo === 'estudiante'
-                    ? 'bg-white text-[#8B151A] shadow-xs'
-                    : 'text-[#71717a] hover:text-[#18181b]'
-                }`}
-              >
-                <GraduationCap className="w-3.5 h-3.5" />
-                Por Estudiante
-              </button>
-            </div>
-
-            {/* Selectores según modo */}
-            {modo === 'estudiante' ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-[#71717a] font-medium whitespace-nowrap">
-                  Alumno:
-                </span>
-                <select
-                  value={estudianteId || ''}
-                  onChange={(e) => setEstudianteId(Number(e.target.value))}
-                  className="w-full bg-white border border-[#d4d4d8] rounded px-2 py-1 text-xs text-[#18181b] focus:outline-none focus:border-[#8B151A]"
-                >
-                  <option value="">-- Seleccionar estudiante ({estudiantes.length}) --</option>
-                  {estudiantes.map((est) => (
-                    <option key={est.estudianteId} value={est.estudianteId}>
-                      {est.apellidos} {est.nombres} ({est.notaFinalParcial.toFixed(2)} pts)
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between text-[11px] text-[#71717a]">
-                <span>
-                  Contexto: <b>{estudiantes.length}</b> alumnos cargados
-                </span>
-                <span className="text-red-700 font-semibold">
-                  {estudiantes.filter((e) => e.enRiesgo).length} en riesgo
-                </span>
-              </div>
-            )}
-          </div>
-
           {/* Área de Mensajes */}
           <div ref={scrollRef} className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-[#fafafa] text-xs">
-            {mensajes.map((m) => (
-              <div
-                key={m.id}
-                className={`flex gap-2 ${m.rol === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {m.rol === 'assistant' && (
-                  <div className="w-6 h-6 rounded-full bg-[#8B151A]/10 text-[#8B151A] flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot className="w-3.5 h-3.5" />
-                  </div>
-                )}
-
-                <div
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed ${
-                    m.rol === 'user'
-                      ? 'bg-[#8B151A] text-white rounded-br-none shadow-xs'
-                      : 'bg-white text-[#18181b] border border-[#e4e4e7] rounded-bl-none shadow-xs'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{m.texto}</p>
-                  <div className="flex items-center justify-between gap-2 mt-1">
-                    {m.esFallback && (
-                      <span className="text-[9px] text-amber-700 bg-amber-50 px-1 rounded border border-amber-200">
-                        Motor de Reglas Local
-                      </span>
-                    )}
-                    <span
-                      className={`text-[9px] block text-right ml-auto ${
-                        m.rol === 'user' ? 'text-white/70' : 'text-[#a1a1aa]'
-                      }`}
-                    >
-                      {m.hora}
-                    </span>
-                  </div>
+            {mensajes.length === 1 &&
+            (mensajes[0].id === 'bienvenida' || mensajes[0].id === 'reinicio') &&
+            !cargando ? (
+              <div className="h-full flex flex-col items-center justify-center text-center px-3 py-4 space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#8B151A] to-[#6E1014] text-amber-300 flex items-center justify-center shadow-md">
+                  <Sparkles className="w-6 h-6" />
                 </div>
 
-                {m.rol === 'user' && (
-                  <div className="w-6 h-6 rounded-full bg-[#8B151A] text-white flex items-center justify-center shrink-0 mt-0.5">
-                    <User className="w-3.5 h-3.5" />
-                  </div>
-                )}
+                <div className="space-y-1.5">
+                  <h4 className="text-base font-bold text-[#18181b] tracking-tight">
+                    ¡Hola, {primerNombre}!
+                  </h4>
+                  <p className="text-[11px] text-[#52525b] leading-relaxed max-w-[290px] mx-auto">
+                    Tu copiloto pedagógico está listo. Pregúntame libremente sobre el curso, temas críticos o cualquier estudiante por su nombre.
+                  </p>
+                  {materiaActual && (
+                    <div className="pt-1 flex items-center justify-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-white border border-[#e4e4e7] text-[#18181b] px-2 py-0.5 rounded-full shadow-2xs">
+                        {materiaActual.codigo} · {estudiantes.length} alumnos
+                      </span>
+                      {estudiantesEnRiesgoOrdenados.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-50 border border-red-200 text-red-700 px-2 py-0.5 rounded-full">
+                          {estudiantesEnRiesgoOrdenados.length} en riesgo (&lt; 7.00)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-full space-y-1.5 pt-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">
+                    Sugerencias para empezar
+                  </p>
+                  {preguntasSugeridas.slice(0, 3).map((sug, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => enviarMensaje(sug)}
+                      className="w-full text-left bg-white hover:bg-[#8B151A]/5 hover:border-[#8B151A]/40 border border-[#e4e4e7] rounded-lg px-3 py-2 text-[11px] text-[#27272a] font-medium transition flex items-center justify-between gap-2 cursor-pointer group shadow-2xs"
+                    >
+                      <span className="line-clamp-1">{sug}</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-[#a1a1aa] group-hover:text-[#8B151A] shrink-0 transition" />
+                    </button>
+                  ))}
+                </div>
               </div>
-            ))}
+            ) : (
+              mensajes.map((m, idx) => {
+              const esUltimoAsistente = m.rol === 'assistant' && idx === mensajes.length - 1 && m.id !== 'bienvenida' && m.id !== 'reinicio'
+              return (
+                <div
+                  key={m.id}
+                  className={`flex gap-2 ${m.rol === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  {m.rol === 'assistant' && (
+                    <div className="w-6 h-6 rounded-full bg-[#8B151A]/10 text-[#8B151A] flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot className="w-3.5 h-3.5" />
+                    </div>
+                  )}
+
+                  <div
+                    className={`max-w-[90%] rounded-lg px-3 py-2 text-xs leading-relaxed ${
+                      m.rol === 'user'
+                        ? 'bg-[#8B151A] text-white rounded-br-none shadow-xs'
+                        : 'bg-white text-[#18181b] border border-[#e4e4e7] rounded-bl-none shadow-xs space-y-2'
+                    }`}
+                  >
+                    {m.rol === 'user' ? (
+                      <p className="whitespace-pre-wrap">{m.texto}</p>
+                    ) : (
+                      <MensajeAsistenteFormateado texto={m.texto} />
+                    )}
+
+                    {/* Acciones y sugerencias contextuales generadas según la respuesta */}
+                    {esUltimoAsistente && !cargando && m.sugerencias && m.sugerencias.length > 0 && (
+                      <div className="pt-2 border-t border-[#f4f4f5] space-y-1.5">
+                        <p className="text-[10px] font-semibold text-[#71717a] flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-[#8B151A]" />
+                          Sugerencias según esta consulta:
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {m.sugerencias.map((sug, sIdx) => (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => enviarMensaje(sug)}
+                              className="w-full text-left inline-flex items-center justify-between gap-2 text-[10.5px] font-medium bg-[#f4f4f5]/80 hover:bg-[#8B151A]/10 hover:text-[#8B151A] text-[#27272a] px-2.5 py-1.5 rounded-md border border-[#e4e4e7] transition cursor-pointer"
+                            >
+                              <span className="leading-snug">{sug}</span>
+                              <ArrowRight className="w-3 h-3 shrink-0 opacity-60" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {esUltimoAsistente && !cargando && m.modoMensaje === 'curso' && estudiantesEnRiesgoOrdenados.length > 0 && (
+                      <div className="pt-1.5 border-t border-[#f4f4f5] space-y-1">
+                        <p className="text-[10px] font-semibold text-[#71717a]">
+                          Profundizar por tema en un estudiante:
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {estudiantesEnRiesgoOrdenados.slice(0, 4).map((est) => (
+                            <button
+                              key={est.estudianteId}
+                              type="button"
+                              onClick={() => analizarEstudianteDirecto(est)}
+                              className="inline-flex items-center gap-1 text-[10px] font-medium bg-[#f4f4f5] hover:bg-[#8B151A] hover:text-white text-[#18181b] px-2 py-0.5 rounded border border-[#e4e4e7] transition cursor-pointer"
+                            >
+                              <span>{est.apellidos.split(' ')[0]} ({est.notaFinalParcial.toFixed(2)})</span>
+                              <ArrowRight className="w-2.5 h-2.5" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {esUltimoAsistente && !cargando && m.modoMensaje === 'estudiante' && m.estudianteIdMensaje && (
+                      <div className="pt-1.5 border-t border-[#f4f4f5] flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              sessionStorage.setItem(STORAGE_KEY_ABIERTO, '1')
+                            } catch {
+                              // Ignorar
+                            }
+                            navigate(`/tutoria?materia=${m.materiaIdMensaje || materiaActual?.id || 1}&estudiante=${m.estudianteIdMensaje}`)
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#8B151A]/10 hover:bg-[#8B151A] hover:text-white text-[#8B151A] px-2.5 py-1 rounded transition cursor-pointer"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Generar Plan Oficial y PDF en Tutoría</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <span
+                        className={`text-[9px] font-medium ${
+                          m.rol === 'assistant' && m.id !== 'bienvenida' && m.id !== 'reinicio'
+                            ? m.esFallback
+                              ? 'text-amber-700'
+                              : 'text-emerald-700'
+                            : 'text-[#71717a]'
+                        }`}
+                      >
+                        {m.rol === 'assistant' && m.id !== 'bienvenida' && m.id !== 'reinicio'
+                          ? m.esFallback
+                            ? 'Motor Local (Respaldo)'
+                            : `✨ Gemini IA${m.tiempoMs ? ` · ${(m.tiempoMs / 1000).toFixed(1)}s` : ''}`
+                          : ''}
+                      </span>
+                      <div className="flex items-center gap-2 ml-auto">
+                        {m.rol === 'assistant' && m.id !== 'bienvenida' && m.id !== 'reinicio' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(m.texto).catch(() => {})
+                              setCopiadoId(m.id)
+                              setTimeout(() => setCopiadoId((prev) => (prev === m.id ? null : prev)), 2000)
+                            }}
+                            title="Copiar respuesta para Tutoría o Moodle"
+                            className="inline-flex items-center gap-1 text-[9.5px] font-medium text-[#71717a] hover:text-[#8B151A] transition cursor-pointer"
+                          >
+                            {copiadoId === m.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span className="text-emerald-700">Copiado</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Copiar</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                        <span
+                          className={`text-[9px] ${
+                            m.rol === 'user' ? 'text-white/70' : 'text-[#a1a1aa]'
+                          }`}
+                        >
+                          {m.hora}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {m.rol === 'user' && (
+                    <div className="w-6 h-6 rounded-full bg-[#8B151A] text-white flex items-center justify-center shrink-0 mt-0.5">
+                      <User className="w-3.5 h-3.5" />
+                    </div>
+                  )}
+                </div>
+              )
+            })
+            )}
 
             {cargando && (
               <div className="flex gap-2 items-center text-[#71717a] text-xs py-1">
                 <div className="w-6 h-6 rounded-full bg-[#8B151A]/10 text-[#8B151A] flex items-center justify-center">
                   <Bot className="w-3.5 h-3.5 animate-spin" />
                 </div>
-                <span className="italic animate-pulse">Analizando vacíos formativos con IA pedagógica...</span>
+                <span className="italic animate-pulse">Analizando notas por actividad y tema...</span>
               </div>
             )}
           </div>
 
-          {/* Preguntas Sugeridas (Quick Prompts) */}
-          <div className="p-2 bg-white border-t border-[#e4e4e7] overflow-x-auto flex gap-1.5 scrollbar-none">
-            {preguntasSugeridas.map((p, idx) => (
-              <button
-                key={idx}
-                onClick={() => enviarMensaje(p)}
-                disabled={cargando}
-                className="shrink-0 text-[10px] bg-[#f4f4f5] hover:bg-[#8B151A]/10 hover:text-[#8B151A] text-[#52525b] border border-[#e4e4e7] rounded-full px-2.5 py-1 transition cursor-pointer"
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
           {/* Caja de Entrada */}
-          <div className="p-2.5 bg-white border-t border-[#e4e4e7]">
+          <div className="p-2.5 bg-white border-t border-[#e4e4e7] space-y-1.5">
+            {estudianteActual && (
+              <div className="flex items-center justify-between gap-2 bg-[#8B151A]/5 border border-[#8B151A]/20 rounded-md px-2 py-1 text-[10px]">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <GraduationCap className="w-3.5 h-3.5 text-[#8B151A] shrink-0" />
+                  <span className="font-semibold text-[#18181b] truncate">
+                    {estudianteActual.apellidos} {estudianteActual.nombres}
+                  </span>
+                  <span
+                    className={`font-bold px-1.5 py-0.2 rounded shrink-0 ${
+                      estudianteActual.enRiesgo
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {estudianteActual.notaFinalParcial.toFixed(2)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEstudianteId(null)}
+                  title="Quitar enfoque de estudiante"
+                  className="text-[#71717a] hover:text-[#8B151A] font-bold px-1 cursor-pointer shrink-0"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
             <form
               onSubmit={(e) => {
                 e.preventDefault()
@@ -479,9 +950,9 @@ export function ChatIaWidget({
                 value={mensajeInput}
                 onChange={(e) => setMensajeInput(e.target.value)}
                 placeholder={
-                  modo === 'curso'
-                    ? 'Pregunta sobre notas, componentes o riesgo...'
-                    : 'Pregunta sobre el refuerzo del estudiante...'
+                  estudianteActual
+                    ? `Pregunta sobre ${estudianteActual.apellidos.split(' ')[0]}, sus temas o refuerzo...`
+                    : 'Pregunta sobre el curso, un tema o cualquier estudiante...'
                 }
                 disabled={cargando}
                 className="flex-1 bg-[#f4f4f5] border border-[#d4d4d8] rounded-md px-3 py-1.5 text-xs text-[#18181b] focus:outline-none focus:border-[#8B151A] focus:bg-white transition"
@@ -495,7 +966,6 @@ export function ChatIaWidget({
               </button>
             </form>
 
-            {/* Aviso Ético RNF-08 / RNF-02 */}
             <div className="mt-1.5 flex items-start gap-1 text-[9px] text-[#71717a] leading-tight">
               <AlertCircle className="w-3 h-3 text-[#a1a1aa] shrink-0 mt-0.5" />
               <span>

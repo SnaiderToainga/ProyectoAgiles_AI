@@ -1,11 +1,32 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { ChatIaProvider, useChatIa } from '../context/ChatIaContext'
+import { ChatIaWidget } from './ChatIaWidget'
 import { Navbar } from './Navbar'
 import logo from '../assets/logo.png'
 
 export function AppLayout() {
+  return (
+    <ChatIaProvider>
+      <AppLayoutShell />
+    </ChatIaProvider>
+  )
+}
+
+function AppLayoutShell() {
   const { user, logout } = useAuth()
+  const {
+    abierto,
+    setAbierto,
+    materias,
+    materiaActivaId,
+    estudiantes,
+    rendimientosPorMateria,
+    estudiantePreseleccionado,
+    esModoFallback,
+    limpiarPreseleccion,
+  } = useChatIa()
   const navigate = useNavigate()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -239,13 +260,38 @@ export function AppLayout() {
         </div>
       )}
 
-      {/* 3. Área Principal de Contenido (Ajustada con md:pl-64) */}
-      <div className="flex-1 md:pl-64 flex flex-col min-w-0">
-        <Navbar onToggleMobileMenu={() => setMobileMenuOpen(true)} />
+      {/* 3. Área Principal de Contenido + Copiloto IA Persistente estilo VS Code */}
+      <div className="flex-1 md:pl-64 flex min-w-0">
+        <div className="flex-1 flex flex-col min-w-0">
+          <Navbar onToggleMobileMenu={() => setMobileMenuOpen(true)} />
 
-        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">
-          <Outlet />
-        </main>
+          <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">
+            <Outlet />
+          </main>
+        </div>
+
+        {/* Panel lateral derecho fijo (docked) en desktop cuando el Copiloto está abierto */}
+        <aside
+          className={
+            abierto && !esModoFallback
+              ? 'lg:w-[390px] xl:w-[420px] lg:shrink-0 lg:h-screen lg:sticky lg:top-0 lg:z-30'
+              : ''
+          }
+        >
+          <ChatIaWidget
+            materias={materias}
+            materiaSeleccionadaId={materiaActivaId ?? undefined}
+            estudiantes={estudiantes}
+            rendimientosPorMateria={rendimientosPorMateria}
+            estudiantePreseleccionado={estudiantePreseleccionado}
+            abiertoExterno={abierto && !esModoFallback}
+            desactivado={esModoFallback}
+            dockGlobal={true}
+            onAbrir={() => setAbierto(true)}
+            onCerrar={() => setAbierto(false)}
+            onLimpiarPreseleccion={limpiarPreseleccion}
+          />
+        </aside>
       </div>
     </div>
   )

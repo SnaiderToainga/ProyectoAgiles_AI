@@ -46,6 +46,20 @@ public record CrearDetallePlanRequest(
     [StringLength(500)] string RecursoRecomendado = ""
 );
 
+public record ActualizarDetallePlanRequest(
+    [Range(1, int.MaxValue)] int Id,
+    [Required, StringLength(1000, MinimumLength = 1)] string ActividadSugerida,
+    [Required, StringLength(50, MinimumLength = 1)] string Prioridad,
+    [Range(1, 100)] int TiempoEstimadoHoras,
+    [StringLength(500)] string RecursoRecomendado = ""
+);
+
+public record ActualizarPlanRefuerzoRequest(
+    [Required, StringLength(2000, MinimumLength = 1)] string DiagnosticoGeneral,
+    [StringLength(50)] string? NivelRiesgo = null,
+    List<ActualizarDetallePlanRequest>? Detalles = null
+);
+
 public record PlanRefuerzoDto(
     int Id,
     int EstudianteId,

@@ -41,6 +41,10 @@ public class AcademicoController(CatalogoService catalogo, ICalculoPonderadoServ
     public async Task<IActionResult> PlanesPorCurso(int cursoId, CancellationToken ct) =>
         Ok(await catalogo.PlanesPorCurso(UsuarioId, Admin, cursoId, ct));
 
+    [HttpPut("planes/{planId:int}")]
+    public async Task<IActionResult> ActualizarPlan(int planId, ActualizarPlanRefuerzoRequest request, CancellationToken ct) =>
+        Ok(await catalogo.ActualizarPlan(UsuarioId, Admin, planId, request, ct));
+
     [HttpGet("materias/{cursoId:int}/parciales/{parcialId:int}/rendimiento")]
     public async Task<IActionResult> RendimientoPorParcial(int cursoId, int parcialId, CancellationToken ct)
     {

@@ -82,6 +82,15 @@ class ContextoCursoChat(BaseModel):
     componentesPromedios: Optional[Dict[str, float]] = None
 
 
+class EvaluacionChatDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: str = Field(..., min_length=1, description="Nombre de la actividad o evaluación")
+    componente: str = Field(..., min_length=1, description="Componente (Tareas, APE, Examen)")
+    nota: float = Field(..., ge=0.0, le=10.0)
+    temas: List[str] = Field(default_factory=list)
+
+
 class EstudianteChatDto(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -90,6 +99,7 @@ class EstudianteChatDto(BaseModel):
     enRiesgo: bool = False
     componentes: Optional[Dict[str, float]] = None
     temasDeficientes: List[str] = Field(default_factory=list)
+    evaluaciones: List[EvaluacionChatDto] = Field(default_factory=list)
 
 
 class SolicitudChat(BaseModel):
@@ -136,4 +146,5 @@ class RespuestaChat(BaseModel):
     modo: Literal["curso", "estudiante"]
     esFallback: bool = False
     toolsEjecutadas: List[str] = Field(default_factory=list)
+    sugerenciasSeguimiento: List[str] = Field(default_factory=list)
     tiempoRespuestaMs: int = Field(0, ge=0)
