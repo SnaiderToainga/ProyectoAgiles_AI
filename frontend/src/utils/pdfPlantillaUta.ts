@@ -23,7 +23,45 @@ export interface DocumentoPdfBase {
   contentStartY: number
 }
 
+/**
+ * Normaliza cadenas a Latin-1 seguro para la fuente estándar `helvetica` de jsPDF,
+ * evitando caracteres corruptos provenientes de textos generados por IA o Moodle.
+ */
+export function normalizarTextoPdf(texto?: string | null): string {
+  if (!texto) return ''
+  const normalizado = texto
+    .normalize('NFC')
+    .replace(/[\u2013\u2014\u2212]/g, '-')
+    .replace(/[\u2022\u25E6\u25AA\u25CF]/g, '-')
+    .replace(/[\u201C\u201D\u00AB\u00BB]/g, '"')
+    .replace(/[\u2018\u2019\u201A]/g, "'")
+    .replace(/\u2026/g, '...')
+    .replace(/\u2192/g, '->')
+    .replace(/\u2190/g, '<-')
+    .replace(/\u2265/g, '>=')
+    .replace(/\u2264/g, '<=')
+    .replace(/\u2260/g, '!=')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+
+  return Array.from(normalizado)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0)
+      return (
+        code === 9 ||
+        code === 10 ||
+        code === 13 ||
+        (code >= 32 && code <= 126) ||
+        (code >= 160 && code <= 255)
+      )
+    })
+    .join('')
+}
+
 function cargarLogoComoDataUrl(): Promise<string | null> {
+  if (typeof Image === 'undefined' || typeof document === 'undefined') {
+    return Promise.resolve(null)
+  }
   return new Promise((resolve) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -104,23 +142,27 @@ export async function crearDocumentoPdfUta(
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
-  doc.text((membrete.universidad || 'UNIVERSIDAD TÉCNICA DE AMBATO').toUpperCase(), textX, 10.5)
+  doc.text(
+    normalizarTextoPdf(membrete.universidad || 'UNIVERSIDAD TÉCNICA DE AMBATO').toUpperCase(),
+    textX,
+    10.5
+  )
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  doc.text(`${membrete.facultad} — ${membrete.carrera}`, textX, 15.2)
+  doc.text(normalizarTextoPdf(`${membrete.facultad} - ${membrete.carrera}`), textX, 15.2)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.8)
   doc.setTextColor(253, 230, 138)
-  doc.text(membrete.tituloReporte.toUpperCase(), textX, 20.8, {
+  doc.text(normalizarTextoPdf(membrete.tituloReporte).toUpperCase(), textX, 20.8, {
     maxWidth: 210 - textX - MARGEN_HORIZONTAL_MM,
   })
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.2)
   doc.setTextColor(244, 244, 245)
-  doc.text(`${membrete.sistema} | Código: ${codigoDocumento}`, textX, 25.5)
+  doc.text(normalizarTextoPdf(`${membrete.sistema} | Código: ${codigoDocumento}`), textX, 25.5)
 
   // Caja de metadatos académicos de cátedra
   const boxY = 34
@@ -147,21 +189,31 @@ export async function crearDocumentoPdfUta(
 
   doc.setFont('helvetica', 'normal')
   doc.text(
-    `${membrete.materiaNombre} (${membrete.materiaCodigo})`,
+    normalizarTextoPdf(`${membrete.materiaNombre} (${membrete.materiaCodigo})`),
     MARGEN_HORIZONTAL_MM + 24,
     boxY + 6.5,
     { maxWidth: 72 }
   )
-  doc.text(membrete.docenteTitular, MARGEN_HORIZONTAL_MM + 24, boxY + 12.5, { maxWidth: 72 })
-  doc.text(membrete.docenteCorreo || 'docencia.fisei@uta.edu.ec', MARGEN_HORIZONTAL_MM + 24, boxY + 18, {
+  doc.text(normalizarTextoPdf(membrete.docenteTitular), MARGEN_HORIZONTAL_MM + 24, boxY + 12.5, {
     maxWidth: 72,
   })
+  doc.text(
+    normalizarTextoPdf(membrete.docenteCorreo || 'docencia.fisei@uta.edu.ec'),
+    MARGEN_HORIZONTAL_MM + 24,
+    boxY + 18,
+    { maxWidth: 72 }
+  )
 
-  doc.text(`${membrete.periodoLectivo} · Parcial ${membrete.parcialNumero}`, 143, boxY + 6.5, {
+  doc.text(
+    normalizarTextoPdf(`${membrete.periodoLectivo} - Parcial ${membrete.parcialNumero}`),
+    143,
+    boxY + 6.5,
+    { maxWidth: 50 }
+  )
+  doc.text(normalizarTextoPdf(formatearFechaLocal(membrete.fechaEmisionUtc)), 143, boxY + 12.5, {
     maxWidth: 50,
   })
-  doc.text(formatearFechaLocal(membrete.fechaEmisionUtc), 143, boxY + 12.5, { maxWidth: 50 })
-  doc.text('30% Tareas · 30% APE · 40% Examen', 143, boxY + 18, { maxWidth: 50 })
+  doc.text('30% Tareas / 30% APE / 40% Examen', 143, boxY + 18, { maxWidth: 50 })
 
   return {
     doc,
@@ -199,7 +251,7 @@ export function aplicarBloqueFirmaYPieUta(
   doc.setFontSize(7.4)
   doc.setTextColor(...COLOR_TEXTO_MEDIO)
   const lineasConformidad = doc.splitTextToSize(
-    firma.leyendaConformidad,
+    normalizarTextoPdf(firma.leyendaConformidad),
     ANCHO_UTIL_A4_MM - 8
   ) as string[]
   doc.text(lineasConformidad, MARGEN_HORIZONTAL_MM + 4, firmaY + 5.5)
@@ -214,7 +266,10 @@ export function aplicarBloqueFirmaYPieUta(
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(...COLOR_TEXTO_OSCURO)
-  doc.text(firma.nombreDocente, 63, lineaFirmaY + 4.5, { align: 'center', maxWidth: 64 })
+  doc.text(normalizarTextoPdf(firma.nombreDocente), 63, lineaFirmaY + 4.5, {
+    align: 'center',
+    maxWidth: 64,
+  })
   doc.text('Coordinación Académica FISEI', 147, lineaFirmaY + 4.5, {
     align: 'center',
     maxWidth: 64,
@@ -223,7 +278,10 @@ export function aplicarBloqueFirmaYPieUta(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(...COLOR_TEXTO_MEDIO)
-  doc.text(firma.etiquetaCasillero, 63, lineaFirmaY + 8.5, { align: 'center', maxWidth: 64 })
+  doc.text(normalizarTextoPdf(firma.etiquetaCasillero), 63, lineaFirmaY + 8.5, {
+    align: 'center',
+    maxWidth: 64,
+  })
   doc.text('Visto Bueno / Seguimiento SISRA', 147, lineaFirmaY + 8.5, {
     align: 'center',
     maxWidth: 64,
@@ -239,7 +297,9 @@ export function aplicarBloqueFirmaYPieUta(
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.2)
     doc.setTextColor(...COLOR_TEXTO_MEDIO)
-    doc.text(pie.textoInstitucional, MARGEN_HORIZONTAL_MM, 286, { maxWidth: 138 })
+    doc.text(normalizarTextoPdf(pie.textoInstitucional), MARGEN_HORIZONTAL_MM, 286, {
+      maxWidth: 138,
+    })
 
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...COLOR_TEXTO_OSCURO)
@@ -250,7 +310,7 @@ export function aplicarBloqueFirmaYPieUta(
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.6)
     doc.setTextColor(...COLOR_TEXTO_MEDIO)
-    doc.text(`Ref: ${pie.codigoDocumento}`, MARGEN_HORIZONTAL_MM, 290)
+    doc.text(normalizarTextoPdf(`Ref: ${pie.codigoDocumento}`), MARGEN_HORIZONTAL_MM, 290)
   }
 }
 

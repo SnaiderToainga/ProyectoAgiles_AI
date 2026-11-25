@@ -17,6 +17,7 @@ import {
   aplicarBloqueFirmaYPieUta,
   crearDocumentoPdfUta,
   descargarPdfSeguro,
+  normalizarTextoPdf,
   obtenerFinalYTabla,
 } from './pdfPlantillaUta'
 
@@ -78,8 +79,8 @@ export async function exportarPdfReporteIndividual(
     head: [['Estudiante', 'Correo Institucional', 'Tareas (30%)', 'APE (30%)', 'Examen (40%)', 'Nota Final', 'Estado']],
     body: [
       [
-        est.nombreCompleto,
-        est.correo,
+        normalizarTextoPdf(est.nombreCompleto),
+        normalizarTextoPdf(est.correo),
         `${est.promedioTareas.toFixed(2)} (${est.aporteTareas.toFixed(2)})`,
         `${est.promedioApe.toFixed(2)} (${est.aporteApe.toFixed(2)})`,
         `${est.promedioExamen.toFixed(2)} (${est.aporteExamen.toFixed(2)})`,
@@ -106,8 +107,14 @@ export async function exportarPdfReporteIndividual(
   cursorY += 3
 
   const anchoTexto = ANCHO_UTIL_A4_MM - 8
-  const lineasCausa = doc.splitTextToSize(`Causa principal: ${reporte.causaPrincipalRendimiento}`, anchoTexto) as string[]
-  const lineasDiag = doc.splitTextToSize(`Diagnóstico IA: ${diagnosticoTexto}`, anchoTexto) as string[]
+  const lineasCausa = doc.splitTextToSize(
+    normalizarTextoPdf(`Causa principal: ${reporte.causaPrincipalRendimiento}`),
+    anchoTexto
+  ) as string[]
+  const lineasDiag = doc.splitTextToSize(
+    normalizarTextoPdf(`Diagnóstico IA: ${diagnosticoTexto}`),
+    anchoTexto
+  ) as string[]
   const altoCaja = Math.max(24, (lineasCausa.length + lineasDiag.length) * 4.4 + 12)
 
   cursorY = asegurarEspacioVertical(doc, cursorY, altoCaja + 4)
@@ -119,9 +126,11 @@ export async function exportarPdfReporteIndividual(
   doc.setFontSize(7.8)
   doc.setTextColor(...COLOR_TEXTO_OSCURO)
   doc.text(
-    `Nivel de riesgo: ${plan?.nivelRiesgo || (est.enRiesgo ? 'En Riesgo' : 'Bajo')}${
-      plan?.esFallback ? ' (Motor de contingencia local)' : ''
-    }`,
+    normalizarTextoPdf(
+      `Nivel de riesgo: ${plan?.nivelRiesgo || (est.enRiesgo ? 'En Riesgo' : 'Bajo')}${
+        plan?.esFallback ? ' (Motor de contingencia local)' : ''
+      }`
+    ),
     MARGEN_HORIZONTAL_MM + 4,
     cursorY + 5.5
   )
@@ -146,13 +155,13 @@ export async function exportarPdfReporteIndividual(
   const filasPlan =
     plan && plan.detalles.length > 0
       ? plan.detalles.map((d) => [
-          d.temaNombre,
-          d.actividadSugerida,
-          d.prioridad,
+          normalizarTextoPdf(d.temaNombre),
+          normalizarTextoPdf(d.actividadSugerida),
+          normalizarTextoPdf(d.prioridad),
           `${d.tiempoEstimadoHoras} h`,
-          d.recursoRecomendado || 'Material docente FISEI',
+          normalizarTextoPdf(d.recursoRecomendado || 'Material docente FISEI'),
         ])
-      : [['Sin plan guardado', 'No registra plan remedial persistido para el estudiante en este curso.', '—', '—', '—']]
+      : [['Sin plan guardado', 'No registra plan remedial persistido para el estudiante en este curso.', '-', '-', '-']]
 
   autoTable(doc, {
     startY: cursorY + 3,
@@ -186,8 +195,8 @@ export async function exportarPdfReporteIndividual(
   // 4. Desglose de Evaluaciones del Estudiante en el Parcial
   const filasEvals = est.componentes.flatMap((comp) =>
     comp.evaluaciones.map((ev) => [
-      NOMBRE_COMPONENTE[comp.tipo],
-      ev.nombre,
+      normalizarTextoPdf(NOMBRE_COMPONENTE[comp.tipo]),
+      normalizarTextoPdf(ev.nombre),
       ev.nota !== null ? `${ev.nota.toFixed(2)} / 10` : 'Sin calificar',
       ev.nota === null ? 'Pendiente' : ev.esDeficiente ? 'Deficiente (< 7.00)' : 'Satisfactorio',
     ])
@@ -262,33 +271,36 @@ export async function exportarPdfMatrizConsolidada(
   doc.text(`Total estudiantes: ${res.totalEstudiantes}`, MARGEN_HORIZONTAL_MM + 4, boxY + 6)
   doc.text(
     `Promedio del curso: ${res.promedioGeneralCurso.toFixed(2)} / 10`,
-    MARGEN_HORIZONTAL_MM + 52,
+    MARGEN_HORIZONTAL_MM + 46,
     boxY + 6
   )
 
   doc.setTextColor(21, 128, 61)
   doc.text(
     `Aprobados: ${res.totalAprobados} (${res.porcentajeAprobados.toFixed(1)}%)`,
-    MARGEN_HORIZONTAL_MM + 106,
+    MARGEN_HORIZONTAL_MM + 96,
     boxY + 6
   )
 
   doc.setTextColor(...COLOR_UTA_CRIMSON)
   doc.text(
     `En riesgo (< ${res.umbralAprobacion.toFixed(2)}): ${res.totalEnRiesgo} (${res.porcentajeEnRiesgo.toFixed(1)}%)`,
-    MARGEN_HORIZONTAL_MM + 144,
-    boxY + 6
+    MARGEN_HORIZONTAL_MM + 136,
+    boxY + 6,
+    { maxWidth: 42 }
   )
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.6)
   doc.setTextColor(...COLOR_TEXTO_MEDIO)
   doc.text(
-    `Promedios ponderados — Tareas (30%): ${res.promedioTareasCurso.toFixed(2)} (aporte ${res.aporteTareasCurso.toFixed(
-      2
-    )})  |  APE (30%): ${res.promedioApeCurso.toFixed(2)} (aporte ${res.aporteApeCurso.toFixed(
-      2
-    )})  |  Examen (40%): ${res.promedioExamenCurso.toFixed(2)} (aporte ${res.aporteExamenCurso.toFixed(2)})`,
+    normalizarTextoPdf(
+      `Promedios ponderados - Tareas (30%): ${res.promedioTareasCurso.toFixed(2)} (aporte ${res.aporteTareasCurso.toFixed(
+        2
+      )})  |  APE (30%): ${res.promedioApeCurso.toFixed(2)} (aporte ${res.aporteApeCurso.toFixed(
+        2
+      )})  |  Examen (40%): ${res.promedioExamenCurso.toFixed(2)} (aporte ${res.aporteExamenCurso.toFixed(2)})`
+    ),
     MARGEN_HORIZONTAL_MM + 4,
     boxY + 13,
     { maxWidth: ANCHO_UTIL_A4_MM - 8 }
@@ -296,9 +308,12 @@ export async function exportarPdfMatrizConsolidada(
 
   if (alcanceDescripcion) {
     doc.setFont('helvetica', 'italic')
-    doc.text(`Alcance visual activo en pantalla: ${alcanceDescripcion}`, MARGEN_HORIZONTAL_MM + 4, boxY + 19, {
-      maxWidth: ANCHO_UTIL_A4_MM - 8,
-    })
+    doc.text(
+      normalizarTextoPdf(`Alcance visual activo en pantalla: ${alcanceDescripcion}`),
+      MARGEN_HORIZONTAL_MM + 4,
+      boxY + 19,
+      { maxWidth: ANCHO_UTIL_A4_MM - 8 }
+    )
   }
 
   // 2. Matriz Consolidada de Calificaciones
@@ -310,7 +325,7 @@ export async function exportarPdfMatrizConsolidada(
 
   const filasTabla = reporte.estudiantes.map((f) => [
     String(f.numeroOrden),
-    `${f.nombreCompleto}\n${f.correo}`,
+    normalizarTextoPdf(`${f.nombreCompleto}\n${f.correo}`),
     `${f.promedioTareas.toFixed(2)} (${f.aporteTareas.toFixed(2)})`,
     `${f.promedioApe.toFixed(2)} (${f.aporteApe.toFixed(2)})`,
     `${f.promedioExamen.toFixed(2)} (${f.aporteExamen.toFixed(2)})`,
