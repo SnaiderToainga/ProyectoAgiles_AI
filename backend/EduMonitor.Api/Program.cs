@@ -40,7 +40,10 @@ builder.Services.AddOptions<MoodleOptions>().BindConfiguration(MoodleOptions.Sec
 builder.Services.AddHttpClient(MoodleService.ClientName, (sp, client) =>
 {
     var o = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MoodleOptions>>().Value;
-    client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/");
+    var baseUri = new Uri(o.BaseUrl.TrimEnd('/') + "/");
+    client.BaseAddress = baseUri;
+    if (baseUri.Host.Equals("host.docker.internal", StringComparison.OrdinalIgnoreCase))
+        client.DefaultRequestHeaders.Host = baseUri.IsDefaultPort ? "localhost" : $"localhost:{baseUri.Port}";
     client.Timeout = TimeSpan.FromSeconds(o.TimeoutSeconds);
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
@@ -83,6 +86,14 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
+// Migraciones automaticas opcionales (despliegue con Docker Compose)
+if (builder.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<EduMonitorDbContext>().Database.Migrate();
+    scope.ServiceProvider.GetRequiredService<AcademicoDbContext>().Database.Migrate();
+}
+
 // Inicializador de contraseñas reales con Salt PBKDF2
 if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Development:ResetExamplePasswords"))
 using (var scope = app.Services.CreateScope())
@@ -107,6 +118,22 @@ using (var scope = app.Services.CreateScope())
     }
 
     context.SaveChanges();
+
+    if (proano != null)
+    {
+        var academicContext = scope.ServiceProvider.GetRequiredService<AcademicoDbContext>();
+        await AcademicoSeeder.Seed(academicContext, proano.Id, proano.NombreCompleto, proano.Email);
+        var moodleDocenteId = builder.Configuration.GetValue<int?>("Development:MoodleDocenteId");
+        if (moodleDocenteId is > 0)
+        {
+            var docente = await academicContext.Docentes.FirstOrDefaultAsync(d => d.UsuarioId == proano.Id);
+            if (docente != null && docente.MoodleUserId is null)
+            {
+                docente.MoodleUserId = moodleDocenteId;
+                await academicContext.SaveChangesAsync();
+            }
+        }
+    }
 }
 
 app.UseExceptionHandler();

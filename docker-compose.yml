@@ -1,0 +1,70 @@
+name: edumonitor-ai
+
+# Orquestacion unificada (T-13.7): SQL Server, AI Service, Backend API y Gateway YARP.
+# El unico servicio expuesto al cliente es el Gateway (JWT obligatorio en /api/agent/*).
+# Moodle se levanta aparte con docker/moodle/compose.yaml.
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Copie .env.example como .env}
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  ai-service:
+    build: ./ai-service
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:5000"]'
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: EduMonitor.Api/Dockerfile
+    environment:
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=EduMonitorDB;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      ConnectionStrings__AcademicoConnection: "Server=sqlserver,1433;Database=AcademicoDB;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      Jwt__Key: ${JWT_KEY:?Copie .env.example como .env}
+      Moodle__BaseUrl: ${MOODLE_BASE_URL:-http://host.docker.internal:8080}
+      Moodle__MoodleToken: ${MOODLE_TOKEN:-}
+      Database__MigrateOnStartup: "true"
+      # Entorno de demostracion: restablece las cuentas de ejemplo (Admin123!). No usar en produccion.
+      ASPNETCORE_ENVIRONMENT: Development
+      Development__ResetExamplePasswords: "true"
+      Development__MoodleDocenteId: ${MOODLE_DOCENTE_ID:-3}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ./backend
+      dockerfile: EduMonitor.Gateway/Dockerfile
+    environment:
+      Jwt__Key: ${JWT_KEY:?Copie .env.example como .env}
+      ReverseProxy__Clusters__backend-api-cluster__Destinations__destination1__Address: http://api:5102
+      ReverseProxy__Clusters__ai-service-cluster__Destinations__destination1__Address: http://ai-service:8000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - api
+      - ai-service
+    restart: unless-stopped
+
+volumes:
+  sqlserver_data:
