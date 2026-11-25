@@ -42,6 +42,7 @@ interface ChatIaWidgetProps {
   estudiantePreseleccionado?: ResumenAcademicoEstudianteDto | null
   abiertoExterno?: boolean
   desactivado?: boolean
+  modoPanelLateral?: boolean
   onCerrar?: () => void
   onAbrir?: () => void
 }
@@ -213,6 +214,7 @@ export function ChatIaWidget({
   estudiantePreseleccionado = null,
   abiertoExterno,
   desactivado = false,
+  modoPanelLateral = false,
   onCerrar,
   onAbrir,
 }: ChatIaWidgetProps) {
@@ -545,8 +547,11 @@ export function ChatIaWidget({
 
       {abierto && (
         <div
-          style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
-          className="w-[95vw] sm:w-[470px] h-[640px] max-h-[88vh] bg-white rounded-xl shadow-2xl border border-[#e4e4e7] flex flex-col overflow-hidden"
+          className={
+            modoPanelLateral
+              ? 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[460px] h-[640px] max-h-[88vh] shadow-2xl xl:static xl:z-auto xl:w-full xl:h-[calc(100vh-115px)] xl:max-h-none xl:sticky xl:top-4 xl:shadow-xs bg-white rounded-xl border border-[#e4e4e7] flex flex-col overflow-hidden'
+              : 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[470px] h-[640px] max-h-[88vh] bg-white rounded-xl shadow-2xl border border-[#e4e4e7] flex flex-col overflow-hidden'
+          }
         >
           {/* Cabecera */}
           <div className="bg-[#8B151A] text-white p-3.5 flex items-center justify-between">

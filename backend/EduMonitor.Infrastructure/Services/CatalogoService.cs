@@ -142,26 +142,67 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
             .OrderByDescending(p => p.FechaGeneracion)
             .ToListAsync(ct);
 
-        return planes.Select(p => new PlanRefuerzoDto(
-            p.Id,
-            p.EstudianteId,
-            p.Estudiante != null ? p.Estudiante.NombreCompleto : "",
-            p.CursoId,
-            p.DiagnosticoGeneral,
-            p.NivelRiesgo,
-            p.EsFallback,
-            p.FechaGeneracion,
-            p.Detalles.Select(d => new DetallePlanRefuerzoDto(
-                d.Id,
-                d.TemaId,
-                d.Tema != null ? d.Tema.Nombre : $"Tema #{d.TemaId}",
-                d.ActividadSugerida,
-                d.Prioridad,
-                d.TiempoEstimadoHoras,
-                d.RecursoRecomendado
-            )).ToList()
-        )).ToList();
+        return planes.Select(MapearPlanDto).ToList();
     }
+
+    public async Task<PlanRefuerzoDto> ActualizarPlan(
+        int user,
+        bool admin,
+        int planId,
+        ActualizarPlanRefuerzoRequest request,
+        CancellationToken ct = default)
+    {
+        var plan = await db.PlanesRefuerzo
+            .Include(p => p.Estudiante)
+            .Include(p => p.Detalles)
+                .ThenInclude(d => d.Tema)
+            .SingleOrDefaultAsync(p => p.Id == planId, ct)
+            ?? throw new AcademicoException(404, "Plan de refuerzo inexistente.");
+
+        await ComprobarCurso(user, admin, plan.CursoId, ct);
+
+        plan.DiagnosticoGeneral = request.DiagnosticoGeneral.Trim();
+        if (!string.IsNullOrWhiteSpace(request.NivelRiesgo))
+            plan.NivelRiesgo = request.NivelRiesgo.Trim();
+
+        if (request.Detalles != null)
+        {
+            foreach (var edit in request.Detalles)
+            {
+                var detalle = plan.Detalles.SingleOrDefault(d => d.Id == edit.Id);
+                if (detalle != null)
+                {
+                    detalle.ActividadSugerida = edit.ActividadSugerida.Trim();
+                    detalle.Prioridad = edit.Prioridad.Trim();
+                    detalle.TiempoEstimadoHoras = edit.TiempoEstimadoHoras;
+                    detalle.RecursoRecomendado = (edit.RecursoRecomendado ?? "").Trim();
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        return MapearPlanDto(plan);
+    }
+
+    private static PlanRefuerzoDto MapearPlanDto(PlanRefuerzo p) => new(
+        p.Id,
+        p.EstudianteId,
+        p.Estudiante != null ? p.Estudiante.NombreCompleto : "",
+        p.CursoId,
+        p.DiagnosticoGeneral,
+        p.NivelRiesgo,
+        p.EsFallback,
+        p.FechaGeneracion,
+        p.Detalles.Select(d => new DetallePlanRefuerzoDto(
+            d.Id,
+            d.TemaId,
+            d.Tema != null ? d.Tema.Nombre : $"Tema #{d.TemaId}",
+            d.ActividadSugerida,
+            d.Prioridad,
+            d.TiempoEstimadoHoras,
+            d.RecursoRecomendado
+        )).ToList()
+    );
 
     public async Task<ReporteConsolidadoCursoDto> ReporteConsolidadoCurso(
         int user,

@@ -159,6 +159,20 @@ export interface CrearPlanRefuerzoRequest {
   detalles: DetallePlanIa[]
 }
 
+export interface ActualizarDetallePlanRequest {
+  id: number
+  actividadSugerida: string
+  prioridad: string
+  tiempoEstimadoHoras: number
+  recursoRecomendado: string
+}
+
+export interface ActualizarPlanRefuerzoRequest {
+  diagnosticoGeneral: string
+  nivelRiesgo?: string
+  detalles?: ActualizarDetallePlanRequest[]
+}
+
 export const NOMBRE_COMPONENTE: Record<TipoItemEvaluacion, string> = {
   0: 'Sin clasificar',
   1: 'Tareas',
