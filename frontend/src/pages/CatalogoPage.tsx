@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import clienteAxios from '../api/clienteAxios'
 import { NOMBRE_COMPONENTE, type EvaluacionDto } from '../types/academico'
+import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 
 export interface Tema {
   id: number
@@ -289,7 +290,9 @@ export function CatalogoPage() {
   if (cargando) return <p role="status" className="text-xs text-[#52525b]">Cargando catálogo...</p>
   if (errorCarga) return <p role="alert" className="text-xs text-red-700">{errorCarga}</p>
   if (!materiaActual || !parcialActual) {
-    return (
+    return materias.length === 0 ? (
+      <PrimeraSincronizacionMoodle />
+    ) : (
       <p className="text-xs text-[#52525b]">
         No hay materias con parciales disponibles para este usuario.
       </p>

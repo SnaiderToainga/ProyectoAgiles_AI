@@ -30,6 +30,7 @@ import {
   type ResumenAcademicoEstudianteDto,
   type SolicitudPlanIa,
 } from '../types/academico'
+import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 
 interface CitaTutoriaLocal {
   modalidad: string
@@ -490,7 +491,11 @@ export function TutoriaPage() {
   if (cargando) return <p role="status" className="text-xs text-[#52525b]">Cargando módulo de tutoría...</p>
   if (errorCarga) return <p role="alert" className="text-xs text-red-700">{errorCarga}</p>
   if (!materiaActual || !parcialActual) {
-    return <p className="text-xs text-[#52525b]">No hay asignaturas disponibles para tutoría.</p>
+    return materias.length === 0 ? (
+      <PrimeraSincronizacionMoodle />
+    ) : (
+      <p className="text-xs text-[#52525b]">No hay asignaturas disponibles para tutoría.</p>
+    )
   }
 
   const conPlanCount = estudiantesEnRiesgo.filter((e) =>
