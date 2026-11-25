@@ -7,5 +7,6 @@ if [ ! -f /var/moodledata/.edumonitor-installed ]; then
     chown www-data:www-data /var/moodledata/.edumonitor-installed
 fi
 php /opt/edumonitor/provision.php
+php /opt/edumonitor/branding.php
 chown -R www-data:www-data /var/moodledata
 exec "$@"

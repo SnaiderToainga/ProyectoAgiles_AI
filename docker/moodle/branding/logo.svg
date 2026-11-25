@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="140" viewBox="0 0 520 140" role="img" aria-label="SISRA, Aula Virtual FISEI">
+  <title>SISRA · Aula Virtual FISEI</title>
+  <g transform="translate(12 14) scale(1.02)">
+    <path d="M50 4 L92 18 V54 C92 80 74 98 50 106 C26 98 8 80 8 54 V18 Z" fill="#1F3B73"/>
+    <path d="M50 11 L85 23 V54 C85 76 70 91 50 98 C30 91 15 76 15 54 V23 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="2"/>
+    <path d="M22 82 Q36 74 50 80 L50 54 Q36 48 22 56 Z" fill="#FFFFFF"/>
+    <path d="M78 82 Q64 74 50 80 L50 54 Q64 48 78 56 Z" fill="#E6EBF4"/>
+    <polyline points="26,44 39,34 51,38 70,21" fill="none" stroke="#E2474F" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="70" cy="21" r="5.5" fill="#E2474F"/>
+  </g>
+  <rect x="134" y="24" width="2.5" height="92" fill="#1F3B73" opacity="0.35"/>
+  <g font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+    <text x="156" y="72" font-size="54" font-weight="700" letter-spacing="5" fill="#1F3B73">SISRA</text>
+    <rect x="158" y="82" width="64" height="4" rx="2" fill="#8B151A"/>
+    <text x="156" y="106" font-size="15" font-weight="600" fill="#33466E">Seguimiento y Refuerzo Académico</text>
+    <text x="156" y="126" font-size="13.5" fill="#5B6B88" letter-spacing="0.5">AULA VIRTUAL · FISEI</text>
+  </g>
+</svg>

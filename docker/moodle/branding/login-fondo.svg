@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <title>Fondo de acceso SISRA</title>
+  <defs>
+    <!-- Patrón de iconos académicos en trazo claro -->
+    <pattern id="iconos" width="240" height="220" patternUnits="userSpaceOnUse">
+      <g fill="none" stroke="#D3D9E4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Portátil -->
+        <rect x="22" y="24" width="64" height="40" rx="4"/>
+        <path d="M12 72 H96 L90 80 H18 Z"/>
+        <polyline points="34,54 46,44 56,50 72,34"/>
+        <!-- Birrete -->
+        <path d="M150 40 L188 26 L226 40 L188 54 Z"/>
+        <path d="M168 47 V62 Q188 72 208 62 V47"/>
+        <path d="M226 40 V58"/>
+        <!-- Libro abierto -->
+        <path d="M30 150 Q48 140 66 148 V182 Q48 174 30 184 Z"/>
+        <path d="M102 150 Q84 140 66 148 V182 Q84 174 102 184 Z"/>
+        <!-- Indicador circular -->
+        <circle cx="180" cy="160" r="26"/>
+        <path d="M180 134 A26 26 0 0 1 206 160" stroke="#C3CBD9" stroke-width="6"/>
+        <polyline points="170,166 180,150 190,166"/>
+        <path d="M180 150 V176"/>
+      </g>
+    </pattern>
+    <linearGradient id="velo" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#EEF1F6" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#EEF1F6" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#EEF1F6" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="#EEF1F6"/>
+  <rect width="1600" height="900" fill="url(#iconos)"/>
+  <rect x="480" width="640" height="900" fill="url(#velo)"/>
+
+  <!-- Ilustración propia: escritorio con portátil, gráficos y libros (esquina inferior izquierda) -->
+  <g transform="translate(40 470)">
+    <ellipse cx="230" cy="395" rx="230" ry="26" fill="#1F3B73" opacity="0.08"/>
+    <rect x="20" y="300" width="420" height="22" rx="8" fill="#1F3B73"/>
+    <rect x="50" y="322" width="18" height="70" fill="#2E4A85"/>
+    <rect x="392" y="322" width="18" height="70" fill="#2E4A85"/>
+    <!-- Portátil -->
+    <rect x="120" y="150" width="230" height="146" rx="10" fill="#26385F"/>
+    <rect x="132" y="162" width="206" height="122" rx="4" fill="#FFFFFF"/>
+    <rect x="148" y="236" width="22" height="36" rx="2" fill="#8B151A"/>
+    <rect x="180" y="214" width="22" height="58" rx="2" fill="#1F3B73"/>
+    <rect x="212" y="196" width="22" height="76" rx="2" fill="#4B6CB7"/>
+    <rect x="244" y="224" width="22" height="48" rx="2" fill="#1F3B73"/>
+    <polyline points="290,262 304,240 318,248 330,214" fill="none" stroke="#8B151A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M100 296 H370 L356 304 H114 Z" fill="#3A4F7D"/>
+    <!-- Libros -->
+    <rect x="30" y="262" width="80" height="16" rx="3" fill="#8B151A"/>
+    <rect x="36" y="246" width="74" height="16" rx="3" fill="#4B6CB7"/>
+    <rect x="28" y="230" width="78" height="16" rx="3" fill="#1F3B73"/>
+    <rect x="30" y="278" width="80" height="22" rx="3" fill="#2E4A85"/>
+    <!-- Birrete -->
+    <path d="M362 262 L402 246 L442 262 L402 278 Z" fill="#1F3B73"/>
+    <path d="M380 270 V286 Q402 298 424 286 V270" fill="#26385F"/>
+    <path d="M442 262 V284" stroke="#8B151A" stroke-width="4" stroke-linecap="round"/>
+    <!-- Tarjetas flotantes -->
+    <rect x="150" y="60" width="120" height="58" rx="10" fill="#FFFFFF" stroke="#D3D9E4" stroke-width="2"/>
+    <rect x="166" y="76" width="60" height="8" rx="4" fill="#1F3B73"/>
+    <rect x="166" y="92" width="88" height="8" rx="4" fill="#C3CBD9"/>
+    <circle cx="300" cy="100" r="26" fill="#FFFFFF" stroke="#D3D9E4" stroke-width="2"/>
+    <path d="M288 101 L297 110 L313 92" fill="none" stroke="#2E7D32" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Marca SISRA (derecha) -->
+  <g transform="translate(1270 360)" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+    <text x="0" y="60" font-size="78" font-weight="700" letter-spacing="8" fill="#1F3B73">SISRA</text>
+    <rect x="4" y="76" width="96" height="6" rx="3" fill="#8B151A"/>
+    <text x="2" y="114" font-size="20" font-weight="600" fill="#33466E">Seguimiento y Refuerzo</text>
+    <text x="2" y="140" font-size="20" font-weight="600" fill="#33466E">Académico</text>
+    <text x="2" y="172" font-size="15" fill="#5B6B88" letter-spacing="1.5">AULA VIRTUAL · FISEI</text>
+  </g>
+</svg>
