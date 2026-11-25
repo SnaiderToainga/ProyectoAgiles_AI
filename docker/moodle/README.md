@@ -55,7 +55,7 @@ Acceso: http://localhost:8080. Todos los usuarios son ficticios y usan autentica
 | Rol en Moodle | Usuario | Contraseña (variable de `.env`) |
 |---|---|---|
 | Administrador del sitio | `edumonitoradmin` | `MOODLE_ADMIN_PASSWORD` |
-| Docente con edición (`editingteacher`) en SOF-401 y SOF-402 | `docente.sprint1` (Ing. Carlos Docente Titular) | `MOODLE_DEMO_PASSWORD` |
+| Docente con edición (`editingteacher`) en SOF-401 y SOF-402 | `docente.sprint1` (Ing. Diego Proaño, la misma persona que `d.proano@uta.edu.ec` en SISRA) | `MOODLE_DEMO_PASSWORD` |
 | Estudiante (`student`) en ambos cursos | `andrea.morales`, `estiven.chiluisa`, `maria.sanchez`, `snaider.toainga`, `cristian.sivinta`, `cesar.carrasco`, `diana.ortiz`, `juan.torres`, `sofia.lopez`, `kevin.fuerez`, `mateo.perez`, `carlos.gomez` | `MOODLE_DEMO_PASSWORD` |
 
 El docente tiene además el rol de sistema `edumonitorrest`, que solo habilita el protocolo REST para

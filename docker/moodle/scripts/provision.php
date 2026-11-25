@@ -28,14 +28,15 @@ if (!$teacher) {
         'username' => 'docente.sprint1',
         'password' => getenv('MOODLE_DEMO_PASSWORD') ?: 'DemoEduMonitor2026!',
         'auth' => 'manual', 'confirmed' => 1, 'mnethostid' => $CFG->mnet_localhost_id,
-        'firstname' => 'Ing. Carlos', 'lastname' => 'Docente Titular',
-        'email' => 'docente.titular@uta.edu.ec', 'city' => 'Ambato', 'country' => 'EC'
+        'firstname' => 'Ing. Diego', 'lastname' => 'Proaño',
+        'email' => 'd.proano@uta.edu.ec', 'city' => 'Ambato', 'country' => 'EC'
     ]);
     $teacher = \core_user::get_user($id, '*', MUST_EXIST);
 } else {
-    $teacher->firstname = 'Ing. Carlos';
-    $teacher->lastname = 'Docente Titular';
-    $teacher->email = 'docente.titular@uta.edu.ec';
+    // Mismo docente que la cuenta de ejemplo de SISRA (d.proano@uta.edu.ec).
+    $teacher->firstname = 'Ing. Diego';
+    $teacher->lastname = 'Proaño';
+    $teacher->email = 'd.proano@uta.edu.ec';
     $DB->update_record('user', $teacher);
 }
 
