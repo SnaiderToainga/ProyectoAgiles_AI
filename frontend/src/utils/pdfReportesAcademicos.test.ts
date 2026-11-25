@@ -154,7 +154,7 @@ describe('exportación oficial de reportes PDF UTA/FISEI (T-11.6)', () => {
     expect(descargarSpy).toHaveBeenCalledTimes(2)
     expect(descargarSpy.mock.calls[0][1]).toBe('Matriz_Consolidada_SOF-401_Parcial1.pdf')
     expect(descargarSpy.mock.calls[1][1]).toBe(
-      'Informe_Tutoria_SOF-401_P1_Fuerez Morales_Kevin Paul'
+      'Informe_Tutoria_SOF-401_P1_Fuerez Morales_Kevin Paul.pdf'
     )
 
     const docConsolidado = descargarSpy.mock.calls[0][0]
