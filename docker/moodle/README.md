@@ -58,8 +58,8 @@ Acceso: http://localhost:8080. Todos los usuarios son ficticios y usan autentica
 | Docente con edición (`editingteacher`) en SOF-401 y SOF-402 | `docente.sprint1` (Ing. Diego Proaño, la misma persona que `d.proano@uta.edu.ec` en SISRA) | `MOODLE_DEMO_PASSWORD` |
 | Estudiante (`student`) en ambos cursos | `andrea.morales`, `estiven.chiluisa`, `maria.sanchez`, `snaider.toainga`, `cristian.sivinta`, `cesar.carrasco`, `diana.ortiz`, `juan.torres`, `sofia.lopez`, `kevin.fuerez`, `mateo.perez`, `carlos.gomez` | `MOODLE_DEMO_PASSWORD` |
 
-El docente tiene además el rol de sistema `edumonitorrest`, que solo habilita el protocolo REST para
-la API. Las credenciales se generan aleatoriamente con `Initialize-Local.ps1`, se conservan al
+La API no entra con ninguna de estas cuentas: usa la cuenta de servicio `sisra.servicio`
+(ver «Servicio REST e integración»). Las credenciales se generan aleatoriamente con `Initialize-Local.ps1`, se conservan al
 repetirlo y no se versionan. La contraseña de los estudiantes se reaplica en cada arranque.
 Moodle toma el idioma al iniciar sesión: al cambiar de rol, cerrar sesión o usar una ventana privada.
 
@@ -100,15 +100,40 @@ no se ve afectada. Para aplicar cambios de `branding/`: `docker compose up -d --
 
 ## Servicio REST e integración
 
-Servicio restringido `edumonitor_sprint1`, autorizado solo para el docente piloto, quien tiene rol
-editingteacher exclusivamente en los dos cursos. El rol global adicional solo habilita REST.
-Funciones: core_webservice_get_site_info, core_enrol_get_users_courses,
-core_enrol_get_enrolled_users, gradereport_user_get_grade_items, mod_assign_get_assignments,
-mod_assign_get_submission_status, core_course_get_contents.
+La API de SISRA usa una **cuenta de servicio de solo lectura**, `sisra.servicio`, y no el token de
+un docente concreto. `scripts/servicio.php` la crea y mantiene en cada arranque:
+
+- Autenticación `webservice`: solo sirve para la API y no puede iniciar sesión en la web.
+- Rol `sisralectura`, asignable solo en categorías y asignado en «Octubre 2026 – Febrero 2027».
+  Solo permite consultar: cursos sin matrícula, participantes y sus perfiles, secciones y
+  actividades ocultas, calificaciones de todo el curso y estados de entrega. No puede crear,
+  editar ni calificar. Los cursos fuera de esa categoría no son visibles para la API.
+- Rol `edumonitorrest` a nivel de sitio, que solo habilita el protocolo REST.
+- Servicio externo `edumonitor_sprint1` («SISRA lectura»), autorizado solo para esta cuenta, con las
+  funciones core_webservice_get_site_info, core_enrol_get_users_courses,
+  core_enrol_get_enrolled_users, gradereport_user_get_grade_items, mod_assign_get_assignments,
+  mod_assign_get_submission_status y core_course_get_contents.
+- Retira el acceso REST y el token del docente `docente.sprint1`, que la API usaba antes.
+
+Cada docente de SISRA se enlaza con su propio usuario de Moodle desde *Gestión de Usuarios*; la
+cuenta de servicio consulta los cursos donde ese usuario es profesor.
 
 Token y IDs quedan en `.local/moodle-connection.json` (ignorado). El token se conserva en moodledata
 y no se imprime. Copiar ese JSON solo a `.local/` del worktree académico, nunca al repositorio.
 El backend usa POST con wstoken en el cuerpo, no en URLs.
+
+**Al actualizar desde una versión anterior** el token cambia: copia el valor `moodleToken` de
+`.local/moodle-connection.json` en `MOODLE_TOKEN` del `.env` de la raíz (Docker Compose) o en
+`Moodle:MoodleToken` de tu configuración local, y reinicia la API. El token anterior queda revocado.
+
+### Agregar un docente nuevo
+
+1. En Moodle, como `edumonitoradmin`: crea el usuario y matricúlalo con rol **Profesor** en sus
+   cursos, que deben estar dentro de «Octubre 2026 – Febrero 2027». Anota su ID (número tras `id=`
+   en la dirección de su perfil).
+2. En SISRA, como administrador: *Gestión de Usuarios → + Nuevo Usuario*, rol Docente, con ese ID
+   de Moodle. SISRA verifica en qué cursos es profesor antes de guardar.
+3. El docente inicia sesión en SISRA y sincroniza sus cursos desde *Evaluaciones*.
 
 `Test-Persistence.ps1` consulta REST real, verifica los 2 cursos piloto con el docente y al menos un
 estudiante matriculados, ejecuta `docker compose restart` sin eliminar volúmenes y comprueba que

@@ -50,8 +50,13 @@ public sealed class MoodleService(IHttpClientFactory factory, IOptions<MoodleOpt
         return await Call<List<MoodleSeccionDto>>("core_course_get_contents",
         Args("courseid", cursoMoodleId), ct);
     }
-    public Task<MoodleTareasDto> ObtenerTareas(int cursoMoodleId, CancellationToken ct = default) =>
-        Call<MoodleTareasDto>("mod_assign_get_assignments", Args("courseids[0]", cursoMoodleId), ct);
+    public Task<MoodleTareasDto> ObtenerTareas(int cursoMoodleId, CancellationToken ct = default)
+    {
+        var args = Args("courseids[0]", cursoMoodleId);
+        // La cuenta de servicio lee el curso sin estar matriculada; sin este parámetro Moodle lo omite.
+        args["includenotenrolledcourses"] = "1";
+        return Call<MoodleTareasDto>("mod_assign_get_assignments", args, ct);
+    }
     public Task<MoodleEstadoEntregaDto> ObtenerEstadoEntrega(int tareaId, int usuarioId, CancellationToken ct = default)
     {
         var args = Args("assignid", tareaId); args["userid"] = usuarioId.ToString(CultureInfo.InvariantCulture);
