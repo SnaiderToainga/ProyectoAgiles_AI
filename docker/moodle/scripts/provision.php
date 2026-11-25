@@ -337,15 +337,7 @@ $protocols = array_filter(explode(',', $CFG->webserviceprotocols ?? ''));
 if (!in_array('rest', $protocols, true)) { $protocols[] = 'rest'; }
 set_config('webserviceprotocols', implode(',', $protocols));
 
-$system = context_system::instance();
-$restrole = $DB->get_record('role', ['shortname' => 'edumonitorrest']);
-if (!$restrole) {
-    $roleid = create_role('EduMonitor REST local', 'edumonitorrest', 'Solo acceso al protocolo REST');
-} else { $roleid = $restrole->id; }
-
-assign_capability('webservice/rest:use', CAP_ALLOW, $roleid, $system->id);
-role_assign($roleid, $teacher->id, $system->id);
-
+// El rol REST, la cuenta autorizada y el token se gestionan en servicio.php (cuenta de solo lectura).
 $ws = new webservice();
 $service = $ws->get_external_service_by_shortname('edumonitor_sprint1');
 if (!$service) {
@@ -370,28 +362,5 @@ foreach ($functions as $function) {
         $ws->add_external_function_to_service($function, $service->id);
     }
 }
-
-if (!$ws->get_ws_authorised_user($service->id, $teacher->id)) {
-    $ws->add_ws_authorised_user((object)[
-        'externalserviceid' => $service->id, 'userid' => $teacher->id, 'iprestriction' => '', 'validuntil' => 0
-    ]);
-}
-
-$tokenfile = '/var/moodledata/.edumonitor-token';
-if (!file_exists($tokenfile)) {
-    $token = external_generate_token(EXTERNAL_TOKEN_PERMANENT, $service, $teacher->id, $system);
-    file_put_contents($tokenfile, $token, LOCK_EX);
-    chmod($tokenfile, 0600);
-} else {
-    $token = trim(file_get_contents($tokenfile));
-}
-
-@mkdir('/run/edumonitor', 0755, true);
-file_put_contents('/run/edumonitor/moodle-connection.json', json_encode([
-    'baseUrl' => 'http://localhost:8080',
-    'moodleToken' => $token,
-    'docenteMoodleId' => $teacher->id,
-    'cursoMoodleIds' => $courseids
-], JSON_PRETTY_PRINT), LOCK_EX);
 
 echo "Aprovisionamiento completado: 12 tareas por curso, 12 estudiantes y calificaciones consolidadas.\n";

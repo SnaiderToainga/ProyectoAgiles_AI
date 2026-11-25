@@ -168,6 +168,18 @@ Copy-Item .env.example .env      # ajustar MSSQL_SA_PASSWORD, JWT_KEY, GEMINI_AP
 docker compose up -d --build
 ```
 La API aplica las migraciones al iniciar (`Database__MigrateOnStartup`). Moodle sigue en `docker/moodle` (Paso 1) y el frontend se inicia con `npm run dev` (Paso 6).
+`MOODLE_TOKEN` es el token de la cuenta de servicio de solo lectura de Moodle: cópialo de `docker/moodle/.local/moodle-connection.json` (campo `moodleToken`).
+
+### Alta de docentes y enlace con Moodle
+Las cuentas de SISRA y de Moodle son independientes. El administrador crea los docentes en *Gestión de Usuarios* y enlaza cada uno con su usuario de Moodle; la API lee Moodle con una cuenta de servicio de solo lectura y cada docente sincroniza únicamente los cursos donde es profesor. Endpoints (rol Administrador, vía Gateway):
+
+| Método | Ruta | Uso |
+|---|---|---|
+| `GET` | `/api/auth/usuarios` | Lista las cuentas con su `moodleUserId`. |
+| `POST` | `/api/auth/usuarios` | Crea una cuenta con contraseña cifrada (PBKDF2): mínimo 10 caracteres con mayúscula, minúscula, número y símbolo. Si el rol es Docente crea también su registro académico y, con `moodleUserId`, verifica en Moodle sus cursos. |
+| `PUT` | `/api/auth/usuarios/{id}/moodle` | Enlaza (`{"moodleUserId": 20}`) o desenlaza (`null`) a un docente con su usuario de Moodle. |
+
+El procedimiento completo está en [docker/moodle/README.md](docker/moodle/README.md#agregar-un-docente-nuevo).
 
 ---
 

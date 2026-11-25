@@ -53,6 +53,7 @@ builder.Services.AddScoped<IMoodleService, MoodleService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IIndicadoresService, IndicadoresService>();
+builder.Services.AddScoped<GestionUsuariosService>();
 
 // Autenticación JWT Bearer
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "EduMonitorAI_Secret_Key_FISEI_UTA_2026_SecureKey_MustBeLong!";

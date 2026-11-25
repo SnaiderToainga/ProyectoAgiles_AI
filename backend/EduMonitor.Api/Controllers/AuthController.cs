@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using EduMonitor.Core.DTOs.Auth;
 using EduMonitor.Core.Services;
+using EduMonitor.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 
@@ -45,22 +47,28 @@ public class AuthController : ControllerBase
 
     [Authorize(Roles="Administrador")]
     [HttpGet("usuarios")]
-    public async Task<IActionResult> ObtenerUsuarios()
+    public async Task<IActionResult> ObtenerUsuarios([FromServices] GestionUsuariosService gestion, CancellationToken ct) =>
+        Ok(await gestion.Listar(ct));
+
+    /// <summary>Crea una cuenta con contraseña cifrada; si es Docente, también su registro académico.</summary>
+    [Authorize(Roles="Administrador")]
+    [HttpPost("usuarios")]
+    public async Task<IActionResult> CrearUsuario([FromBody] CrearUsuarioRequest request,
+        [FromServices] GestionUsuariosService gestion, CancellationToken ct)
     {
-        var usuarios = await _authService.ObtenerUsuariosAsync();
-        var resultado = usuarios.Select(u => new
-        {
-            u.Id,
-            u.Username,
-            u.Email,
-            u.NombreCompleto,
-            u.Rol,
-            u.Status,
-            u.IntentosFallidos,
-            u.FechaBloqueo
-        });
-        return Ok(resultado);
+        var resultado = await gestion.Crear(request, AdministradorId, ct);
+        return StatusCode(StatusCodes.Status201Created, resultado);
     }
+
+    /// <summary>Enlaza (o desenlaza con null) la cuenta de un docente con su usuario de Moodle.</summary>
+    [Authorize(Roles="Administrador")]
+    [HttpPut("usuarios/{usuarioId:int}/moodle")]
+    public async Task<IActionResult> VincularMoodle(int usuarioId, [FromBody] VincularMoodleRequest request,
+        [FromServices] GestionUsuariosService gestion, CancellationToken ct) =>
+        Ok(await gestion.VincularMoodle(usuarioId, request.MoodleUserId, AdministradorId, ct));
+
+    private int AdministradorId =>
+        int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
 
     [Authorize(Roles="Administrador")]
     [HttpPut("desbloquear/{usuarioId}")]

@@ -1,123 +1,189 @@
-import { useState, useEffect, useMemo, type FormEvent } from 'react'
-import clienteAxios from '../api/clienteAxios'
+import { useState, useEffect, useMemo, useCallback, type FormEvent } from 'react'
+import {
+  crearUsuario,
+  desbloquearUsuario,
+  listarUsuarios,
+  mensajeDeError,
+  vincularMoodle,
+  type RolUsuario,
+  type UsuarioAdmin,
+  type VinculoMoodle,
+} from '../api/usuariosService'
 
-interface UsuarioAuth {
-  id: number
-  username: string
-  email: string
-  nombreCompleto: string
-  rol: string
-  status: number
-  intentosFallidos: number
-  fechaBloqueo: string | null
+interface Aviso {
+  tipo: 'exito' | 'advertencia' | 'error'
+  texto: string
+}
+
+const ESTILO_AVISO: Record<Aviso['tipo'], string> = {
+  exito: 'bg-emerald-50 border-emerald-600 text-emerald-800',
+  advertencia: 'bg-amber-50 border-amber-500 text-amber-800',
+  error: 'bg-red-50 border-red-600 text-red-800',
+}
+
+const CAMPO = 'w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A]'
+
+/** Requisitos de contraseña: los mismos que valida la API. */
+function problemasPassword(password: string): string[] {
+  const faltan: string[] = []
+  if (password.length < 10) faltan.push('10 caracteres')
+  if (!/[A-ZÁÉÍÓÚÑ]/.test(password)) faltan.push('una mayúscula')
+  if (!/[a-záéíóúñ]/.test(password)) faltan.push('una minúscula')
+  if (!/\d/.test(password)) faltan.push('un número')
+  if (!/[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]/.test(password)) faltan.push('un símbolo')
+  return faltan
+}
+
+function resumenVinculo(v: VinculoMoodle): Aviso {
+  if (v.moodleUserId === null) return { tipo: 'advertencia', texto: v.advertencia ?? 'Cuenta desenlazada de Moodle.' }
+  if (v.advertencia) return { tipo: 'advertencia', texto: `Enlazado con el usuario ${v.moodleUserId} de Moodle. ${v.advertencia}` }
+  const nombre = v.nombreMoodle ? ` (${v.nombreMoodle})` : ''
+  return {
+    tipo: 'exito',
+    texto: `Enlazado con el usuario ${v.moodleUserId} de Moodle${nombre}. Cursos del período: ${v.cursosMoodle.join('; ')}.`,
+  }
 }
 
 export function AdminUsuariosPage() {
-  const [usuarios, setUsuarios] = useState<UsuarioAuth[]>([])
+  const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([])
   const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroRol, setFiltroRol] = useState('Todos')
-  const [mensaje, setMensaje] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<Aviso | null>(null)
 
-  // Modales
+  // Modal: nuevo usuario
   const [modalNuevo, setModalNuevo] = useState(false)
-  const [modalEditar, setModalEditar] = useState<UsuarioAuth | null>(null)
-
-  // Formulario nuevo
   const [nuevoNombre, setNuevoNombre] = useState('')
   const [nuevoEmail, setNuevoEmail] = useState('')
-  const [nuevoRol, setNuevoRol] = useState('Docente')
+  const [nuevoUsername, setNuevoUsername] = useState('')
+  const [nuevoPassword, setNuevoPassword] = useState('')
+  const [nuevoConfirmacion, setNuevoConfirmacion] = useState('')
+  const [nuevoRol, setNuevoRol] = useState<RolUsuario>('Docente')
+  const [nuevoMoodleId, setNuevoMoodleId] = useState('')
+  const [errorNuevo, setErrorNuevo] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
 
-  const cargarUsuarios = async () => {
+  // Modal: enlace con Moodle
+  const [modalMoodle, setModalMoodle] = useState<UsuarioAdmin | null>(null)
+  const [moodleId, setMoodleId] = useState('')
+  const [errorMoodle, setErrorMoodle] = useState<string | null>(null)
+
+  const cargarUsuarios = useCallback(async () => {
+    setCargando(true)
+    setErrorCarga(null)
     try {
-      setCargando(true)
-      const { data } = await clienteAxios.get<UsuarioAuth[]>('/auth/usuarios')
-      // Sanitizar si existiese usuario demo en la base de datos
-      const sanitizados = data.map((u) => {
-        if (u.email === 'prueba.bloqueo@uta.edu.ec' || u.nombreCompleto === 'Usuario Prueba Bloqueado') {
-          return {
-            ...u,
-            nombreCompleto: 'Ing. Carlos Sánchez Mendoza',
-            email: 'c.sanchez@uta.edu.ec',
-            username: 'csanchez',
-          }
-        }
-        return u
-      })
-      setUsuarios(sanitizados)
-    } catch {
-      // Fallback a los usuarios institucionales si la API no estuviese disponible
-      setUsuarios([
-        { id: 1, username: 'dproano', email: 'd.proano@uta.edu.ec', nombreCompleto: 'Ing. Diego Proaño', rol: 'Docente', status: 1, intentosFallidos: 0, fechaBloqueo: null },
-        { id: 2, username: 'stoainga', email: 's.toainga@uta.edu.ec', nombreCompleto: 'Toainga Snaider Alexander', rol: 'Administrador', status: 1, intentosFallidos: 0, fechaBloqueo: null },
-        { id: 3, username: 'csanchez', email: 'c.sanchez@uta.edu.ec', nombreCompleto: 'Ing. Carlos Sánchez Mendoza', rol: 'Docente', status: 0, intentosFallidos: 3, fechaBloqueo: new Date().toISOString() },
-        { id: 4, username: 'csivinta', email: 'c.sivinta@uta.edu.ec', nombreCompleto: 'Sivinta Lasluisa Cristian', rol: 'Docente', status: 1, intentosFallidos: 0, fechaBloqueo: null },
-        { id: 5, username: 'echiluisa', email: 'e.chiluisa@uta.edu.ec', nombreCompleto: 'Chiluisa Vasquez Estiven', rol: 'Docente', status: 1, intentosFallidos: 0, fechaBloqueo: null },
-        { id: 6, username: 'ccarrasco', email: 'c.carrasco@uta.edu.ec', nombreCompleto: 'Carrasco Manotoa Cesar', rol: 'Docente', status: 1, intentosFallidos: 0, fechaBloqueo: null },
-      ])
+      setUsuarios(await listarUsuarios())
+    } catch (error) {
+      setUsuarios([])
+      setErrorCarga(mensajeDeError(error, 'No se pudieron cargar las cuentas. Verifique la conexión con el API Gateway.'))
     } finally {
       setCargando(false)
     }
-  }
-
-  useEffect(() => {
-    cargarUsuarios()
   }, [])
 
-  const desbloquear = async (usuario: UsuarioAuth) => {
+  useEffect(() => {
+    void cargarUsuarios()
+  }, [cargarUsuarios])
+
+  const desbloquear = async (usuario: UsuarioAdmin) => {
     try {
-      await clienteAxios.put(`/auth/desbloquear/${usuario.id}`)
-      setMensaje(`Cuenta de ${usuario.nombreCompleto} desbloqueada exitosamente.`)
-      cargarUsuarios()
-    } catch {
-      // Optimista local para pruebas
-      setUsuarios((prev) =>
-        prev.map((u) => (u.id === usuario.id ? { ...u, status: 1, intentosFallidos: 0, fechaBloqueo: null } : u))
-      )
-      setMensaje(`Cuenta de ${usuario.nombreCompleto} desbloqueada exitosamente.`)
+      await desbloquearUsuario(usuario.id)
+      setAviso({ tipo: 'exito', texto: `Cuenta de ${usuario.nombreCompleto} desbloqueada.` })
+      await cargarUsuarios()
+    } catch (error) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(error, 'No se pudo desbloquear la cuenta.') })
     }
   }
 
-  const alternarEstado = (usuario: UsuarioAuth) => {
-    const nuevoStatus = usuario.status === 1 ? 0 : 1
-    setUsuarios((prev) =>
-      prev.map((u) => (u.id === usuario.id ? { ...u, status: nuevoStatus } : u))
-    )
-    setMensaje(`Estado de ${usuario.nombreCompleto} actualizado a ${nuevoStatus === 1 ? 'Activo' : 'Desactivado'}.`)
-  }
-
-  const handleCrearUsuario = (e: FormEvent) => {
-    e.preventDefault()
-    const nuevo: UsuarioAuth = {
-      id: Date.now(),
-      username: nuevoEmail.split('@')[0],
-      email: nuevoEmail,
-      nombreCompleto: nuevoNombre,
-      rol: nuevoRol,
-      status: 1,
-      intentosFallidos: 0,
-      fechaBloqueo: null
-    }
-    setUsuarios((prev) => [...prev, nuevo])
-    setModalNuevo(false)
+  const abrirNuevo = () => {
     setNuevoNombre('')
     setNuevoEmail('')
-    setMensaje(`Usuario ${nuevo.nombreCompleto} registrado correctamente en el directorio.`)
+    setNuevoUsername('')
+    setNuevoPassword('')
+    setNuevoConfirmacion('')
+    setNuevoRol('Docente')
+    setNuevoMoodleId('')
+    setErrorNuevo(null)
+    setModalNuevo(true)
   }
 
-  const handleGuardarEdicion = (e: FormEvent) => {
+  const faltanPassword = problemasPassword(nuevoPassword)
+
+  const handleCrearUsuario = async (e: FormEvent) => {
     e.preventDefault()
-    if (!modalEditar) return
-    setUsuarios((prev) => prev.map((u) => (u.id === modalEditar.id ? modalEditar : u)))
-    setModalEditar(null)
-    setMensaje(`Cambios de ${modalEditar.nombreCompleto} guardados exitosamente.`)
+    setErrorNuevo(null)
+    if (faltanPassword.length > 0) {
+      setErrorNuevo(`La contraseña necesita: ${faltanPassword.join(', ')}.`)
+      return
+    }
+    if (nuevoPassword !== nuevoConfirmacion) {
+      setErrorNuevo('Las contraseñas no coinciden.')
+      return
+    }
+    const moodleUserId = nuevoRol === 'Docente' && nuevoMoodleId.trim() ? Number(nuevoMoodleId) : null
+    if (moodleUserId !== null && (!Number.isInteger(moodleUserId) || moodleUserId <= 0)) {
+      setErrorNuevo('El ID de Moodle debe ser un número entero positivo.')
+      return
+    }
+
+    setGuardando(true)
+    try {
+      const resultado = await crearUsuario({
+        nombreCompleto: nuevoNombre.trim(),
+        email: nuevoEmail.trim(),
+        username: nuevoUsername.trim() || undefined,
+        password: nuevoPassword,
+        rol: nuevoRol,
+        moodleUserId,
+      })
+      setModalNuevo(false)
+      const base = `Cuenta de ${resultado.usuario.nombreCompleto} creada (usuario ${resultado.usuario.username}).`
+      if (resultado.moodle) {
+        const detalle = resumenVinculo(resultado.moodle)
+        setAviso({ tipo: detalle.tipo, texto: `${base} ${detalle.texto}` })
+      } else {
+        setAviso({ tipo: 'exito', texto: base })
+      }
+      await cargarUsuarios()
+    } catch (error) {
+      setErrorNuevo(mensajeDeError(error, 'No se pudo crear la cuenta.'))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const abrirMoodle = (usuario: UsuarioAdmin) => {
+    setModalMoodle(usuario)
+    setMoodleId(usuario.moodleUserId ? String(usuario.moodleUserId) : '')
+    setErrorMoodle(null)
+  }
+
+  const guardarMoodle = async (desenlazar: boolean) => {
+    if (!modalMoodle) return
+    setErrorMoodle(null)
+    const valor = desenlazar ? null : Number(moodleId)
+    if (valor !== null && (!Number.isInteger(valor) || valor <= 0)) {
+      setErrorMoodle('Ingrese el ID numérico del usuario en Moodle.')
+      return
+    }
+    setGuardando(true)
+    try {
+      const resultado = await vincularMoodle(modalMoodle.id, valor)
+      setModalMoodle(null)
+      setAviso(resumenVinculo(resultado))
+      await cargarUsuarios()
+    } catch (error) {
+      setErrorMoodle(mensajeDeError(error, 'No se pudo guardar el enlace con Moodle.'))
+    } finally {
+      setGuardando(false)
+    }
   }
 
   const usuariosFiltrados = useMemo(() => {
+    const texto = busqueda.toLowerCase()
     return usuarios.filter((u) => {
-      const coincideTexto =
-        u.nombreCompleto.toLowerCase().includes(busqueda.toLowerCase()) ||
-        u.email.toLowerCase().includes(busqueda.toLowerCase())
+      const coincideTexto = u.nombreCompleto.toLowerCase().includes(texto) || u.email.toLowerCase().includes(texto)
       const coincideRol = filtroRol === 'Todos' || u.rol === filtroRol
       return coincideTexto && coincideRol
     })
@@ -137,26 +203,27 @@ export function AdminUsuariosPage() {
       {/* Encabezado y Acciones */}
       <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
         <div>
-          <h1 className="text-lg font-bold text-[#18181b]">
-            Administración de Cuentas de Acceso
-          </h1>
+          <h1 className="text-lg font-bold text-[#18181b]">Administración de Cuentas de Acceso</h1>
           <p className="text-xs text-[#52525b] mt-0.5">
-            Control de identidades docentes, roles institucionales y restablecimiento de acceso tras bloqueos de seguridad
+            Alta de docentes y administradores, enlace con Moodle y restablecimiento de acceso tras bloqueos de seguridad
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() => setModalNuevo(true)}
+          onClick={abrirNuevo}
           className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer self-start sm:self-auto shadow-sm"
         >
           + Nuevo Usuario
         </button>
       </div>
 
-      {mensaje && (
-        <div role="alert" className="p-3 bg-emerald-50 border-l-4 border-emerald-600 rounded text-xs text-emerald-800 font-medium">
-          {mensaje}
+      {aviso && (
+        <div role="alert" className={`p-3 border-l-4 rounded text-xs font-medium flex justify-between gap-3 ${ESTILO_AVISO[aviso.tipo]}`}>
+          <span>{aviso.texto}</span>
+          <button type="button" onClick={() => setAviso(null)} className="opacity-70 hover:opacity-100" aria-label="Cerrar aviso">
+            ✕
+          </button>
         </div>
       )}
 
@@ -168,13 +235,14 @@ export function AdminUsuariosPage() {
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar por nombre o correo institucional..."
-            className="w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A]"
+            className={CAMPO}
           />
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-[#52525b]">Rol:</label>
+          <label htmlFor="filtro-rol" className="text-xs font-medium text-[#52525b]">Rol:</label>
           <select
+            id="filtro-rol"
             value={filtroRol}
             onChange={(e) => setFiltroRol(e.target.value)}
             className="px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A] bg-white cursor-pointer"
@@ -195,6 +263,7 @@ export function AdminUsuariosPage() {
                 <th className="py-2.5 px-4 font-semibold">Nombre Completo</th>
                 <th className="py-2.5 px-4 font-semibold">Correo Institucional</th>
                 <th className="py-2.5 px-4 font-semibold">Rol</th>
+                <th className="py-2.5 px-4 font-semibold">Moodle</th>
                 <th className="py-2.5 px-4 font-semibold">Estado</th>
                 <th className="py-2.5 px-4 font-semibold text-center">Intentos Fallidos</th>
                 <th className="py-2.5 px-4 font-semibold text-right">Acciones</th>
@@ -203,50 +272,59 @@ export function AdminUsuariosPage() {
             <tbody className="divide-y divide-[#e4e4e7]">
               {cargando ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-6 text-[#71717a]">
-                    Cargando cuentas de usuario...
-                  </td>
+                  <td colSpan={7} className="text-center py-6 text-[#71717a]">Cargando cuentas de usuario...</td>
+                </tr>
+              ) : errorCarga ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-6 text-red-700" role="alert">{errorCarga}</td>
                 </tr>
               ) : usuariosFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-6 text-[#71717a]">
+                  <td colSpan={7} className="text-center py-6 text-[#71717a]">
                     No se encontraron usuarios con los criterios de búsqueda.
                   </td>
                 </tr>
               ) : (
                 usuariosFiltrados.map((u) => {
                   const estaBloqueado = u.status === 0 || u.intentosFallidos >= 3
+                  const esDocente = u.rol === 'Docente'
                   return (
                     <tr key={u.id} className="hover:bg-[#fafafa] transition">
-                      <td className="px-4 py-3 font-semibold text-[#18181b]">
-                        {u.nombreCompleto}
-                      </td>
-                      <td className="px-4 py-3 text-[#52525b]">
-                        {u.email}
+                      <td className="px-4 py-3 font-semibold text-[#18181b]">{u.nombreCompleto}</td>
+                      <td className="px-4 py-3 text-[#52525b]">{u.email}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs text-zinc-700 font-medium">{u.rol}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs text-zinc-700 font-medium">
-                          {u.rol}
-                        </span>
+                        {!esDocente ? (
+                          <span className="text-zinc-400">—</span>
+                        ) : u.moodleUserId ? (
+                          <span className="text-xs font-semibold text-[#1F3B73]">ID {u.moodleUserId}</span>
+                        ) : (
+                          <span className="text-xs text-amber-700">Sin enlazar</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {estaBloqueado ? (
-                          <span className="text-xs font-semibold text-red-700">
-                            Bloqueado
-                          </span>
+                          <span className="text-xs font-semibold text-red-700">Bloqueado</span>
                         ) : (
-                          <span className="text-xs font-semibold text-emerald-700">
-                            Activo
-                          </span>
+                          <span className="text-xs font-semibold text-emerald-700">Activo</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center font-semibold">
-                        <span className={u.intentosFallidos >= 3 ? 'text-red-700' : 'text-zinc-600'}>
-                          {u.intentosFallidos}
-                        </span>
+                        <span className={u.intentosFallidos >= 3 ? 'text-red-700' : 'text-zinc-600'}>{u.intentosFallidos}</span>
                       </td>
-                      <td className="px-4 py-3 text-right space-x-2">
-                        {estaBloqueado ? (
+                      <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                        {esDocente && (
+                          <button
+                            type="button"
+                            onClick={() => abrirMoodle(u)}
+                            className="text-blue-700 hover:underline font-medium cursor-pointer"
+                          >
+                            {u.moodleUserId ? 'Cambiar enlace Moodle' : 'Enlazar Moodle'}
+                          </button>
+                        )}
+                        {estaBloqueado && (
                           <button
                             type="button"
                             onClick={() => desbloquear(u)}
@@ -254,24 +332,6 @@ export function AdminUsuariosPage() {
                           >
                             Desbloquear
                           </button>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setModalEditar(u)}
-                              className="text-blue-700 hover:underline font-medium cursor-pointer"
-                            >
-                              Editar
-                            </button>
-                            <span className="text-zinc-300">|</span>
-                            <button
-                              type="button"
-                              onClick={() => alternarEstado(u)}
-                              className="text-zinc-600 hover:text-red-700 hover:underline cursor-pointer"
-                            >
-                              Desactivar
-                            </button>
-                          </>
                         )}
                       </td>
                     </tr>
@@ -290,78 +350,89 @@ export function AdminUsuariosPage() {
 
       {/* Recuadro de Política Institucional */}
       <div className="p-4 bg-white border border-[#e4e4e7] rounded-md text-xs text-[#52525b] space-y-1">
-        <p className="font-bold text-[#18181b]">
-          Política de Seguridad Institucional (FISEI - UTA):
-        </p>
+        <p className="font-bold text-[#18181b]">Política de Seguridad Institucional (FISEI - UTA):</p>
         <p>
-          Las cuentas se bloquean automáticamente al 3er fallo consecutivo de autenticación para prevenir accesos no autorizados. Los tokens de sesión son generados con expiración controlada mediante el API Gateway.
+          Las contraseñas se guardan cifradas (PBKDF2) y exigen al menos 10 caracteres con mayúscula, minúscula, número y
+          símbolo. Las cuentas se bloquean al 3er fallo consecutivo de autenticación. Cada docente se enlaza con su usuario
+          de Moodle para sincronizar únicamente sus propios cursos.
         </p>
       </div>
 
       {/* Modal: Nuevo Usuario */}
       {modalNuevo && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-md border border-[#e4e4e7] max-w-md w-full overflow-hidden shadow-lg">
+          <div className="bg-white rounded-md border border-[#e4e4e7] max-w-md w-full overflow-hidden shadow-lg max-h-[92vh] overflow-y-auto">
             <div className="bg-[#8B151A] px-5 py-3 text-white flex items-center justify-between">
-              <h2 className="text-sm font-bold">Registrar Nuevo Usuario Docente</h2>
-              <button
-                type="button"
-                onClick={() => setModalNuevo(false)}
-                className="text-white/80 hover:text-white text-base leading-none"
-              >
+              <h2 className="text-sm font-bold">Registrar Nuevo Usuario</h2>
+              <button type="button" onClick={() => setModalNuevo(false)} className="text-white/80 hover:text-white text-base leading-none" aria-label="Cerrar">
                 ✕
               </button>
             </div>
             <form onSubmit={handleCrearUsuario} className="p-5 space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-[#18181b] mb-1">Nombre Completo (*)</label>
-                <input
-                  type="text"
-                  required
-                  value={nuevoNombre}
-                  onChange={(e) => setNuevoNombre(e.target.value)}
-                  placeholder="Ej: Ing. Marcelo Fernando López"
-                  className="w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A]"
-                />
+                <label htmlFor="nuevo-nombre" className="block font-semibold text-[#18181b] mb-1">Nombre Completo (*)</label>
+                <input id="nuevo-nombre" type="text" required value={nuevoNombre} onChange={(e) => setNuevoNombre(e.target.value)}
+                  placeholder="Ej: Ing. Marcelo Fernando López" className={CAMPO} />
               </div>
 
               <div>
-                <label className="block font-semibold text-[#18181b] mb-1">Correo Institucional (*)</label>
-                <input
-                  type="email"
-                  required
-                  value={nuevoEmail}
-                  onChange={(e) => setNuevoEmail(e.target.value)}
-                  placeholder="m.lopez@uta.edu.ec"
-                  className="w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A]"
-                />
+                <label htmlFor="nuevo-email" className="block font-semibold text-[#18181b] mb-1">Correo Institucional (*)</label>
+                <input id="nuevo-email" type="email" required value={nuevoEmail} onChange={(e) => setNuevoEmail(e.target.value)}
+                  placeholder="m.lopez@uta.edu.ec" className={CAMPO} />
               </div>
 
               <div>
-                <label className="block font-semibold text-[#18181b] mb-1">Rol Asignado (*)</label>
-                <select
-                  value={nuevoRol}
-                  onChange={(e) => setNuevoRol(e.target.value)}
-                  className="w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A] bg-white"
-                >
+                <label htmlFor="nuevo-username" className="block font-semibold text-[#18181b] mb-1">Usuario (opcional)</label>
+                <input id="nuevo-username" type="text" value={nuevoUsername} onChange={(e) => setNuevoUsername(e.target.value)}
+                  placeholder="Por defecto, la parte del correo antes de @" className={CAMPO} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="nuevo-password" className="block font-semibold text-[#18181b] mb-1">Contraseña (*)</label>
+                  <input id="nuevo-password" type="password" required autoComplete="new-password" value={nuevoPassword}
+                    onChange={(e) => setNuevoPassword(e.target.value)} className={CAMPO} />
+                </div>
+                <div>
+                  <label htmlFor="nuevo-confirmacion" className="block font-semibold text-[#18181b] mb-1">Confirmar (*)</label>
+                  <input id="nuevo-confirmacion" type="password" required autoComplete="new-password" value={nuevoConfirmacion}
+                    onChange={(e) => setNuevoConfirmacion(e.target.value)} className={CAMPO} />
+                </div>
+              </div>
+              {nuevoPassword && faltanPassword.length > 0 && (
+                <p className="text-[11px] text-amber-700">Falta: {faltanPassword.join(', ')}.</p>
+              )}
+
+              <div>
+                <label htmlFor="nuevo-rol" className="block font-semibold text-[#18181b] mb-1">Rol Asignado (*)</label>
+                <select id="nuevo-rol" value={nuevoRol} onChange={(e) => setNuevoRol(e.target.value as RolUsuario)}
+                  className={`${CAMPO} bg-white`}>
                   <option value="Docente">Docente</option>
                   <option value="Administrador">Administrador</option>
                 </select>
               </div>
 
+              {nuevoRol === 'Docente' && (
+                <div>
+                  <label htmlFor="nuevo-moodle" className="block font-semibold text-[#18181b] mb-1">ID de usuario en Moodle (opcional)</label>
+                  <input id="nuevo-moodle" type="number" min={1} value={nuevoMoodleId} onChange={(e) => setNuevoMoodleId(e.target.value)}
+                    placeholder="Ej: 19" className={CAMPO} />
+                  <p className="text-[11px] text-[#71717a] mt-1">
+                    En Moodle: Administración del sitio → Usuarios → abra el perfil; es el número después de «id=» en la dirección.
+                  </p>
+                </div>
+              )}
+
+              {errorNuevo && <p role="alert" className="p-2 bg-red-50 border border-red-200 rounded text-red-700">{errorNuevo}</p>}
+
               <div className="pt-3 border-t border-[#e4e4e7] flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModalNuevo(false)}
-                  className="px-3.5 py-1.5 border border-[#d4d4d8] text-[#52525b] hover:bg-[#f4f4f5] rounded font-semibold cursor-pointer"
-                >
+                <button type="button" onClick={() => setModalNuevo(false)}
+                  className="px-3.5 py-1.5 border border-[#d4d4d8] text-[#52525b] hover:bg-[#f4f4f5] rounded font-semibold cursor-pointer">
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded font-semibold shadow-xs cursor-pointer"
-                >
-                  Registrar
+                <button type="submit" disabled={guardando}
+                  className="px-4 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded font-semibold shadow-xs cursor-pointer">
+                  {guardando ? 'Registrando...' : 'Registrar'}
                 </button>
               </div>
             </form>
@@ -369,69 +440,57 @@ export function AdminUsuariosPage() {
         </div>
       )}
 
-      {/* Modal: Editar Usuario */}
-      {modalEditar && (
+      {/* Modal: Enlace con Moodle */}
+      {modalMoodle && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-md border border-[#e4e4e7] max-w-md w-full overflow-hidden shadow-lg">
-            <div className="bg-[#8B151A] px-5 py-3 text-white flex items-center justify-between">
-              <h2 className="text-sm font-bold">Editar Usuario: {modalEditar.nombreCompleto}</h2>
-              <button
-                type="button"
-                onClick={() => setModalEditar(null)}
-                className="text-white/80 hover:text-white text-base leading-none"
-              >
+            <div className="bg-[#1F3B73] px-5 py-3 text-white flex items-center justify-between">
+              <h2 className="text-sm font-bold">Enlace con Moodle: {modalMoodle.nombreCompleto}</h2>
+              <button type="button" onClick={() => setModalMoodle(null)} className="text-white/80 hover:text-white text-base leading-none" aria-label="Cerrar">
                 ✕
               </button>
             </div>
-            <form onSubmit={handleGuardarEdicion} className="p-5 space-y-3 text-xs">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void guardarMoodle(false)
+              }}
+              className="p-5 space-y-3 text-xs"
+            >
+              <p className="text-[#52525b]">
+                SISRA verificará con la cuenta de servicio en qué cursos del período es profesor este usuario de Moodle.
+                Después, el docente podrá sincronizar esos cursos desde Evaluaciones.
+              </p>
               <div>
-                <label className="block font-semibold text-[#18181b] mb-1">Nombre Completo</label>
-                <input
-                  type="text"
-                  required
-                  value={modalEditar.nombreCompleto}
-                  onChange={(e) => setModalEditar({ ...modalEditar, nombreCompleto: e.target.value })}
-                  className="w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A]"
-                />
+                <label htmlFor="moodle-id" className="block font-semibold text-[#18181b] mb-1">ID de usuario en Moodle</label>
+                <input id="moodle-id" type="number" min={1} required value={moodleId} onChange={(e) => setMoodleId(e.target.value)}
+                  placeholder="Ej: 19" className={CAMPO} />
+                <p className="text-[11px] text-[#71717a] mt-1">
+                  En Moodle: Administración del sitio → Usuarios → abra el perfil; es el número después de «id=» en la dirección.
+                </p>
               </div>
 
-              <div>
-                <label className="block font-semibold text-[#18181b] mb-1">Correo Institucional</label>
-                <input
-                  type="email"
-                  required
-                  value={modalEditar.email}
-                  onChange={(e) => setModalEditar({ ...modalEditar, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A]"
-                />
-              </div>
+              {errorMoodle && <p role="alert" className="p-2 bg-red-50 border border-red-200 rounded text-red-700">{errorMoodle}</p>}
 
-              <div>
-                <label className="block font-semibold text-[#18181b] mb-1">Rol</label>
-                <select
-                  value={modalEditar.rol}
-                  onChange={(e) => setModalEditar({ ...modalEditar, rol: e.target.value })}
-                  className="w-full px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A] bg-white"
-                >
-                  <option value="Docente">Docente</option>
-                  <option value="Administrador">Administrador</option>
-                </select>
-              </div>
-
-              <div className="pt-3 border-t border-[#e4e4e7] flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModalEditar(null)}
-                  className="px-3.5 py-1.5 border border-[#d4d4d8] text-[#52525b] hover:bg-[#f4f4f5] rounded font-semibold cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded font-semibold shadow-xs cursor-pointer"
-                >
-                  Guardar Cambios
-                </button>
+              <div className="pt-3 border-t border-[#e4e4e7] flex justify-between gap-2">
+                {modalMoodle.moodleUserId ? (
+                  <button type="button" disabled={guardando} onClick={() => void guardarMoodle(true)}
+                    className="px-3 py-1.5 text-red-700 hover:bg-red-50 rounded font-semibold cursor-pointer">
+                    Desenlazar
+                  </button>
+                ) : (
+                  <span />
+                )}
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setModalMoodle(null)}
+                    className="px-3.5 py-1.5 border border-[#d4d4d8] text-[#52525b] hover:bg-[#f4f4f5] rounded font-semibold cursor-pointer">
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={guardando}
+                    className="px-4 py-1.5 bg-[#1F3B73] hover:bg-[#2A4A8A] disabled:opacity-60 text-white rounded font-semibold shadow-xs cursor-pointer">
+                    {guardando ? 'Verificando...' : 'Verificar y guardar'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

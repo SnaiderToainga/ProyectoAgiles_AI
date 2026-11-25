@@ -1,4 +1,4 @@
-using EduMonitor.Core.DTOs;
+﻿using EduMonitor.Core.DTOs;
 using EduMonitor.Core.DTOs.Academico;
 using EduMonitor.Core.Entities;
 using EduMonitor.Core.Enums;
@@ -193,6 +193,18 @@ public class MoodleCurriculoSyncTests : IAsyncLifetime
         Assert.Equal(144, await db.Calificaciones.CountAsync());
     }
 
+    [Fact]
+    public async Task SinAlumnosVisiblesAbortaYConservaMatriculas()
+    {
+        // Una cuenta de Moodle sin permiso para ver estudiantes solo devuelve al docente.
+        await sync.Notas(77, curso);
+        source.SinAlumnosVisibles = true;
+        var ex = await Assert.ThrowsAsync<MoodleException>(() => sync.Notas(77, curso));
+        Assert.Equal("moodle_incomplete", ex.Code);
+        Assert.Equal(12, await db.Matriculas.CountAsync());
+        Assert.Equal(144, await db.Calificaciones.CountAsync());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -298,7 +310,7 @@ public class MoodleCurriculoSyncTests : IAsyncLifetime
         public decimal? Nota = 8;
         public string Prefijo = "";
         public string Fallo = "";
-        public bool Oculto, EliminarPrimero, EsQuiz, RetirarUltimoAlumno;
+        public bool Oculto, EliminarPrimero, EsQuiz, RetirarUltimoAlumno, SinAlumnosVisibles;
         public bool OmitirPrimeraNota, OmitirNotasAlumno, OmitirNotasOcultas, CambiarIdPrimeraNota;
         public int ConsultasEstado, ConsultasTareas;
         private IEnumerable<int> Actividades => Enumerable.Range(1, 12).Where(i => !EliminarPrimero || i != 1);
@@ -308,7 +320,7 @@ public class MoodleCurriculoSyncTests : IAsyncLifetime
         public Task<IReadOnlyList<MoodleParticipanteDto>> ObtenerParticipantes(int id, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<MoodleParticipanteDto>>(
                 new[] { new MoodleParticipanteDto(900, "Docente", "Prueba", "Docente", null, [new("editingteacher")]) }
-                .Concat(Enumerable.Range(1, RetirarUltimoAlumno ? 11 : 12).Select(i => new MoodleParticipanteDto(i, "Alumno", i.ToString(), "Alumno", null,
+                .Concat(Enumerable.Range(1, SinAlumnosVisibles ? 0 : RetirarUltimoAlumno ? 11 : 12).Select(i => new MoodleParticipanteDto(i, "Alumno", i.ToString(), "Alumno", null,
                     [new("student")], "https://example.invalid/foto.png"))).ToList());
         public Task<IReadOnlyList<MoodleSeccionDto>> ObtenerContenidoCurso(int id, CancellationToken ct = default)
         {

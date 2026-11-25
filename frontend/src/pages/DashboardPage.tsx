@@ -15,6 +15,7 @@ import {
   MessageSquareCode,
 } from 'lucide-react'
 import type { MateriaDto, ResumenAcademicoEstudianteDto } from '../types/academico'
+import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 
 interface ResumenMateria {
   materia: MateriaDto
@@ -359,6 +360,8 @@ export function DashboardPage() {
   const [tabPrioridad, setTabPrioridad] = useState<'riesgo' | 'temas'>('riesgo')
   const [cargando, setCargando] = useState(true)
   const [esModoFallback, setEsModoFallback] = useState(false)
+  // Docente recién creado: aún no tiene materias importadas desde Moodle.
+  const [sinMaterias, setSinMaterias] = useState(false)
 
   useEffect(() => {
     let vigente = true
@@ -367,6 +370,15 @@ export function DashboardPage() {
       try {
         const { data: materias } = await clienteAxios.get<MateriaDto[]>('/academico/materias')
         if (vigente) setMateriasOriginales(materias)
+        if (materias.length === 0) {
+          // Sin materias no se muestran datos de demostración: se ofrece la primera sincronización.
+          if (vigente) {
+            setResumenes([])
+            setEsModoFallback(false)
+            setSinMaterias(true)
+          }
+          return
+        }
 
         const resultados = await Promise.all(
           materias.map(async (materia) => {
@@ -497,6 +509,20 @@ export function DashboardPage() {
     }
     return [...mapa.values()].sort((a, b) => b.cantidad - a.cantidad || a.peorNota - b.peorNota)
   }, [estudiantesParaGrafico])
+
+  if (!cargando && sinMaterias) {
+    return (
+      <div className="space-y-5 min-w-0">
+        <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-lg p-4 sm:p-5 shadow-xs">
+          <h1 className="text-lg font-bold text-[#18181b]">Bienvenido, {user?.nombreCompleto || 'Docente'}</h1>
+          <p className="text-xs text-[#52525b] mt-0.5">
+            Período Académico: Octubre 2026 - Febrero 2027 | Ingeniería en Software (FISEI UTA)
+          </p>
+        </div>
+        <PrimeraSincronizacionMoodle />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5 min-w-0">

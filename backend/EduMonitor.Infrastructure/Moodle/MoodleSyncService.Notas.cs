@@ -33,6 +33,8 @@ public sealed partial class MoodleSyncService
             if (!participantes.Any(p => p.Id == docente.MoodleUserId && p.Roles.Any(r => options.Value.TeacherRoles.Contains(r.Shortname))))
                 throw new AcademicoException(403, "El docente ya no tiene permiso sobre este curso en Moodle.");
             var alumnos = participantes.Where(p => p.Roles.Any(r => options.Value.StudentRoles.Contains(r.Shortname))).ToList();
+            // Sin estudiantes visibles suele faltar un permiso de lectura; aceptarlo retiraría todas las matrículas.
+            if (alumnos.Count == 0) throw Incompleto();
             var contenido = await contenidoTask;
             ValidarContenido(contenido);
             var notas = await notasTask;

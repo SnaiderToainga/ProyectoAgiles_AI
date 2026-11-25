@@ -29,6 +29,7 @@ import {
   type SincronizacionDto,
   type TipoItemEvaluacion,
 } from '../types/academico'
+import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 
 interface AlertaEstado {
   tipo: 'exito' | 'advertencia' | 'error'
@@ -514,7 +515,11 @@ export function EvaluacionesPage() {
   if (cargando) return <p role="status" className="text-xs text-[#52525b]">Cargando evaluaciones...</p>
   if (errorCarga) return <p role="alert" className="text-xs text-red-700">{errorCarga}</p>
   if (!materiaActual || !parcialActual) {
-    return <p className="text-xs text-[#52525b]">No existen materias con parciales disponibles.</p>
+    return materias.length === 0 ? (
+      <PrimeraSincronizacionMoodle />
+    ) : (
+      <p className="text-xs text-[#52525b]">No existen materias con parciales disponibles.</p>
+    )
   }
 
   return (
