@@ -77,6 +77,7 @@ public class AgenteServiceTests : IAsyncLifetime
         var ex = await Assert.ThrowsAsync<AcademicoException>(() =>
             _agente.Estudiante(UsuarioDocente, false, e.CursoId, e.ParcialId, noEvaluado));
         Assert.Equal(404, ex.Status);
+        Assert.Equal(AgenteService.EstudianteNoEncontrado, ex.Codigo);
         Assert.Equal(400, (await Assert.ThrowsAsync<AcademicoException>(() =>
             _agente.Estudiante(UsuarioDocente, false, e.CursoId, e.ParcialId, "Juan Pérez"))).Status);
     }
@@ -114,6 +115,13 @@ public class AgenteServiceTests : IAsyncLifetime
         Assert.Equal("listar_estudiantes_en_riesgo", Assert.Single(traza.Pasos).Herramienta);
         Assert.Equal(DateTimeKind.Utc, traza.Fecha.Kind);
         Assert.Equal(2, (await _agente.Trazas(UsuarioDocente, admin: true, limite: 10)).Count);
+
+        // Un intento sobre una materia inexistente queda auditado sin asociarse a ninguna materia.
+        var id = await _agente.RegistrarTraza(UsuarioDocente, false,
+            new RegistrarTrazaAgenteRequest(999999, e.ParcialId, "curso", "Resumen", null, false, false, "Materia inexistente", 5, []));
+        var fallida = await _db.TrazasAgente.SingleAsync(t => t.Id == id);
+        Assert.Null(fallida.CursoId);
+        Assert.False(fallida.Exitoso);
     }
 
     private sealed record Escenario(int DocenteId, int CursoId, int ParcialId, int EvaluadoId, int SinNotasId);

@@ -236,7 +236,9 @@ def test_cliente_envia_bearer_y_clasifica_errores():
     def manejador(request: httpx.Request) -> httpx.Response:
         vistas.append(request)
         if request.url.path.endswith("/EST-404"):
-            return httpx.Response(404, json={"title": "No hay un estudiante con ese código."})
+            return httpx.Response(404, json={"title": "No hay un estudiante con ese código.", "code": "agente_estudiante_no_encontrado"})
+        if "/materias/3/" in request.url.path:
+            return httpx.Response(404, json={"title": "Materia inexistente.", "code": "academic_validation"})
         if request.url.path.endswith("/trazas"):
             return httpx.Response(201, json={"id": 7})
         if "/materias/2/" in request.url.path:
@@ -251,6 +253,10 @@ def test_cliente_envia_bearer_y_clasifica_errores():
     with pytest.raises(BackendError) as no_encontrado:
         backend.estudiante(1, 10, "EST-404")
     assert no_encontrado.value.recuperable and no_encontrado.value.status == 404
+
+    with pytest.raises(BackendError) as materia_inexistente:
+        backend.datos_curso(3, 10)
+    assert not materia_inexistente.value.recuperable and materia_inexistente.value.status == 404
 
     with pytest.raises(BackendError) as prohibido:
         backend.datos_curso(2, 10)

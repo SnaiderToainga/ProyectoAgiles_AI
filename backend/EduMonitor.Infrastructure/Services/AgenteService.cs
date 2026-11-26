@@ -18,6 +18,8 @@ namespace EduMonitor.Infrastructure.Services;
 public sealed partial class AgenteService(AcademicoDbContext db, CatalogoService catalogo, ICalculoPonderadoService calculo)
 {
     public const int MaximoTrazas = 100;
+    public const string EstudianteNoEncontrado = "agente_estudiante_no_encontrado";
+    public const string CodigoInvalido = "agente_codigo_invalido";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static string CodigoEstudiante(int estudianteId) =>
@@ -61,21 +63,27 @@ public sealed partial class AgenteService(AcademicoDbContext db, CatalogoService
     {
         var coincidencia = PatronCodigo().Match(codigo.Trim());
         if (!coincidencia.Success)
-            throw new AcademicoException(400, "Código de estudiante inválido; use el formato EST-001.");
+            throw new AcademicoException(400, "Código de estudiante inválido; use el formato EST-001.", CodigoInvalido);
         var datos = await DatosCurso(usuarioId, admin, cursoId, parcialId, ct);
         var normalizado = CodigoEstudiante(int.Parse(coincidencia.Groups[1].Value, CultureInfo.InvariantCulture));
         return datos.Estudiantes.SingleOrDefault(e => e.Codigo == normalizado)
-            ?? throw new AcademicoException(404, "No hay un estudiante evaluado con ese código en la materia y parcial.");
+            ?? throw new AcademicoException(404, "No hay un estudiante evaluado con ese código en la materia y parcial.", EstudianteNoEncontrado);
     }
 
     public async Task<int> RegistrarTraza(int usuarioId, bool admin, RegistrarTrazaAgenteRequest request, CancellationToken ct = default)
     {
-        if (request.CursoId is int cursoId) await catalogo.ComprobarCurso(usuarioId, admin, cursoId, ct);
+        // Un intento sobre una materia inexistente o ajena también se audita, pero sin asociarlo a esa materia.
+        var cursoValido = request.CursoId;
+        if (cursoValido is int cursoId)
+        {
+            try { await catalogo.ComprobarCurso(usuarioId, admin, cursoId, ct); }
+            catch (AcademicoException) { cursoValido = null; }
+        }
         var traza = new TrazaAgente
         {
             UsuarioId = usuarioId,
-            CursoId = request.CursoId,
-            ParcialId = request.ParcialId,
+            CursoId = cursoValido,
+            ParcialId = cursoValido is null ? null : request.ParcialId,
             Modo = request.Modo,
             Consulta = request.Consulta,
             Modelo = request.Modelo,

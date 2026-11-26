@@ -183,7 +183,9 @@ public record ReporteIndividualTutoriaDto(
     PiePaginaReporteDto PiePagina
 );
 
-public sealed class AcademicoException(int status, string message) : Exception(message)
+public sealed class AcademicoException(int status, string message, string codigo = "academic_validation") : Exception(message)
 {
     public int Status { get; } = status;
+    // Código estable para clientes (p. ej. el servicio de IA distingue un estudiante inexistente de una materia ajena).
+    public string Codigo { get; } = codigo;
 }

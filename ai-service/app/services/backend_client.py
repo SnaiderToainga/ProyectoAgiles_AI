@@ -10,6 +10,9 @@ import httpx
 from app.config import settings
 
 
+CODIGOS_RECUPERABLES = {"agente_estudiante_no_encontrado", "agente_codigo_invalido"}
+
+
 class BackendError(Exception):
     """Fallo al consultar la API académica. `recuperable` indica si el agente puede seguir."""
 
@@ -70,8 +73,10 @@ class BackendAcademico:
         if respuesta.status_code in (401, 403):
             raise BackendError("La sesión no tiene permiso para consultar estos datos académicos.", respuesta.status_code)
         if respuesta.status_code in (400, 404):
-            # Dato inexistente (p. ej. código de estudiante): el agente puede informarlo y continuar.
-            raise BackendError(_mensaje(respuesta, "Dato no encontrado."), respuesta.status_code, recuperable=True)
+            # Solo un estudiante inexistente o un código mal formado se informan al modelo para que continúe;
+            # una materia o parcial inexistente invalida toda la consulta.
+            recuperable = _codigo(respuesta) in CODIGOS_RECUPERABLES
+            raise BackendError(_mensaje(respuesta, "Dato no encontrado."), respuesta.status_code, recuperable=recuperable)
         if respuesta.status_code >= 400:
             raise BackendError(f"La API académica respondió HTTP {respuesta.status_code}.", 502)
         if not respuesta.content:
@@ -80,6 +85,14 @@ class BackendAcademico:
             return respuesta.json()
         except ValueError as exc:
             raise BackendError("La API académica devolvió una respuesta no válida.", 502) from exc
+
+
+def _codigo(respuesta: httpx.Response) -> str:
+    try:
+        datos = respuesta.json()
+    except ValueError:
+        return ""
+    return str(datos.get("code") or "") if isinstance(datos, dict) else ""
 
 
 def _mensaje(respuesta: httpx.Response, por_defecto: str) -> str:
