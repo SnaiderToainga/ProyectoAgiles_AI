@@ -66,7 +66,7 @@ Asegúrate de contar con las siguientes herramientas instaladas en tu estación 
 Los archivos `appsettings.json` versionados **no contienen secretos**: la clave JWT y el token de Moodle están vacíos y la API y el Gateway se niegan a arrancar sin una clave JWT propia (32 caracteres o más; la clave publicada en versiones anteriores se rechaza).
 
 - **Con Docker Compose:** complete `.env` a partir de `.env.example` (`JWT_KEY`, `MSSQL_SA_PASSWORD`, `DEMO_PASSWORD`, `MOODLE_TOKEN`).
-- **Con `start-dev.ps1`:** el script lee `JWT_KEY`, `MOODLE_TOKEN` y `MOODLE_BASE_URL` del mismo `.env` de la raíz y se detiene con un aviso si falta la clave. Compruébelo sin arrancar nada con `.\start-dev.ps1 -SoloValidar`.
+- **Con `start-dev.ps1`:** el script lee `JWT_KEY`, `MOODLE_TOKEN` y `MOODLE_BASE_URL` del mismo `.env` de la raíz y se detiene con un aviso si falta la clave. Compruébelo sin arrancar nada con `.\start-dev.ps1 -SoloValidar`. Igual que en Docker, `start-dev.ps1` y `Start-Local.ps1` hacen que la API aplique sus migraciones al arrancar; si ejecuta `dotnet run` a mano, defina `$env:Database__MigrateOnStartup = "true"`.
 - **Sin Docker:** `Start-Local.ps1` genera la clave JWT en `.local/jwt-key.txt` y toma el token de `.local/moodle-connection.json`. Si ejecuta `dotnet run` directamente, defina las variables de entorno:
 
 ```powershell
