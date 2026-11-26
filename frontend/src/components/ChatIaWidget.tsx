@@ -380,24 +380,9 @@ export function ChatIaWidget({
 
   const materiaActual = materias.find((m) => m.id === materiaId) || materias[0]
   const estudianteActual = estudiantes.find((e) => e.estudianteId === estudianteId) || null
-  const modo = estudianteActual ? 'estudiante' : 'curso'
   const estudiantesEnRiesgoOrdenados = [...estudiantes]
     .filter((e) => e.enRiesgo || e.notaFinalParcial < 7)
     .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
-
-  const preguntasSugeridas =
-    modo === 'curso'
-      ? [
-          '¿Qué estudiantes están en riesgo académico (< 7.00)?',
-          '¿En qué tema específico tiene mayor dificultad el curso?',
-          'Sugiere una dinámica práctica de 15 minutos para reforzar el tema más bajo.',
-          'Resumen de aprobación y notas generales del curso.',
-        ]
-      : [
-          '¿En qué tema y actividad específica está mal este estudiante?',
-          'Sugiere ejercicios personalizados paso a paso para este estudiante.',
-          '¿Qué componentes debe recuperar prioritariamente?',
-        ]
 
   // Extraer componentes evaluativos reales con calificaciones efectivas (excluye ceros de componentes sin evaluar)
   const componentesReales = (e: ResumenAcademicoEstudianteDto): Record<string, number> => {
@@ -626,20 +611,14 @@ export function ChatIaWidget({
             setAbierto(true)
           }}
           disabled={desactivado}
-          style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
-          className={`${dockGlobal ? 'lg:hidden ' : ''}${
-            desactivado
-              ? 'bg-gray-400 opacity-60 cursor-not-allowed'
-              : 'bg-[#8B151A] hover:bg-[#6E1014] hover:scale-105 cursor-pointer shadow-2xl'
-          } text-white p-3.5 rounded-full transition-all duration-200 flex items-center gap-2 group border-2 border-white`}
+          className={`ai-fab-btn ${desactivado ? 'opacity-50 cursor-not-allowed' : ''}`}
           title={
             desactivado
               ? 'Asistente IA deshabilitado: requiere conexión con servidor oficial'
               : 'Abrir Asistente IA SISRA'
           }
         >
-          <Sparkles className={`w-5 h-5 ${desactivado ? 'text-gray-200' : 'text-amber-300 animate-pulse'}`} />
-          <span className="text-xs font-bold tracking-wide pr-1">Tutor IA</span>
+          <span className="ai-fab-orb" />
         </button>
       )}
 
@@ -647,29 +626,19 @@ export function ChatIaWidget({
         <div
           className={
             dockGlobal
-              ? 'fixed inset-y-0 right-0 z-50 w-full sm:w-[400px] h-full shadow-2xl lg:static lg:z-auto lg:w-full lg:h-full lg:shadow-none bg-white border-l border-[#e4e4e7] flex flex-col overflow-hidden'
+              ? 'fixed inset-y-0 right-0 z-50 w-full sm:w-[384px] h-full shadow-2xl lg:static lg:z-auto lg:w-full lg:h-full lg:shadow-none bg-white border-l border-[#e5e7eb] flex flex-col overflow-hidden'
               : modoPanelLateral
-              ? 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[460px] h-[640px] max-h-[88vh] shadow-2xl xl:static xl:z-auto xl:w-full xl:h-[calc(100vh-115px)] xl:max-h-none xl:sticky xl:top-4 xl:shadow-xs bg-white rounded-xl border border-[#e4e4e7] flex flex-col overflow-hidden'
-              : 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[470px] h-[640px] max-h-[88vh] bg-white rounded-xl shadow-2xl border border-[#e4e4e7] flex flex-col overflow-hidden'
+              ? 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[440px] h-[640px] max-h-[88vh] shadow-2xl xl:static xl:z-auto xl:w-full xl:h-[calc(100vh-115px)] xl:max-h-none xl:sticky xl:top-4 xl:shadow-xs bg-white border border-[#e5e7eb] flex flex-col overflow-hidden'
+              : 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[440px] h-[640px] max-h-[88vh] bg-white shadow-2xl border border-[#e5e7eb] flex flex-col overflow-hidden'
           }
         >
-          {/* Cabecera */}
-          <div className="bg-[#8B151A] text-white p-3.5 flex items-center justify-between gap-2">
+          {/* Cabecera limpia SISRA IA */}
+          <div className="bg-white text-black px-3.5 py-3 border-b border-[#eef0f3] flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="p-1.5 bg-white/10 rounded-full shrink-0">
-                <Bot className="w-4 h-4 text-amber-300" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-xs tracking-wide flex items-center gap-1.5">
-                  Copiloto IA EduMonitor
-                  <span className="text-[10px] font-normal bg-white/20 px-1.5 py-0.2 rounded">
-                    UTA
-                  </span>
-                </h3>
-                <p className="text-[10px] text-white/80 truncate">
-                  {materiaActual ? `${materiaActual.codigo} - ${materiaActual.nombre}` : 'Análisis Pedagógico'}
-                </p>
-              </div>
+              <span className="ai-orb" />
+              <h3 className="font-semibold text-[13px] tracking-tight text-black font-display">
+                SISRA IA
+              </h3>
             </div>
 
             <div className="flex items-center gap-1">
@@ -684,13 +653,14 @@ export function ChatIaWidget({
                   }
                 }}
                 title="Nueva conversación"
-                className="p-1 text-white/70 hover:text-white rounded hover:bg-white/10 transition cursor-pointer"
+                className="p-1.5 text-black hover:bg-[#f4f5f7] transition cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setAbierto(false)}
-                className="p-1 text-white/70 hover:text-white rounded hover:bg-white/10 transition cursor-pointer"
+                title="Cerrar panel"
+                className="p-1.5 text-black hover:bg-[#f4f5f7] transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -698,51 +668,17 @@ export function ChatIaWidget({
           </div>
 
           {/* Área de Mensajes */}
-          <div ref={scrollRef} className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-[#fafafa] text-xs">
+          <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-3 bg-white text-xs">
             {mensajes.length === 1 &&
             (mensajes[0].id === 'bienvenida' || mensajes[0].id === 'reinicio') &&
             !cargando ? (
-              <div className="h-full flex flex-col items-center justify-center text-center px-3 py-4 space-y-4">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#8B151A] to-[#6E1014] text-amber-300 flex items-center justify-center shadow-md">
-                  <Sparkles className="w-6 h-6" />
+              <div className="h-full flex flex-col items-center justify-center text-center px-5 py-6 gap-2.5">
+                <span className="ai-orb-lg" />
+                <div className="text-[15px] font-bold text-black font-display">
+                  SISRA IA
                 </div>
-
-                <div className="space-y-1.5">
-                  <h4 className="text-base font-bold text-[#18181b] tracking-tight">
-                    ¡Hola, {primerNombre}!
-                  </h4>
-                  <p className="text-[11px] text-[#52525b] leading-relaxed max-w-[290px] mx-auto">
-                    Tu copiloto pedagógico está listo. Pregúntame libremente sobre el curso, temas críticos o cualquier estudiante por su nombre.
-                  </p>
-                  {materiaActual && (
-                    <div className="pt-1 flex items-center justify-center gap-1.5 flex-wrap">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-white border border-[#e4e4e7] text-[#18181b] px-2 py-0.5 rounded-full shadow-2xs">
-                        {materiaActual.codigo} · {estudiantes.length} alumnos
-                      </span>
-                      {estudiantesEnRiesgoOrdenados.length > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-50 border border-red-200 text-red-700 px-2 py-0.5 rounded-full">
-                          {estudiantesEnRiesgoOrdenados.length} en riesgo (&lt; 7.00)
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="w-full space-y-1.5 pt-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">
-                    Sugerencias para empezar
-                  </p>
-                  {preguntasSugeridas.slice(0, 3).map((sug, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => enviarMensaje(sug)}
-                      className="w-full text-left bg-white hover:bg-[#8B151A]/5 hover:border-[#8B151A]/40 border border-[#e4e4e7] rounded-lg px-3 py-2 text-[11px] text-[#27272a] font-medium transition flex items-center justify-between gap-2 cursor-pointer group shadow-2xs"
-                    >
-                      <span className="line-clamp-1">{sug}</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-[#a1a1aa] group-hover:text-[#8B151A] shrink-0 transition" />
-                    </button>
-                  ))}
+                <div className="text-[13px] text-black leading-relaxed max-w-[250px]">
+                  Hola, {primerNombre}. ¿En qué te ayudo hoy?
                 </div>
               </div>
             ) : (
@@ -949,18 +885,14 @@ export function ChatIaWidget({
                 type="text"
                 value={mensajeInput}
                 onChange={(e) => setMensajeInput(e.target.value)}
-                placeholder={
-                  estudianteActual
-                    ? `Pregunta sobre ${estudianteActual.apellidos.split(' ')[0]}, sus temas o refuerzo...`
-                    : 'Pregunta sobre el curso, un tema o cualquier estudiante...'
-                }
+                placeholder="Escribe un mensaje..."
                 disabled={cargando}
-                className="flex-1 bg-[#f4f4f5] border border-[#d4d4d8] rounded-md px-3 py-1.5 text-xs text-[#18181b] focus:outline-none focus:border-[#8B151A] focus:bg-white transition"
+                className="flex-1 bg-[#f4f5f7] border border-[#e5e7eb] px-3 py-2 text-xs text-black focus:outline-none focus:border-[#2563eb] focus:bg-white transition"
               />
               <button
                 type="submit"
                 disabled={cargando || !mensajeInput.trim()}
-                className="p-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded-md disabled:opacity-50 transition cursor-pointer"
+                className="p-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white disabled:opacity-50 transition cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
               </button>

@@ -119,7 +119,6 @@ export function ChatIaProvider({ children }: { children: ReactNode }) {
   // Precarga en segundo plano las materias y el rendimiento del primer parcial si aún faltan,
   // para que la IA deduzca cualquier asignatura mencionada aunque el usuario no esté en ella.
   useEffect(() => {
-    if (!abierto) return
     let vigente = true
 
     async function precargarContexto() {
@@ -172,7 +171,7 @@ export function ChatIaProvider({ children }: { children: ReactNode }) {
     return () => {
       vigente = false
     }
-  }, [abierto, materias, rendimientosPorMateria])
+  }, [materias, rendimientosPorMateria])
 
   return (
     <ChatIaContext.Provider
