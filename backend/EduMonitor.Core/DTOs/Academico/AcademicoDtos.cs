@@ -153,7 +153,9 @@ public record FilaMatrizConsolidadaDto(
     string EstadoAcademico,
     List<ComponentePonderadoDto> Componentes,
     List<TemaCriticoDto> TemasDeficientes,
-    PlanRefuerzoDto? PlanRefuerzoVigente
+    PlanRefuerzoDto? PlanRefuerzoVigente,
+    bool SinEvaluaciones = false,
+    bool CalculoProvisional = false
 );
 
 public record ReporteConsolidadoCursoDto(

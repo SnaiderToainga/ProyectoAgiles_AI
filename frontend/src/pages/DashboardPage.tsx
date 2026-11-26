@@ -6,6 +6,7 @@ import clienteAxios from '../api/clienteAxios'
 import { RendimientoBarChart, type PuntoTendencia } from '../components/RendimientoBarChart'
 import { NOMBRE_COMPONENTE, type MateriaDto, type ResumenAcademicoEstudianteDto } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
+import { estaEvaluado, textoNotaFinal } from '../utils/estadoCalificacion'
 
 interface ResumenMateria {
   materia: MateriaDto
@@ -379,9 +380,11 @@ export function DashboardPage() {
                 `/academico/materias/${materia.id}/parciales/${parcial.id}/rendimiento`
               )
               const totalEstudiantes = estudiantes.length
+              // El promedio solo considera a quienes ya tienen actividades evaluadas.
+              const evaluados = estudiantes.filter(estaEvaluado)
               const promedio =
-                totalEstudiantes > 0
-                  ? estudiantes.reduce((acc, e) => acc + e.notaFinalParcial, 0) / totalEstudiantes
+                evaluados.length > 0
+                  ? evaluados.reduce((acc, e) => acc + e.notaFinalParcial, 0) / evaluados.length
                   : 0
               const enRiesgo = estudiantes.filter((e) => e.enRiesgo).length
               return { materia, totalEstudiantes, promedio, enRiesgo, estudiantes }
@@ -536,17 +539,19 @@ export function DashboardPage() {
 
   const resumen = useMemo(() => {
     const total = estudiantesParaGrafico.length
+    const evaluados = estudiantesParaGrafico.filter(estaEvaluado)
+    // Promedio por componente solo entre quienes tienen ese componente evaluado (no cuenta 0 por ausencia).
     const prom = (tipo: number) => {
-      if (total === 0) return 0
-      const vals = estudiantesParaGrafico.map(
-        (e) => e.componentes.find((c) => c.tipo === tipo)?.promedioComponente ?? 0
-      )
-      return vals.reduce((a, b) => a + b, 0) / vals.length
+      const vals = evaluados
+        .map((e) => e.componentes.find((c) => c.tipo === tipo))
+        .filter((c) => c !== undefined && c.evaluado !== false)
+        .map((c) => c!.promedioComponente)
+      return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
     }
     const promedio =
-      total > 0 ? estudiantesParaGrafico.reduce((a, e) => a + e.notaFinalParcial, 0) / total : 0
-    const aprobados = estudiantesParaGrafico.filter((e) => e.notaFinalParcial >= 7).length
-    const riesgo = [...estudiantesParaGrafico]
+      evaluados.length > 0 ? evaluados.reduce((a, e) => a + e.notaFinalParcial, 0) / evaluados.length : 0
+    const aprobados = evaluados.filter((e) => e.notaFinalParcial >= 7).length
+    const riesgo = evaluados
       .filter((e) => e.enRiesgo || e.notaFinalParcial < 7)
       .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
     return {
@@ -562,8 +567,10 @@ export function DashboardPage() {
     }
   }, [estudiantesParaGrafico])
 
-  const compNota = (est: ResumenAcademicoEstudianteDto, tipo: number) =>
-    (est.componentes.find((c) => c.tipo === tipo)?.promedioComponente ?? 0).toFixed(2)
+  const compNota = (est: ResumenAcademicoEstudianteDto, tipo: number) => {
+    const comp = est.componentes.find((c) => c.tipo === tipo)
+    return comp && comp.evaluado !== false ? comp.promedioComponente.toFixed(2) : '—'
+  }
 
   if (!cargando && sinMaterias) {
     return (
@@ -730,7 +737,7 @@ export function DashboardPage() {
                     <td className="num-col tabular-nums">{compNota(est, 2)}</td>
                     <td className="num-col tabular-nums">{compNota(est, 3)}</td>
                     <td className="num-col">
-                      <span className="badge-clean risk tabular-nums">{est.notaFinalParcial.toFixed(2)}</span>
+                      <span className="badge-clean risk tabular-nums">{textoNotaFinal(est)}</span>
                     </td>
                     <td className="num-col">
                       <Link

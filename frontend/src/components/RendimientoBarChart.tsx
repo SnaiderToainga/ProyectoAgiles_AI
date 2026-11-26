@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Info } from 'lucide-react'
 import { AvatarEstudiante } from './AvatarEstudiante'
 import { type ResumenAcademicoEstudianteDto } from '../types/academico'
+import { estaEvaluado, textoNotaFinal } from '../utils/estadoCalificacion'
 
 export interface RangoRendimiento {
   id: 'critico' | 'riesgo' | 'regular' | 'sobresaliente'
@@ -38,14 +39,18 @@ export function RendimientoBarChart({
   const [rangoActivo, setRangoActivo] = useState<string | null>(null)
   const [modo, setModo] = useState<'ranges' | 'trend'>('ranges')
 
+  // Solo se clasifican estudiantes con actividades evaluadas: sin notas no son "Crítico" con 0.00.
+  const evaluados = useMemo(() => estudiantes.filter(estaEvaluado), [estudiantes])
+  const sinEvaluar = estudiantes.length - evaluados.length
+
   const rangos: RangoRendimiento[] = useMemo(() => {
-    const total = estudiantes.length
+    const total = evaluados.length
     const pct = (n: number) => (total > 0 ? Number(((n / total) * 100).toFixed(1)) : 0)
 
-    const criticos = estudiantes.filter((e) => e.notaFinalParcial >= 0 && e.notaFinalParcial < 4.0)
-    const enRiesgo = estudiantes.filter((e) => e.notaFinalParcial >= 4.0 && e.notaFinalParcial < 7.0)
-    const regulares = estudiantes.filter((e) => e.notaFinalParcial >= 7.0 && e.notaFinalParcial < 8.5)
-    const sobresalientes = estudiantes.filter((e) => e.notaFinalParcial >= 8.5 && e.notaFinalParcial <= 10.0)
+    const criticos = evaluados.filter((e) => e.notaFinalParcial >= 0 && e.notaFinalParcial < 4.0)
+    const enRiesgo = evaluados.filter((e) => e.notaFinalParcial >= 4.0 && e.notaFinalParcial < 7.0)
+    const regulares = evaluados.filter((e) => e.notaFinalParcial >= 7.0 && e.notaFinalParcial < 8.5)
+    const sobresalientes = evaluados.filter((e) => e.notaFinalParcial >= 8.5 && e.notaFinalParcial <= 10.0)
 
     return [
       { id: 'critico', etiqueta: 'Crítico', subtitulo: '< 4.0', min: 0, max: 3.99, colorHex: '#991b1b', cantidad: criticos.length, porcentaje: pct(criticos.length), estudiantes: criticos },
@@ -53,9 +58,9 @@ export function RendimientoBarChart({
       { id: 'regular', etiqueta: 'Regular', subtitulo: '7.0 – 8.4', min: 7, max: 8.49, colorHex: '#18181b', cantidad: regulares.length, porcentaje: pct(regulares.length), estudiantes: regulares },
       { id: 'sobresaliente', etiqueta: 'Sobresaliente', subtitulo: '8.5 – 10', min: 8.5, max: 10, colorHex: '#15803d', cantidad: sobresalientes.length, porcentaje: pct(sobresalientes.length), estudiantes: sobresalientes },
     ]
-  }, [estudiantes])
+  }, [evaluados])
 
-  const totalEstudiantes = estudiantes.length
+  const totalEstudiantes = evaluados.length
   const maxCantidad = Math.max(1, ...rangos.map((r) => r.cantidad))
 
   const detalleSeleccionado = useMemo(
@@ -65,9 +70,9 @@ export function RendimientoBarChart({
 
   const tasaAprobacion = useMemo(() => {
     if (totalEstudiantes === 0) return 0
-    const aprobados = estudiantes.filter((e) => e.notaFinalParcial >= 7.0).length
+    const aprobados = evaluados.filter((e) => e.notaFinalParcial >= 7.0).length
     return Number(((aprobados / totalEstudiantes) * 100).toFixed(1))
-  }, [estudiantes, totalEstudiantes])
+  }, [evaluados, totalEstudiantes])
 
   // Geometría de la gráfica de tendencia (escala 0–10)
   const W = 520
@@ -109,7 +114,11 @@ export function RendimientoBarChart({
       ) : totalEstudiantes === 0 ? (
         <div className="py-12 text-center text-xs text-black flex flex-col items-center gap-2">
           <Info className="w-5 h-5 text-black" />
-          <p>No se encontraron calificaciones registradas para esta asignatura.</p>
+          <p>
+            {sinEvaluar > 0
+              ? `Ninguno de los ${sinEvaluar} estudiantes tiene actividades calificadas y publicadas en este parcial.`
+              : 'No se encontraron calificaciones registradas para esta asignatura.'}
+          </p>
         </div>
       ) : modo === 'ranges' ? (
         <div className="space-y-4">
@@ -169,6 +178,7 @@ export function RendimientoBarChart({
           <div className="flex items-center gap-3 text-xs text-black">
             <span>
               <strong className="tabular-nums">{totalEstudiantes}</strong> alumnos
+              {sinEvaluar > 0 && ` (+${sinEvaluar} sin evaluaciones)`}
             </span>
             <span>·</span>
             <span>
@@ -217,7 +227,7 @@ export function RendimientoBarChart({
                       <span
                         className={`badge-clean tabular-nums ${est.enRiesgo ? 'risk' : 'ok'}`}
                       >
-                        {est.notaFinalParcial.toFixed(2)}
+                        {textoNotaFinal(est)}
                       </span>
                     </div>
                   ))}

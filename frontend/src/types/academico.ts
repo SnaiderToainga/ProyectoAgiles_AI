@@ -49,6 +49,8 @@ export interface EvaluacionDetalleDto {
   nota: number | null
   esDeficiente: boolean
   temas: TemaReferenciaDto[]
+  /** 0 sin dato, 1 entregado (con nota), 2 sin entrega, 3 pendiente de calificar, 4 por entregar. */
+  estado?: number
 }
 
 export interface ComponentePonderadoDto {
@@ -58,6 +60,8 @@ export interface ComponentePonderadoDto {
   aporteFinal: number
   esDeficiente: boolean
   evaluaciones: EvaluacionDetalleDto[]
+  /** false si no hay actividades evaluadas en este componente (no cuenta como 0). */
+  evaluado?: boolean
 }
 
 export interface TemaCriticoDto {
@@ -79,6 +83,11 @@ export interface ResumenAcademicoEstudianteDto {
   componentes: ComponentePonderadoDto[]
   temasDeficientes: TemaCriticoDto[]
   fotoUrl?: string | null
+  /** Sin ninguna actividad evaluada: la nota no es 0 ni implica riesgo. */
+  sinEvaluaciones?: boolean
+  /** Calculada solo con parte de la ponderación 30/30/40. */
+  calculoProvisional?: boolean
+  ponderacionEvaluada?: number
 }
 
 export interface SincronizacionDto {
@@ -259,6 +268,8 @@ export interface FilaMatrizConsolidadaDto {
   componentes: ComponentePonderadoDto[]
   temasDeficientes: TemaCriticoDto[]
   planRefuerzoVigente: PlanRefuerzoDto | null
+  sinEvaluaciones?: boolean
+  calculoProvisional?: boolean
 }
 
 export interface ReporteConsolidadoCursoDto {

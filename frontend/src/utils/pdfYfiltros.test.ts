@@ -241,6 +241,7 @@ describe('calculoFiltrosAcademicos (T-12.7 y T-12.8)', () => {
               nota: null,
               esDeficiente: true,
               temas: [{ temaId: 101, nombre: 'Scrum' }],
+              estado: 2, // Sin entrega (plazo vencido)
             },
           ],
         },
@@ -302,6 +303,40 @@ describe('calculoFiltrosAcademicos (T-12.7 y T-12.8)', () => {
     expect(metricas.actividadAislada?.tasaEntregaPorcentaje).toBe('50.0')
     expect(metricas.actividadAislada?.promedioActividad).toBe('9.00')
     expect(metricas.totalEnRiesgo).toBe(1)
+    expect(filas.find((f) => f.estudiante.estudianteId === 2)?.estadoActividadAislada).toBe(2)
+  })
+
+  it('no marca en riesgo una actividad pendiente de calificar ni a quien no tiene evaluaciones (RF-06 / RNF-03)', () => {
+    const pendiente: ResumenAcademicoEstudianteDto[] = estudiantes.map((est) =>
+      est.estudianteId !== 2
+        ? est
+        : {
+            ...est,
+            componentes: est.componentes.map((c) => ({
+              ...c,
+              evaluaciones: c.evaluaciones.map((ev) =>
+                ev.itemEvaluacionId === 1 ? { ...ev, estado: 3, esDeficiente: false } : ev
+              ),
+            })),
+          }
+    )
+    const evalAislada = evaluaciones[0]
+    const alcance = obtenerEvaluacionesEnAlcance(evaluaciones, parcial, 10, 101, evalAislada.id)
+    const filas = calcularRendimientoFiltrado(pendiente, alcance, evalAislada.id, true, 'todos', '')
+    expect(filas.find((f) => f.estudiante.estudianteId === 2)?.enRiesgoFiltrado).toBe(false)
+
+    const sinNotas: ResumenAcademicoEstudianteDto = {
+      ...estudiantes[0],
+      estudianteId: 9,
+      notaFinalParcial: 0,
+      enRiesgo: false,
+      sinEvaluaciones: true,
+    }
+    const [fila] = calcularRendimientoFiltrado([sinNotas], [], null, false, 'todos', '')
+    expect(fila.enRiesgoFiltrado).toBe(false)
+    expect(fila.esCriticoFiltrado).toBe(false)
+    expect(fila.notaReferencia).toBeNull()
+    expect(calcularMetricasGrupo([fila], null).promedioCurso).toBe('0.00')
   })
 })
 

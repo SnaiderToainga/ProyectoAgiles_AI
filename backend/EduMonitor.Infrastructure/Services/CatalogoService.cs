@@ -352,7 +352,10 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
         var compExamen = est.Componentes.FirstOrDefault(c => c.Tipo == TipoItemEvaluacion.Examen);
 
         var nombreCompleto = $"{est.Apellidos} {est.Nombres}".Trim();
-        var estadoAcademico = est.EnRiesgo ? "En Riesgo Académico (< 7.00)" : "Aprobado (>= 7.00)";
+        var estadoAcademico = est.SinEvaluaciones
+            ? "Sin evaluaciones calificadas"
+            : (est.EnRiesgo ? "En Riesgo Académico (< 7.00)" : "Aprobado (>= 7.00)")
+              + (est.CalculoProvisional ? $" · provisional ({est.PonderacionEvaluada:P0} evaluado)" : "");
 
         return new FilaMatrizConsolidadaDto(
             numeroOrden,
@@ -373,7 +376,9 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
             estadoAcademico,
             est.Componentes,
             est.TemasDeficientes,
-            planVigente
+            planVigente,
+            est.SinEvaluaciones,
+            est.CalculoProvisional
         );
     }
 
@@ -385,14 +390,16 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
             return new ResumenEstadisticoReporteDto(0, 0, 0, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 7.00m);
         }
 
-        var enRiesgo = filas.Count(f => f.EnRiesgo);
-        var aprobados = total - enRiesgo;
+        // Los estudiantes sin evaluaciones calificadas no cuentan como aprobados ni entran en los promedios.
+        var evaluadas = filas.Where(f => !f.SinEvaluaciones).ToList();
+        var enRiesgo = evaluadas.Count(f => f.EnRiesgo);
+        var aprobados = evaluadas.Count - enRiesgo;
 
         var pctAprobados = Math.Round(aprobados * 100m / total, 2, MidpointRounding.AwayFromZero);
         var pctRiesgo = Math.Round(enRiesgo * 100m / total, 2, MidpointRounding.AwayFromZero);
 
         decimal Promedio(Func<FilaMatrizConsolidadaDto, decimal> selector) =>
-            Math.Round(filas.Sum(selector) / total, 2, MidpointRounding.AwayFromZero);
+            evaluadas.Count == 0 ? 0m : Math.Round(evaluadas.Sum(selector) / evaluadas.Count, 2, MidpointRounding.AwayFromZero);
 
         return new ResumenEstadisticoReporteDto(
             total,

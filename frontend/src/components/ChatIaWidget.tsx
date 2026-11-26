@@ -25,6 +25,7 @@ import {
   type MateriaDto,
   type ResumenAcademicoEstudianteDto,
 } from '../types/academico'
+import { estaEvaluado } from '../utils/estadoCalificacion'
 
 export interface MensajeChatUi {
   id: string
@@ -380,7 +381,8 @@ export function ChatIaWidget({
 
   const materiaActual = materias.find((m) => m.id === materiaId) || materias[0]
   const estudianteActual = estudiantes.find((e) => e.estudianteId === estudianteId) || null
-  const estudiantesEnRiesgoOrdenados = [...estudiantes]
+  const estudiantesEnRiesgoOrdenados = estudiantes
+    .filter(estaEvaluado)
     .filter((e) => e.enRiesgo || e.notaFinalParcial < 7)
     .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
 
@@ -469,23 +471,25 @@ export function ChatIaWidget({
     const { anonimizar: anonMsg, desanonimizar: desanonMsg } = crearAnonimizador(listaAnon)
     const { anonimizar: anonHistorial } = crearAnonimizador(listaAnonGlobal)
 
+    // Al agente solo se envían estudiantes con actividades evaluadas: sin notas no son un 0.00 en riesgo.
+    const estudiantesEvaluados = estudiantesEfectivos.filter(estaEvaluado)
     const contextoCurso = materiaEfectiva
       ? {
           materia: materiaEfectiva.nombre,
           codigo: materiaEfectiva.codigo,
           semestre: materiaEfectiva.semestre,
           promedioGeneral:
-            estudiantesEfectivos.length > 0
+            estudiantesEvaluados.length > 0
               ? Number(
                   (
-                    estudiantesEfectivos.reduce((acc, e) => acc + e.notaFinalParcial, 0) /
-                    estudiantesEfectivos.length
+                    estudiantesEvaluados.reduce((acc, e) => acc + e.notaFinalParcial, 0) /
+                    estudiantesEvaluados.length
                   ).toFixed(2)
                 )
               : 0,
-          totalEstudiantes: estudiantesEfectivos.length,
-          estudiantesEnRiesgo: estudiantesEfectivos.filter((e) => e.enRiesgo).length,
-          aprobados: estudiantesEfectivos.filter((e) => !e.enRiesgo).length,
+          totalEstudiantes: estudiantesEvaluados.length,
+          estudiantesEnRiesgo: estudiantesEvaluados.filter((e) => e.enRiesgo).length,
+          aprobados: estudiantesEvaluados.filter((e) => !e.enRiesgo).length,
         }
       : null
 
@@ -518,7 +522,7 @@ export function ChatIaWidget({
       historial: mensajes.map((m) => ({ rol: m.rol, contenido: anonHistorial(m.texto) })),
       contextoCurso,
       estudianteSeleccionado: estudianteDto,
-      estudiantesCurso: estudiantesEfectivos.map((e, idx) => ({
+      estudiantesCurso: estudiantesEvaluados.map((e, idx) => ({
         codigo: mapaEfectivo.get(e.estudianteId) || `EST-${String(idx + 1).padStart(3, '0')}`,
         notaFinal: e.notaFinalParcial,
         enRiesgo: e.enRiesgo,
