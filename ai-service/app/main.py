@@ -1,8 +1,10 @@
 import logging
-from fastapi import FastAPI, status
+from typing import Optional
+from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.schemas import RespuestaChat, RespuestaPlan, SolicitudChat, SolicitudPlan
+from app.services.backend_client import BackendAcademico, BackendError
 from app.services.chat_service import ChatService
 from app.services.gemini_service import GeminiService
 
@@ -55,17 +57,34 @@ def generar_plan_remedial(solicitud: SolicitudPlan):
     return gemini_service.generar_plan(solicitud)
 
 
+def _token_bearer(authorization: Optional[str]) -> str:
+    """El chat actúa en nombre del docente: sin su JWT no puede consultar la API académica."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Falta el token de sesión del docente.")
+    token = authorization[7:].strip()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Falta el token de sesión del docente.")
+    return token
+
+
 @app.post(
     "/api/agent/chat",
     response_model=RespuestaChat,
     status_code=status.HTTP_200_OK,
     tags=["Pedagogical Agent - Chat"],
 )
-def chat_asistente_pedagogico(solicitud: SolicitudChat):
+def chat_asistente_pedagogico(solicitud: SolicitudChat, authorization: Optional[str] = Header(default=None)):
     """
     Endpoint de Asistencia Conversacional con IA (HU-07 / T-13.4 y T-13.5).
-    Responde consultas del docente a nivel general de curso o individual por estudiante,
-    integrando Tools deterministas y advertencias éticas de incertidumbre pedagógica (RNF-08).
+    El agente decide qué herramientas invocar contra la API académica, con el JWT del docente,
+    y registra la traza de la ejecución (sección 7 / RF-12). Si la API académica falla, responde
+    con un error explícito en lugar de improvisar datos.
     """
+    token = _token_bearer(authorization)
     logger.info(f"Petición de chat recibida - Modo: {solicitud.modo} | Longitud mensaje: {len(solicitud.mensaje)} chars")
-    return chat_service.procesar_chat(solicitud)
+    with BackendAcademico(token) as backend:
+        try:
+            return chat_service.procesar_chat(solicitud, backend)
+        except BackendError as exc:
+            status_http = exc.status if exc.status in (401, 403, 404) else status.HTTP_502_BAD_GATEWAY
+            raise HTTPException(status_code=status_http, detail=exc.mensaje) from exc

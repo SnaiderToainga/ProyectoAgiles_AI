@@ -19,10 +19,20 @@ public class AcademicoDbContext(DbContextOptions<AcademicoDbContext> options) : 
     public DbSet<EvaluacionTema> EvaluacionTemas => Set<EvaluacionTema>();
     public DbSet<PlanRefuerzo> PlanesRefuerzo => Set<PlanRefuerzo>();
     public DbSet<DetallePlanRefuerzo> DetallesPlanRefuerzo => Set<DetallePlanRefuerzo>();
+    public DbSet<TrazaAgente> TrazasAgente => Set<TrazaAgente>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
         AcademicModelConfiguration.Configure(model);
+        model.Entity<TrazaAgente>(entity =>
+        {
+            entity.ToTable("TrazasAgente");
+            entity.Property(t => t.Modo).HasMaxLength(20);
+            entity.Property(t => t.Consulta).HasMaxLength(2000);
+            entity.Property(t => t.Modelo).HasMaxLength(80);
+            entity.Property(t => t.Error).HasMaxLength(500);
+            entity.HasIndex(t => new { t.UsuarioId, t.Fecha });
+        });
         model.Entity<Parcial>().HasIndex(p => new { p.CursoId, p.Numero }).IsUnique();
         model.Entity<Parcial>().HasOne(p => p.Curso).WithMany().OnDelete(DeleteBehavior.Restrict);
         model.Entity<Unidad>().HasIndex(u => new { u.ParcialId, u.Numero }).IsUnique();

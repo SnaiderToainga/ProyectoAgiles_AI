@@ -1,7 +1,7 @@
 import logging
 import re
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from google import genai
 from google.genai import types
 from app.config import settings
@@ -13,19 +13,27 @@ from app.prompts import (
     SYSTEM_PROMPT_CHAT,
 )
 from app.schemas import RespuestaChat, SolicitudChat
-from app.services.chat_tools import ChatTools
+from app.services.agent_tools import DECLARACIONES, HerramientasAgente
+from app.services.backend_client import BackendAcademico, BackendError
 
 logger = logging.getLogger(__name__)
 
 # Temperatura conservadora acordada en el diseño del agente (Sprint 2, sección 2.6.4)
 TEMPERATURA_CHAT = 0.2
 
+# Presupuesto total del chat (el navegador espera hasta 35 s) y límites del bucle de herramientas.
+PRESUPUESTO_TOTAL_S = 24.0
+TIEMPO_MINIMO_LLAMADA_S = 3.0
+MAX_RONDAS_HERRAMIENTAS = 3
+MAX_LLAMADAS_POR_RONDA = 4
+MODELOS_RESPALDO = ("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
+
 
 class ChatService:
     """
     Servicio de Asistencia Conversacional Pedagógica (HU-07 / T-13.4 y T-13.5).
-    Combina Tools deterministas (para evitar alucinaciones numéricas) con Gemini API,
-    y provee un motor local de contingencia (Fallback) ante pérdida de conexión.
+    El modelo elige y usa herramientas que consultan la API académica (function calling); las cifras
+    salen siempre de cálculos deterministas. Sin modelo, un motor local usa las mismas herramientas.
     """
 
     def __init__(self) -> None:
@@ -33,7 +41,7 @@ class ChatService:
         self.client: Optional[genai.Client] = None
         if self.api_key:
             try:
-                # Límite por llamada de máximo 14s para respuestas ágiles y fallback rápido ante saturación
+                # Límite por llamada de máximo 14s para respuestas ágiles y conmutación rápida ante saturación
                 timeout_ms = min(max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000), 14000)
                 self.client = genai.Client(
                     api_key=self.api_key,
@@ -42,200 +50,239 @@ class ChatService:
             except Exception as exc:
                 logger.error(f"Error inicializando cliente de Gemini para Chat: {exc}")
 
-    def procesar_chat(self, solicitud: SolicitudChat) -> RespuestaChat:
+    def procesar_chat(self, solicitud: SolicitudChat, backend: BackendAcademico) -> RespuestaChat:
+        """
+        Atiende una consulta del docente. El modelo decide qué herramientas invocar contra la API
+        académica; si el modelo no está disponible, el motor local usa esas mismas herramientas.
+        Toda la ejecución se registra como traza (sección 7 / RF-12). Si la API académica falla,
+        se lanza BackendError: nunca se responde con datos inventados.
+        """
         inicio = time.time()
-        tools_ejecutadas: List[str] = []
+        herramientas = HerramientasAgente(backend, solicitud.cursoId, solicitud.parcialId)
+        modelo_usado: Optional[str] = None
+        try:
+            respuesta_modelo: Optional[Tuple[str, str]] = None
+            if self.client and self.api_key:
+                respuesta_modelo = self._responder_con_modelo(solicitud, herramientas, inicio)
+            if respuesta_modelo:
+                texto, modelo_usado = respuesta_modelo
+                respuesta, sugerencias = self._extraer_sugerencias(texto)
+                es_fallback = False
+                datos = self._datos_ejecutados(herramientas)
+            else:
+                logger.info("Modelo no disponible para el chat; se usa el motor local con las mismas herramientas.")
+                datos = self._ejecutar_herramientas_basicas(solicitud, herramientas)
+                respuesta = self._generar_respuesta_local(solicitud, datos)
+                sugerencias = []
+                es_fallback = True
+        except BackendError as exc:
+            self._registrar_traza(backend, solicitud, herramientas, inicio, None, False, False, exc.mensaje)
+            raise
 
-        # 1. Ejecutar las Tools deterministas según el modo y contenido de la pregunta
-        msg_lower = solicitud.mensaje.lower()
-        datos_contexto = {}
+        if not sugerencias:
+            sugerencias = self._generar_sugerencias_contextuales(solicitud, datos)
+        traza_id = self._registrar_traza(backend, solicitud, herramientas, inicio, modelo_usado, es_fallback, True, None)
+        return RespuestaChat(
+            respuesta=respuesta,
+            advertenciaEtica=AVISO_ETICO_RNF08,
+            modo=solicitud.modo,
+            esFallback=es_fallback,
+            toolsEjecutadas=herramientas.ejecutadas,
+            sugerenciasSeguimiento=sugerencias,
+            tiempoRespuestaMs=int((time.time() - inicio) * 1000),
+            modelo=modelo_usado,
+            trazaId=traza_id,
+        )
 
-        if solicitud.modo == "estudiante" and solicitud.estudianteSeleccionado:
-            tools_ejecutadas.append("tool_diagnostico_estudiante")
-            datos_contexto["diagnostico_estudiante"] = ChatTools.tool_diagnostico_estudiante(
-                solicitud.estudianteSeleccionado
-            )
-        else:
-            # Modo Curso
-            tools_ejecutadas.append("tool_resumen_curso")
-            datos_contexto["resumen_curso"] = ChatTools.tool_resumen_curso(
-                solicitud.contextoCurso, solicitud.estudiantesCurso
-            )
+    # -- Modelo con function calling -------------------------------------------------------------
 
-            if any(k in msg_lower for k in ["riesgo", "reprobado", "menor", "debajo", "recuper"]):
-                tools_ejecutadas.append("tool_estudiantes_en_riesgo")
-                datos_contexto["estudiantes_riesgo"] = ChatTools.tool_estudiantes_en_riesgo(
-                    solicitud.estudiantesCurso
-                )
+    def _responder_con_modelo(
+        self, solicitud: SolicitudChat, herramientas: HerramientasAgente, inicio: float
+    ) -> Optional[Tuple[str, str]]:
+        """Bucle de function calling. Devuelve (texto, modelo) o None si el modelo no respondió."""
+        contenidos: List[types.Content] = [
+            types.Content(role="user", parts=[types.Part(text=self._construir_prompt(solicitud))])
+        ]
+        herramienta_gemini = types.Tool(function_declarations=DECLARACIONES)
+        modelos = self._modelos_a_probar()
 
-            if any(k in msg_lower for k in ["componente", "tarea", "ape", "examen", "dificultad", "bajo"]):
-                tools_ejecutadas.append("tool_analisis_componentes")
-                datos_contexto["analisis_componentes"] = ChatTools.tool_analisis_componentes(
-                    solicitud.contextoCurso, solicitud.estudiantesCurso
-                )
+        for ronda in range(MAX_RONDAS_HERRAMIENTAS + 1):
+            # En la primera ronda el modelo debe consultar datos reales antes de responder.
+            modo_llamada = "ANY" if ronda == 0 else ("AUTO" if ronda < MAX_RONDAS_HERRAMIENTAS else "NONE")
+            config_kwargs: Dict[str, Any] = {
+                "system_instruction": SYSTEM_PROMPT_CHAT,
+                "temperature": TEMPERATURA_CHAT,
+                "max_output_tokens": 2048,
+                "tools": [herramienta_gemini],
+                "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+                "tool_config": types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(mode=modo_llamada)
+                ),
+            }
+            resultado = self._llamar_modelo(modelos, contenidos, config_kwargs, inicio)
+            if resultado is None:
+                return None
+            resp, modelo = resultado
+            modelos = [modelo]  # Se mantiene el modelo que respondió durante toda la conversación.
 
-            if any(k in msg_lower for k in ["tema", "unidad", "actividad", "evaluacion", "evaluación", "mal", "fall", "refuerz", "resumen"]):
-                tools_ejecutadas.append("tool_analisis_temas")
-                datos_contexto["analisis_temas"] = ChatTools.tool_analisis_temas(
-                    solicitud.estudiantesCurso
-                )
+            llamadas = list(getattr(resp, "function_calls", None) or [])
+            if llamadas and ronda < MAX_RONDAS_HERRAMIENTAS:
+                contenido_modelo = resp.candidates[0].content if getattr(resp, "candidates", None) else None
+                if contenido_modelo is not None:
+                    contenidos.append(contenido_modelo)
+                partes = []
+                for llamada in llamadas[:MAX_LLAMADAS_POR_RONDA]:
+                    salida = herramientas.ejecutar(llamada.name, dict(llamada.args or {}))
+                    partes.append(types.Part.from_function_response(name=llamada.name, response={"resultado": salida}))
+                contenidos.append(types.Content(role="user", parts=partes))
+                continue
 
-        # 2. Si no hay cliente Gemini configurado o falla, usar Fallback Determinista
-        if not self.client or not self.api_key:
-            logger.info("Gemini no configurado para chat. Usando respuesta determinista local.")
-            texto_fallback = self._generar_respuesta_local(solicitud, datos_contexto)
-            sugerencias = self._generar_sugerencias_contextuales(solicitud, datos_contexto)
-            duracion_ms = int((time.time() - inicio) * 1000)
-            return RespuestaChat(
-                respuesta=texto_fallback,
-                advertenciaEtica=AVISO_ETICO_RNF08,
-                modo=solicitud.modo,
-                esFallback=True,
-                toolsEjecutadas=tools_ejecutadas,
-                sugerenciasSeguimiento=sugerencias,
-                tiempoRespuestaMs=duracion_ms,
-            )
+            texto = (getattr(resp, "text", None) or "").strip()
+            return (texto, modelo) if texto else None
+        return None
 
-        # 3. Llamar a Gemini con el System Prompt ético (T-13.6) e inyección de datos deterministas
-        datos_para_gemini = dict(datos_contexto)
-        if solicitud.modo == "estudiante" and solicitud.estudiantesCurso:
-            datos_para_gemini.setdefault(
-                "resumen_curso_referencia",
-                ChatTools.tool_resumen_curso(solicitud.contextoCurso, solicitud.estudiantesCurso),
-            )
-        elif solicitud.modo == "curso" and solicitud.estudiantesCurso:
-            datos_para_gemini.setdefault(
-                "estudiantes_riesgo",
-                ChatTools.tool_estudiantes_en_riesgo(solicitud.estudiantesCurso),
-            )
-            datos_para_gemini.setdefault(
-                "analisis_componentes",
-                ChatTools.tool_analisis_componentes(solicitud.contextoCurso, solicitud.estudiantesCurso),
-            )
-            datos_para_gemini.setdefault(
-                "analisis_temas",
-                ChatTools.tool_analisis_temas(solicitud.estudiantesCurso),
-            )
-            # Detección unificada: si el docente menciona un estudiante (ej. EST-001) en el chat general,
-            # inyectar su diagnóstico detallado sin obligarlo a cambiar de pestaña.
-            texto_busqueda = solicitud.mensaje + " " + " ".join(m.contenido for m in solicitud.historial[-3:])
-            codigos_mencionados = set(re.findall(r"\bEST-\d+\b", texto_busqueda, flags=re.IGNORECASE))
-            if codigos_mencionados:
-                por_codigo = {e.codigo.upper(): e for e in solicitud.estudiantesCurso}
-                diags_mencionados = [
-                    ChatTools.tool_diagnostico_estudiante(por_codigo[c.upper()])
-                    for c in sorted(codigos_mencionados)
-                    if c.upper() in por_codigo
-                ]
-                if diags_mencionados:
-                    datos_para_gemini["estudiantes_mencionados"] = diags_mencionados
+    def _llamar_modelo(
+        self, modelos: List[str], contenidos: List[types.Content], config_kwargs: Dict[str, Any], inicio: float
+    ) -> Optional[Tuple[Any, str]]:
+        for modelo in modelos:
+            max_intentos = 2 if modelo == settings.GEMINI_MODEL else 1
+            for intento in range(max_intentos):
+                restante = PRESUPUESTO_TOTAL_S - (time.time() - inicio)
+                if restante < TIEMPO_MINIMO_LLAMADA_S:
+                    logger.warning("Presupuesto de tiempo del chat agotado; se usa el motor local.")
+                    return None
+                kwargs = dict(config_kwargs)
+                # Los modelos '-lite' de Gemini rechazan thinking_budget=0 con 400 INVALID_ARGUMENT
+                if "lite" not in modelo.lower():
+                    kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                try:
+                    resp = self.client.models.generate_content(
+                        model=modelo,
+                        contents=contenidos,
+                        config=types.GenerateContentConfig(**kwargs),
+                    )
+                    return resp, modelo
+                except BackendError:
+                    raise
+                except Exception as exc:
+                    texto_error = str(exc)
+                    es_503 = "503" in texto_error or "UNAVAILABLE" in texto_error
+                    if es_503 and intento + 1 < max_intentos and restante > 5.0:
+                        logger.warning(f"Pico temporal 503 en {modelo}; reintentando brevemente...")
+                        time.sleep(0.4)
+                        continue
+                    logger.warning(f"Error llamando a modelo {modelo} en chat: {exc}. Probando alternativa...")
+                    break
+        return None
 
-        historial_str = ""
-        for m in solicitud.historial[-6:]:  # Últimas 6 interacciones para mantener contexto fluido
-            historial_str += f"- {m.rol}: {m.contenido}\n"
+    @staticmethod
+    def _modelos_a_probar() -> List[str]:
+        modelos = [settings.GEMINI_MODEL]
+        for respaldo in MODELOS_RESPALDO:
+            if respaldo not in modelos:
+                modelos.append(respaldo)
+        return modelos
 
+    @staticmethod
+    def _construir_prompt(solicitud: SolicitudChat) -> str:
+        historial = "".join(f"- {m.rol}: {m.contenido}\n" for m in solicitud.historial[-6:])
+        seleccionado = solicitud.estudianteCodigo or "ninguno"
         # La pregunta y el historial se delimitan como datos para que no actúen como instrucciones.
-        prompt = f"""
+        return f"""
 Modo actual: {solicitud.modo}
-
-<datos_verificados>
-{datos_para_gemini}
-</datos_verificados>
+Estudiante seleccionado por el docente: {seleccionado}
+El curso y el parcial ya están fijados por el sistema; las herramientas consultan solo esos datos.
 
 <historial>
-{historial_str}</historial>
+{historial}</historial>
 
 <pregunta_docente>
 {solicitud.mensaje}
 </pregunta_docente>
 
 Instrucción:
+Antes de responder, invoca las herramientas necesarias para obtener los datos reales del curso. Usa
+únicamente las cifras que devuelvan las herramientas; si una herramienta no devuelve un dato, dilo.
+Si hay un estudiante seleccionado o la pregunta menciona un código EST-###, usa diagnosticar_estudiante.
 Adapta el estilo de tu respuesta a la intención real de la pregunta del docente:
 - Si solicita un diagnóstico, auditoría de calificaciones o análisis de riesgo, organiza la respuesta en "{SECCION_HECHOS}", "{SECCION_INFERENCIAS}" y "{SECCION_RECOMENDACIONES}".
 - Si hace una pregunta abierta, conversacional, de seguimiento, o pide ideas didácticas, actividades de refuerzo, estrategias o explicaciones, responde de forma abierta, natural, fluida y variada usando Markdown limpio (párrafos y viñetas), sin forzar encabezados repetitivos.
-Si mencionas estudiantes en riesgo, usa únicamente códigos anónimos (ej. EST-001), nota exacta y temas débiles; nunca menciones nombres.
-Si la pregunta contiene `[ESTUDIANTE]`, advierte amablemente que existe más de un estudiante con ese nombre/apellido en la asignatura (o en otra cátedra) y pide indicar nombre y apellido completo antes de atribuirle calificaciones individuales.
-Si en <datos_verificados> hay actividades específicas o análisis por tema (`actividadesDeficientes`, `detallePorTema`, `analisis_temas`), cita exactamente el nombre de la actividad y del tema con sus notas cuando sea relevante.
-Si la pregunta requiere un dato que no está en <datos_verificados>, indícalo explícitamente en lugar de suponerlo.
+Si mencionas estudiantes, usa únicamente códigos anónimos (ej. EST-001), nota exacta y temas débiles; nunca menciones nombres.
+Si la pregunta contiene `[ESTUDIANTE]`, advierte amablemente que existe más de un estudiante con ese nombre/apellido y pide indicar nombre y apellido completo antes de atribuirle calificaciones individuales.
+Si un cálculo es provisional (faltan componentes por evaluar), indícalo.
 Al final de tu respuesta, en una línea aparte con el formato exacto `SUGERENCIAS: pregunta 1 | pregunta 2`, propón 2 preguntas o acciones cortas de seguimiento coherentes con lo que acabas de responder (sin nombres personales).
 """
 
-        # 4.2 y 4.3: Presupuesto ágil de 20s (respeta el límite global <= 28s)
-        PRESUPUESTO_TOTAL_S = 20.0
-        TIEMPO_MINIMO_LLAMADA_S = 3.0
+    # -- Motor local (sin modelo) ----------------------------------------------------------------
 
-        modelos_a_probar = [settings.GEMINI_MODEL]
-        for respaldo in ("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"):
-            if respaldo not in modelos_a_probar:
-                modelos_a_probar.append(respaldo)
+    def _ejecutar_herramientas_basicas(self, solicitud: SolicitudChat, herramientas: HerramientasAgente) -> Dict[str, Any]:
+        """Sin modelo, se eligen las herramientas por reglas fijas, pero los datos siguen siendo reales."""
+        codigos = self._codigos_mencionados(solicitud)
+        diagnostico = None
+        if solicitud.modo == "estudiante" and solicitud.estudianteCodigo:
+            diagnostico = herramientas.ejecutar("diagnosticar_estudiante", {"codigo": solicitud.estudianteCodigo})
+        if diagnostico is None or "error" in diagnostico:
+            herramientas.ejecutar("consultar_resumen_curso")
+            herramientas.ejecutar("listar_estudiantes_en_riesgo")
+            herramientas.ejecutar("analizar_temas_y_actividades")
+            if len(codigos) == 1:
+                herramientas.ejecutar("diagnosticar_estudiante", {"codigo": codigos[0]})
+        return self._datos_ejecutados(herramientas)
 
-        for mod in modelos_a_probar:
-            max_intentos = 2 if mod == settings.GEMINI_MODEL else 1
-            for intento in range(max_intentos):
-                tiempo_transcurrido = time.time() - inicio
-                tiempo_restante_s = PRESUPUESTO_TOTAL_S - tiempo_transcurrido
+    @staticmethod
+    def _codigos_mencionados(solicitud: SolicitudChat) -> List[str]:
+        texto = solicitud.mensaje + " " + " ".join(m.contenido for m in solicitud.historial[-3:])
+        return sorted({c.upper() for c in re.findall(r"\bEST-\d+\b", texto, flags=re.IGNORECASE)})
 
-                # Si ya no existe tiempo suficiente para una llamada útil, conmutar directamente a fallback
-                if tiempo_restante_s < TIEMPO_MINIMO_LLAMADA_S:
-                    logger.warning(
-                        f"Presupuesto de tiempo agotado ({tiempo_transcurrido:.2f}s de {PRESUPUESTO_TOTAL_S}s). "
-                        "Activando inmediatamente fallback local determinista."
-                    )
-                    break
+    @staticmethod
+    def _datos_ejecutados(herramientas: HerramientasAgente) -> Dict[str, Any]:
+        """Reúne los resultados válidos de las herramientas con las claves que usa el motor local."""
+        datos: Dict[str, Any] = {}
+        for (nombre, _), resultado in herramientas._cache.items():
+            if not isinstance(resultado, dict) or "error" in resultado:
+                continue
+            if nombre == "consultar_resumen_curso":
+                datos["resumen_curso"] = resultado["resumen"]
+                datos["analisis_componentes"] = resultado["componentes"]
+            elif nombre == "listar_estudiantes_en_riesgo":
+                datos["estudiantes_riesgo"] = resultado
+            elif nombre == "analizar_temas_y_actividades":
+                datos["analisis_temas"] = resultado
+            elif nombre == "diagnosticar_estudiante":
+                datos.setdefault("diagnostico_estudiante", resultado)
+        return datos
 
-                try:
-                    config_kwargs = {
-                        "system_instruction": SYSTEM_PROMPT_CHAT,
-                        "temperature": TEMPERATURA_CHAT,
-                        "max_output_tokens": 2048,
-                    }
-                    # Los modelos '-lite' de Gemini rechazan thinking_budget=0 con 400 INVALID_ARGUMENT
-                    if "lite" not in mod.lower():
-                        config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+    # -- Traza ------------------------------------------------------------------------------------
 
-                    resp = self.client.models.generate_content(
-                        model=mod,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(**config_kwargs),
-                    )
-                    if resp and resp.text:
-                        respuesta_limpia, sugerencias = self._extraer_sugerencias(resp.text.strip())
-                        if not sugerencias:
-                            sugerencias = self._generar_sugerencias_contextuales(solicitud, datos_para_gemini)
-                        duracion_ms = int((time.time() - inicio) * 1000)
-                        return RespuestaChat(
-                            respuesta=respuesta_limpia,
-                            advertenciaEtica=AVISO_ETICO_RNF08,
-                            modo=solicitud.modo,
-                            esFallback=False,
-                            toolsEjecutadas=tools_ejecutadas,
-                            sugerenciasSeguimiento=sugerencias,
-                            tiempoRespuestaMs=duracion_ms,
-                        )
-                except Exception as e:
-                    err_txt = str(e)
-                    es_503 = "503" in err_txt or "UNAVAILABLE" in err_txt
-                    if es_503 and intento + 1 < max_intentos and (PRESUPUESTO_TOTAL_S - (time.time() - inicio)) > 5.0:
-                        logger.warning(f"Pico temporal 503 en {mod}; reintentando brevemente...")
-                        time.sleep(0.4)
-                        continue
-                    logger.warning(f"Error llamando a modelo {mod} en chat: {e}. Probando alternativa...")
-                    break
-
-        # 4. Fallback si Gemini falló
-        logger.warning("Fallo al consultar Gemini. Activando fallback determinista de chat.")
-        texto_fallback = self._generar_respuesta_local(solicitud, datos_contexto)
-        sugerencias = self._generar_sugerencias_contextuales(solicitud, datos_para_gemini)
-        duracion_ms = int((time.time() - inicio) * 1000)
-        return RespuestaChat(
-            respuesta=texto_fallback,
-            advertenciaEtica=AVISO_ETICO_RNF08,
-            modo=solicitud.modo,
-            esFallback=True,
-            toolsEjecutadas=tools_ejecutadas,
-            sugerenciasSeguimiento=sugerencias,
-            tiempoRespuestaMs=duracion_ms,
-        )
+    @staticmethod
+    def _registrar_traza(
+        backend: BackendAcademico,
+        solicitud: SolicitudChat,
+        herramientas: HerramientasAgente,
+        inicio: float,
+        modelo: Optional[str],
+        es_fallback: bool,
+        exitoso: bool,
+        error: Optional[str],
+    ) -> Optional[int]:
+        traza = {
+            "cursoId": solicitud.cursoId,
+            "parcialId": solicitud.parcialId,
+            "modo": solicitud.modo,
+            # La consulta ya llega anonimizada desde el navegador (RNF-02).
+            "consulta": solicitud.mensaje[:2000],
+            "modelo": modelo,
+            "esFallback": es_fallback,
+            "exitoso": exitoso,
+            "error": (error or "")[:500] or None,
+            "duracionMs": int((time.time() - inicio) * 1000),
+            "pasos": [p.como_dict() for p in herramientas.pasos[:20]],
+        }
+        try:
+            return backend.registrar_traza(traza)
+        except BackendError as exc:
+            logger.warning(f"No se pudo registrar la traza del agente: {exc.mensaje}")
+            return None
 
     @staticmethod
     def _extraer_sugerencias(texto: str) -> tuple[str, List[str]]:

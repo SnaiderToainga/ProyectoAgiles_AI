@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.5-flash"
     GEMINI_TIMEOUT_SECONDS: float = 30.0
+    # API académica que expone las herramientas del agente (se invoca con el JWT del docente).
+    BACKEND_API_URL: str = "http://localhost:5102"
+    BACKEND_TIMEOUT_SECONDS: float = 8.0
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     CORS_ORIGINS: List[str] = [

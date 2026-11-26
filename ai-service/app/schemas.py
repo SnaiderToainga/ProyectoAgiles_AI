@@ -72,9 +72,11 @@ class MensajeChat(BaseModel):
 
 
 class ContextoCursoChat(BaseModel):
+    """Contexto del curso tal como lo entrega la API académica (sin datos personales)."""
+
     materia: str = Field(..., min_length=1)
     codigo: str = Field(..., min_length=1)
-    semestre: Optional[str] = "Cuarto B"
+    semestre: Optional[str] = None
     promedioGeneral: float = Field(0.0, ge=0.0, le=10.0)
     totalEstudiantes: int = Field(0, ge=0)
     estudiantesEnRiesgo: int = Field(0, ge=0)
@@ -88,6 +90,7 @@ class EvaluacionChatDto(BaseModel):
     nombre: str = Field(..., min_length=1, description="Nombre de la actividad o evaluación")
     componente: str = Field(..., min_length=1, description="Componente (Tareas, APE, Examen)")
     nota: float = Field(..., ge=0.0, le=10.0)
+    estado: Optional[str] = Field(None, description="Calificada o Sin entrega (cuenta como 0)")
     temas: List[str] = Field(default_factory=list)
 
 
@@ -97,44 +100,35 @@ class EstudianteChatDto(BaseModel):
     codigo: str = Field(..., min_length=1, description="Código anónimo del estudiante, ej. EST-001")
     notaFinal: float = Field(..., ge=0.0, le=10.0)
     enRiesgo: bool = False
+    calculoProvisional: bool = False
     componentes: Optional[Dict[str, float]] = None
     temasDeficientes: List[str] = Field(default_factory=list)
     evaluaciones: List[EvaluacionChatDto] = Field(default_factory=list)
 
 
 class SolicitudChat(BaseModel):
-    modo: Literal["curso", "estudiante"] = Field("curso", description="Contexto del chat: curso general o estudiante particular")
-    mensaje: str = Field(..., min_length=1, description="Pregunta formulada por el docente")
-    historial: List[MensajeChat] = Field(default_factory=list, description="Historial de mensajes previos para diálogo continuo")
-    contextoCurso: Optional[ContextoCursoChat] = None
-    estudianteSeleccionado: Optional[EstudianteChatDto] = None
-    estudiantesCurso: List[EstudianteChatDto] = Field(default_factory=list)
+    """Consulta del docente. No transporta notas: el agente las obtiene con sus herramientas."""
 
     model_config = ConfigDict(
+        extra="forbid",
         json_schema_extra={
             "example": {
                 "modo": "curso",
                 "mensaje": "¿Cuáles estudiantes tienen promedio menor a 7.00?",
                 "historial": [],
-                "contextoCurso": {
-                    "materia": "Metodologias Agiles",
-                    "codigo": "SOF-401",
-                    "promedioGeneral": 7.42,
-                    "totalEstudiantes": 12,
-                    "estudiantesEnRiesgo": 3,
-                    "aprobados": 9,
-                },
-                "estudiantesCurso": [
-                    {
-                        "codigo": "EST-001",
-                        "notaFinal": 5.40,
-                        "enRiesgo": True,
-                        "temasDeficientes": ["Historias de Usuario"],
-                    }
-                ],
+                "cursoId": 1,
+                "parcialId": 1,
+                "estudianteCodigo": None,
             }
-        }
+        },
     )
+
+    modo: Literal["curso", "estudiante"] = Field("curso", description="Contexto del chat: curso general o estudiante particular")
+    mensaje: str = Field(..., min_length=1, max_length=2000, description="Pregunta del docente, ya anonimizada")
+    historial: List[MensajeChat] = Field(default_factory=list, max_length=40)
+    cursoId: int = Field(..., ge=1, description="Materia consultada; el backend verifica que pertenezca al docente")
+    parcialId: int = Field(..., ge=1)
+    estudianteCodigo: Optional[str] = Field(None, pattern=r"^EST-\d{1,9}$", description="Estudiante seleccionado, si lo hay")
 
 
 class RespuestaChat(BaseModel):
@@ -148,3 +142,5 @@ class RespuestaChat(BaseModel):
     toolsEjecutadas: List[str] = Field(default_factory=list)
     sugerenciasSeguimiento: List[str] = Field(default_factory=list)
     tiempoRespuestaMs: int = Field(0, ge=0)
+    modelo: Optional[str] = Field(None, description="Modelo que generó la respuesta; vacío en el motor local")
+    trazaId: Optional[int] = Field(None, description="Identificador de la traza registrada en la API académica")

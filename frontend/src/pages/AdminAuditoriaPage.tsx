@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import clienteAxios from '../api/clienteAxios'
 import { SearchAutocompleteInput } from '../components/SearchAutocompleteInput'
 import { listarUsuarios, mensajeDeError, type UsuarioAdmin } from '../api/usuariosService'
+import { TrazasAgenteTabla } from '../components/TrazasAgenteTabla'
 
 interface LogAcceso {
   id: number
@@ -218,6 +219,8 @@ export function AdminAuditoriaPage() {
           <span>Seguridad Institucional FISEI</span>
         </div>
       </div>
+
+      <TrazasAgenteTabla />
     </div>
   )
 }

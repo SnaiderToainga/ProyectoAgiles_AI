@@ -323,3 +323,28 @@ export interface LogSincronizacionDto {
   docente: string | null
   mensajeError: string | null
 }
+
+export interface PasoTrazaAgenteDto {
+  herramienta: string
+  parametros: string | null
+  resultado: string | null
+  exito: boolean
+  error: string | null
+  duracionMs: number
+}
+
+export interface TrazaAgenteDto {
+  id: number
+  fecha: string
+  usuarioId: number
+  usuario: string | null
+  curso: string | null
+  modo: string
+  consulta: string
+  modelo: string | null
+  esFallback: boolean
+  exitoso: boolean
+  error: string | null
+  duracionMs: number
+  pasos: PasoTrazaAgenteDto[]
+}
