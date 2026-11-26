@@ -9,8 +9,14 @@ public class MoodleController(MoodleSyncService sync) : ControllerBase
 {
     private int UsuarioId => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier),out var id) && id>0
         ? id : throw new AcademicoException(403,"Identidad inválida.");
+    private bool Admin => User.IsInRole("Administrador");
     [HttpPost("sync-cursos")]
     public async Task<IActionResult> Cursos(CancellationToken ct)=>Ok(await sync.Cursos(UsuarioId,ct));
     [HttpPost("sync-notas/{cursoId:int}")]
     public async Task<IActionResult> Notas(int cursoId,CancellationToken ct)=>Ok(await sync.Notas(UsuarioId,cursoId,ct));
+    [HttpGet("estado"),Authorize(Roles="Administrador")]
+    public async Task<IActionResult> Estado(CancellationToken ct)=>Ok(await sync.Estado(ct));
+    [HttpGet("logs")]
+    public async Task<IActionResult> Logs([FromQuery] int limite=20,CancellationToken ct=default)=>
+        Ok(await sync.Logs(UsuarioId,Admin,limite,ct));
 }

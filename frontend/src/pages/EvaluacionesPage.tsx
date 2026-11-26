@@ -31,6 +31,7 @@ import {
 } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 import { LEYENDA_PROVISIONAL, textoCalificacion } from '../utils/estadoCalificacion'
+import { FechaSincronizacionMoodle } from '../components/FechaSincronizacionMoodle'
 
 interface AlertaEstado {
   tipo: 'exito' | 'advertencia' | 'error'
@@ -724,6 +725,7 @@ export function EvaluacionesPage() {
           <button type="button" className="tool-pill" onClick={sincronizarMoodle} disabled={sincronizando}>
             {sincronizando ? 'Sincronizando...' : 'Moodle'}
           </button>
+          {materiaActual && <FechaSincronizacionMoodle fecha={materiaActual.ultimaSincronizacion} />}
           <button
             type="button"
             className="tool-pill"

@@ -25,6 +25,7 @@ export interface MateriaDto {
   nombre: string
   semestre: string
   parciales: ParcialDto[]
+  ultimaSincronizacion?: string | null
 }
 
 export interface EvaluacionDto {
@@ -210,6 +211,7 @@ export interface MembreteInstitucionalDto {
   docenteTitular: string
   docenteCorreo: string
   fechaEmisionUtc: string
+  ultimaSincronizacionUtc?: string | null
 }
 
 export interface FirmaDocenteDto {
@@ -293,4 +295,31 @@ export interface ReporteIndividualTutoriaDto {
   planRefuerzo: PlanRefuerzoDto | null
   bloqueFirma: FirmaDocenteDto
   piePagina: PiePaginaReporteDto
+}
+
+export interface EstadoMoodleDto {
+  enLinea: boolean
+  baseUrl: string
+  tokenConfigurado: boolean
+  sitio: string | null
+  version: string | null
+  cuentaServicio: string | null
+  codigoError: string | null
+  error: string | null
+  cursosVinculados: number
+  docentesVinculados: number
+  ultimaSincronizacionExitosa: string | null
+  consultadoEn: string
+}
+
+export interface LogSincronizacionDto {
+  id: number
+  fecha: string
+  operacion: string
+  estado: string
+  exitoso: boolean
+  totalRegistros: number
+  curso: string | null
+  docente: string | null
+  mensajeError: string | null
 }

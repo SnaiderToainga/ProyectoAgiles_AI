@@ -26,7 +26,8 @@ public record ClasificarRequest(
 public record TemaDto(int Id, string Nombre, string Descripcion);
 public record UnidadDto(int Id, int Numero, string Nombre, List<TemaDto> Temas);
 public record ParcialDto(int Id, int Numero, List<UnidadDto> Unidades);
-public record MateriaDto(int Id, string Codigo, string Nombre, string Semestre, List<ParcialDto> Parciales);
+public record MateriaDto(int Id, string Codigo, string Nombre, string Semestre, List<ParcialDto> Parciales,
+    DateTime? UltimaSincronizacion = null);
 public record EvaluacionDto(int Id, int? ParcialId, string Nombre, TipoItemEvaluacion Tipo, decimal Ponderacion, bool Publicado, int[] TemaIds);
 
 public record CrearPlanRefuerzoRequest(
@@ -95,7 +96,8 @@ public record MembreteInstitucionalDto(
     int ParcialNumero,
     string DocenteTitular,
     string DocenteCorreo,
-    DateTime FechaEmisionUtc
+    DateTime FechaEmisionUtc,
+    DateTime? UltimaSincronizacionUtc = null
 );
 
 public record FirmaDocenteDto(

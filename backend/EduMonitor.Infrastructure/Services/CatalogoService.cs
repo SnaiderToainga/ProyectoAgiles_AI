@@ -32,10 +32,16 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
         var cursos = await query.OrderBy(c => c.Id).ToListAsync(ct);
         var ids = cursos.Select(c => c.Id).ToArray();
         var parciales = await db.Parciales.AsNoTracking().Where(p => ids.Contains(p.CursoId)).Include(p => p.Unidades).ThenInclude(u => u.Temas).ToListAsync(ct);
+        // Última ingesta de notas exitosa por curso, para mostrar la vigencia de los datos.
+        var sincronizaciones = await db.LogsSincronizacion.AsNoTracking()
+            .Where(l => l.Exitoso && l.Operacion == "Notas" && l.CursoId != null && ids.Contains(l.CursoId.Value))
+            .GroupBy(l => l.CursoId!.Value).Select(g => new { CursoId = g.Key, Fecha = g.Max(l => l.Fecha) })
+            .ToDictionaryAsync(x => x.CursoId, x => DateTime.SpecifyKind(x.Fecha, DateTimeKind.Utc), ct);
         return cursos.Select(c => new MateriaDto(c.Id, c.Codigo, c.Nombre, c.Periodo,
             parciales.Where(p => p.CursoId == c.Id).OrderBy(p => p.Numero).Select(p => new ParcialDto(p.Id, p.Numero,
                 p.Unidades.OrderBy(u => u.Numero).Select(u => new UnidadDto(u.Id, u.Numero, u.Nombre,
-                    u.Temas.OrderBy(t => t.Id).Select(t => new TemaDto(t.Id, t.Nombre, t.Descripcion)).ToList())).ToList())).ToList())).ToList();
+                    u.Temas.OrderBy(t => t.Id).Select(t => new TemaDto(t.Id, t.Nombre, t.Descripcion)).ToList())).ToList())).ToList(),
+            sincronizaciones.TryGetValue(c.Id, out var fecha) ? fecha : null)).ToList();
     }
 
     public async Task<TemaDto> CrearTema(int user, bool admin, TemaRequest request, CancellationToken ct = default)
@@ -235,6 +241,7 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
         var membrete = ConstruirMembrete(
             curso,
             parcial,
+            await UltimaIngestaNotas(curso.Id, ct),
             "INFORME OFICIAL CONSOLIDADO DE RENDIMIENTO ACADÉMICO Y TUTORÍA",
             fechaEmision);
 
@@ -285,6 +292,7 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
         var membrete = ConstruirMembrete(
             curso,
             parcial,
+            await UltimaIngestaNotas(curso.Id, ct),
             "INFORME OFICIAL INDIVIDUAL DE TUTORÍA Y REFUERZO ACADÉMICO",
             fechaEmision);
 
@@ -418,9 +426,19 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
         );
     }
 
+    // Fecha de la última ingesta de notas exitosa: indica la vigencia de los datos del reporte.
+    private async Task<DateTime?> UltimaIngestaNotas(int cursoId, CancellationToken ct)
+    {
+        var fecha = await db.LogsSincronizacion.AsNoTracking()
+            .Where(l => l.CursoId == cursoId && l.Exitoso && l.Operacion == "Notas")
+            .OrderByDescending(l => l.Fecha).Select(l => (DateTime?)l.Fecha).FirstOrDefaultAsync(ct);
+        return fecha is { } f ? DateTime.SpecifyKind(f, DateTimeKind.Utc) : null;
+    }
+
     private static MembreteInstitucionalDto ConstruirMembrete(
         Curso curso,
         Parcial parcial,
+        DateTime? ultimaSincronizacionUtc,
         string tituloReporte,
         DateTime fechaEmisionUtc)
     {
@@ -437,7 +455,8 @@ public class CatalogoService(AcademicoDbContext db, ICalculoPonderadoService? ca
             ParcialNumero: parcial.Numero,
             DocenteTitular: !string.IsNullOrWhiteSpace(curso.Docente?.Nombre) ? curso.Docente.Nombre : "Docente Titular",
             DocenteCorreo: curso.Docente?.Correo ?? string.Empty,
-            FechaEmisionUtc: fechaEmisionUtc
+            FechaEmisionUtc: fechaEmisionUtc,
+            UltimaSincronizacionUtc: ultimaSincronizacionUtc
         );
     }
 

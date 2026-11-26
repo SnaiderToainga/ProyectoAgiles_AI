@@ -7,6 +7,7 @@ import { RendimientoBarChart, type PuntoTendencia } from '../components/Rendimie
 import { NOMBRE_COMPONENTE, type MateriaDto, type ResumenAcademicoEstudianteDto } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 import { estaEvaluado, textoNotaFinal } from '../utils/estadoCalificacion'
+import { FechaSincronizacionMoodle } from '../components/FechaSincronizacionMoodle'
 
 interface ResumenMateria {
   materia: MateriaDto
@@ -556,9 +557,10 @@ export function DashboardPage() {
       .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
     return {
       total,
+      evaluados: evaluados.length,
       promedio,
       aprobados,
-      pctAprob: total > 0 ? Math.round((aprobados / total) * 100) : 0,
+      pctAprob: evaluados.length > 0 ? Math.round((aprobados / evaluados.length) * 100) : 0,
       riesgo,
       criticos: riesgo.filter((e) => e.notaFinalParcial < 4).length,
       t: prom(1).toFixed(2),
@@ -610,12 +612,17 @@ export function DashboardPage() {
         </div>
       )}
 
+      {resumenSeleccionado && !esModoFallback && (
+        <FechaSincronizacionMoodle fecha={resumenSeleccionado.materia.ultimaSincronizacion} />
+      )}
+
       <section className="stat-strip">
         <div className="stat-cell">
           <span className="stat-k">Estudiantes</span>
           <span className="stat-v">{cargando ? '...' : resumen.total}</span>
           <div className="stat-note">
             {actividades.length} actividades en Parcial {parcialActual?.numero ?? 1}
+            {resumen.total > resumen.evaluados && ` · ${resumen.total - resumen.evaluados} sin evaluaciones`}
           </div>
         </div>
         <div className="stat-cell">
@@ -634,7 +641,7 @@ export function DashboardPage() {
             {resumen.pctAprob}%
           </span>
           <div className="stat-note">
-            {resumen.aprobados} de {resumen.total} aprobados
+            {resumen.aprobados} de {resumen.evaluados} evaluados aprobados
           </div>
         </div>
         <div className="stat-cell">

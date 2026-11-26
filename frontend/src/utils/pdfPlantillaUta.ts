@@ -166,7 +166,7 @@ export async function crearDocumentoPdfUta(
 
   // Caja de metadatos académicos de cátedra
   const boxY = 34
-  const boxH = 22
+  const boxH = 27
   doc.setFillColor(...COLOR_FONDO_SUAVE)
   doc.setDrawColor(...COLOR_BORDE_SUAVE)
   doc.roundedRect(MARGEN_HORIZONTAL_MM, boxY, ANCHO_UTIL_A4_MM, boxH, 1.5, 1.5, 'FD')
@@ -186,6 +186,7 @@ export async function crearDocumentoPdfUta(
   doc.text('Período / Parcial:', 114, boxY + 6.5)
   doc.text('Fecha de emisión:', 114, boxY + 12.5)
   doc.text('Modelo:', 114, boxY + 18)
+  doc.text('Datos de Moodle:', 114, boxY + 23.5)
 
   doc.setFont('helvetica', 'normal')
   doc.text(
@@ -214,6 +215,16 @@ export async function crearDocumentoPdfUta(
     maxWidth: 50,
   })
   doc.text('30% Tareas / 30% APE / 40% Examen', 143, boxY + 18, { maxWidth: 50 })
+  doc.text(
+    normalizarTextoPdf(
+      membrete.ultimaSincronizacionUtc
+        ? `Sincronizado ${formatearFechaLocal(membrete.ultimaSincronizacionUtc)}`
+        : 'Sin sincronización registrada'
+    ),
+    143,
+    boxY + 23.5,
+    { maxWidth: 50 }
+  )
 
   return {
     doc,
