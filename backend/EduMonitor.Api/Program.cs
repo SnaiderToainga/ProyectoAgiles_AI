@@ -87,7 +87,8 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new EduMonitor.Api.UtcDateTimeJsonConverter()));
 
 var app = builder.Build();
 
