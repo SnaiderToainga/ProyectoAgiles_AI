@@ -348,3 +348,54 @@ export interface TrazaAgenteDto {
   duracionMs: number
   pasos: PasoTrazaAgenteDto[]
 }
+
+export interface ConfiguracionAlertasDto {
+  rendimientoActivo: boolean
+  rendimientoUmbral: number
+  descensoActivo: boolean
+  descensoUltimas: number
+  descensoPuntos: number
+  atrasosActivo: boolean
+  atrasosMinimo: number
+  finalizacionActivo: boolean
+  finalizacionMinimaPct: number
+}
+
+export interface IndicadoresProgresoDto {
+  totalActividades: number
+  calificadas: number
+  sinEntrega: number
+  pendientesCalificar: number
+  pendientesEntrega: number
+  sinDato: number
+  completadas: number
+  exigibles: number
+  porcentajeFinalizacion: number | null
+}
+
+export interface AlertaAcademicaDto {
+  regla: 'rendimiento' | 'descenso' | 'atrasos' | 'finalizacion' | string
+  titulo: string
+  evidencia: string
+  actividades: string[]
+}
+
+export interface AlertasEstudianteDto {
+  estudianteId: number
+  nombres: string
+  apellidos: string
+  notaFinalParcial: number
+  sinEvaluaciones: boolean
+  indicadores: IndicadoresProgresoDto
+  alertas: AlertaAcademicaDto[]
+}
+
+export interface AlertasCursoDto {
+  cursoId: number
+  parcialId: number
+  configuracion: ConfiguracionAlertasDto
+  configuracionPersonalizada: boolean
+  progresoCurso: IndicadoresProgresoDto
+  estudiantesConAlertas: number
+  estudiantes: AlertasEstudianteDto[]
+}

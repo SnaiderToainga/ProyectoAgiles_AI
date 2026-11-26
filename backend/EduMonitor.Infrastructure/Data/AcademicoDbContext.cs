@@ -20,10 +20,20 @@ public class AcademicoDbContext(DbContextOptions<AcademicoDbContext> options) : 
     public DbSet<PlanRefuerzo> PlanesRefuerzo => Set<PlanRefuerzo>();
     public DbSet<DetallePlanRefuerzo> DetallesPlanRefuerzo => Set<DetallePlanRefuerzo>();
     public DbSet<TrazaAgente> TrazasAgente => Set<TrazaAgente>();
+    public DbSet<ConfiguracionAlertas> ConfiguracionesAlertas => Set<ConfiguracionAlertas>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
         AcademicModelConfiguration.Configure(model);
+        model.Entity<ConfiguracionAlertas>(entity =>
+        {
+            entity.ToTable("ConfiguracionesAlertas");
+            entity.HasKey(c => c.CursoId);
+            entity.Property(c => c.RendimientoUmbral).HasPrecision(5, 2);
+            entity.Property(c => c.DescensoPuntos).HasPrecision(5, 2);
+            entity.Property(c => c.FinalizacionMinimaPct).HasPrecision(5, 2);
+            entity.HasOne<Curso>().WithOne().HasForeignKey<ConfiguracionAlertas>(c => c.CursoId).OnDelete(DeleteBehavior.Cascade);
+        });
         model.Entity<TrazaAgente>(entity =>
         {
             entity.ToTable("TrazasAgente");

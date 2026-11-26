@@ -7,6 +7,7 @@ const HERRAMIENTAS: Record<string, string> = {
   consultar_resumen_curso: 'Resumen del curso',
   listar_estudiantes_en_riesgo: 'Estudiantes en riesgo',
   analizar_temas_y_actividades: 'Temas y actividades',
+  identificar_alertas: 'Alertas académicas',
   diagnosticar_estudiante: 'Diagnóstico individual',
 }
 

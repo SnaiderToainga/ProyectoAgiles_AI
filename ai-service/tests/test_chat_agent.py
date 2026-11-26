@@ -163,6 +163,7 @@ def test_el_modelo_decide_las_herramientas_y_recibe_sus_resultados():
         "consultar_resumen_curso",
         "listar_estudiantes_en_riesgo",
         "analizar_temas_y_actividades",
+        "identificar_alertas",
         "diagnosticar_estudiante",
     ]
     assert cfg.tool_config.function_calling_config.mode == "ANY"
@@ -273,3 +274,24 @@ def test_cliente_sin_conexion_no_es_recuperable():
     with pytest.raises(BackendError) as error:
         backend.datos_curso(1, 10)
     assert error.value.status == 503 and not error.value.recuperable
+
+
+def test_identificar_alertas_entrega_la_evidencia_de_las_reglas_al_modelo():
+    service, fake = _servicio_con_modelo(
+        respuesta_llamadas(("identificar_alertas", {})),
+        respuesta_texto("EST-001 tiene 2 actividades vencidas sin entrega."),
+    )
+    backend = BackendFalso()
+    resp = service.procesar_chat(_solicitud(mensaje="¿Qué alertas hay en el curso?"), backend)
+
+    assert resp.toolsEjecutadas == ["identificar_alertas"]
+    assert backend.llamadas == ["alertas:1:10"]
+    devuelto = fake.models.generate_content.call_args_list[1].kwargs["contents"][-1].parts[0].function_response
+    alerta = devuelto.response["resultado"]["estudiantes"][0]["alertas"][0]
+    assert alerta["regla"] == "atrasos" and "vencieron sin entrega" in alerta["evidencia"]
+
+
+def test_motor_local_incluye_las_alertas_con_su_evidencia():
+    resp = _servicio_local().procesar_chat(_solicitud(mensaje="Resumen del curso"), BackendFalso())
+    assert "identificar_alertas" in resp.toolsEjecutadas
+    assert "EST-001: Actividades vencidas sin entrega" in resp.respuesta

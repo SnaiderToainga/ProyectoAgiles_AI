@@ -21,6 +21,7 @@ builder.Services.AddDbContext<AcademicoDbContext>(options =>
 // Servicios de Catálogo y Sincronización Moodle
 builder.Services.AddScoped<CatalogoService>();
 builder.Services.AddScoped<AgenteService>();
+builder.Services.AddScoped<AlertasService>();
 builder.Services.AddScoped<MoodleSyncService>();
 
 // Servicios de Estiven: Cálculo Ponderado e Inferencia IA

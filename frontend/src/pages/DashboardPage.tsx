@@ -9,6 +9,7 @@ import { NOMBRE_COMPONENTE, type MateriaDto, type ResumenAcademicoEstudianteDto 
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 import { estaEvaluado, textoNotaFinal } from '../utils/estadoCalificacion'
 import { FechaSincronizacionMoodle } from '../components/FechaSincronizacionMoodle'
+import { AlertasAcademicasPanel } from '../components/AlertasAcademicasPanel'
 
 interface ResumenMateria {
   materia: MateriaDto
@@ -296,17 +297,17 @@ export function DashboardPage() {
         <div className="stat-cell">
           <span className="stat-k">Promedio</span>
           <span className="stat-v">
-            {resumen.promedio.toFixed(2)}
-            <span style={{ fontSize: 12, fontWeight: 500 }}>/10</span>
+            {resumen.evaluados > 0 ? resumen.promedio.toFixed(2) : '—'}
+            {resumen.evaluados > 0 && <span style={{ fontSize: 12, fontWeight: 500 }}>/10</span>}
           </span>
           <div className="stat-note tabular-nums">
-            T {resumen.t} · A {resumen.a} · E {resumen.e}
+            {resumen.evaluados > 0 ? `T ${resumen.t} · A ${resumen.a} · E ${resumen.e}` : 'Sin notas calificadas'}
           </div>
         </div>
         <div className="stat-cell">
           <span className="stat-k">Aprobación</span>
           <span className="stat-v" style={{ color: 'var(--green)' }}>
-            {resumen.pctAprob}%
+            {resumen.evaluados > 0 ? `${resumen.pctAprob}%` : '—'}
           </span>
           <div className="stat-note">
             {resumen.aprobados} de {resumen.evaluados} evaluados aprobados
@@ -438,6 +439,15 @@ export function DashboardPage() {
           </div>
         )}
       </section>
+
+      {resumenSeleccionado && parcialActual && (
+        <AlertasAcademicasPanel
+          key={`${resumenSeleccionado.materia.id}-${parcialActual.id}`}
+          materiaId={resumenSeleccionado.materia.id}
+          parcialId={parcialActual.id}
+          parcialNumero={parcialActual.numero}
+        />
+      )}
     </div>
   )
 }

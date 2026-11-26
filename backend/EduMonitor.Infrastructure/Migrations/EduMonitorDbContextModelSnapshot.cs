@@ -348,6 +348,9 @@ namespace EduMonitor.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
+
                     b.Property<int?>("ParcialId")
                         .HasColumnType("int");
 

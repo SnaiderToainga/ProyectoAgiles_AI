@@ -225,6 +225,7 @@ Al final de tu respuesta, en una línea aparte con el formato exacto `SUGERENCIA
             herramientas.ejecutar("consultar_resumen_curso")
             herramientas.ejecutar("listar_estudiantes_en_riesgo")
             herramientas.ejecutar("analizar_temas_y_actividades")
+            herramientas.ejecutar("identificar_alertas")
             if len(codigos) == 1:
                 herramientas.ejecutar("diagnosticar_estudiante", {"codigo": codigos[0]})
         return self._datos_ejecutados(herramientas)
@@ -248,6 +249,8 @@ Al final de tu respuesta, en una línea aparte con el formato exacto `SUGERENCIA
                 datos["estudiantes_riesgo"] = resultado
             elif nombre == "analizar_temas_y_actividades":
                 datos["analisis_temas"] = resultado
+            elif nombre == "identificar_alertas":
+                datos["alertas"] = resultado
             elif nombre == "diagnosticar_estudiante":
                 datos.setdefault("diagnostico_estudiante", resultado)
         return datos
@@ -442,6 +445,20 @@ Al final de tu respuesta, en una línea aparte con el formato exacto `SUGERENCIA
                 recomendaciones.append(f"Considerar priorizar tutorías o planes de refuerzo para {destinatarios}.")
             else:
                 hechos.append("Ningún estudiante tiene una nota menor a 7.00.")
+
+        if "alertas" in datos:
+            alertas_info = datos["alertas"]
+            con_alertas = alertas_info.get("estudiantes") or []
+            if con_alertas:
+                hechos.append(
+                    f"Alertas activas según las reglas configuradas: {alertas_info.get('estudiantesConAlertas', len(con_alertas))} estudiante(s)."
+                )
+                for est in con_alertas[:5]:
+                    detalle = "; ".join(f"{a['titulo']}: {a['evidencia']}" for a in est.get("alertas", []))
+                    hechos.append(f"{est['codigo']}: {detalle}")
+                recomendaciones.append("Revisar la evidencia de cada alerta antes de contactar al estudiante.")
+            else:
+                hechos.append("Ninguna regla de alerta configurada se activa en este parcial.")
 
         if "analisis_componentes" in datos:
             comp_info = datos["analisis_componentes"]

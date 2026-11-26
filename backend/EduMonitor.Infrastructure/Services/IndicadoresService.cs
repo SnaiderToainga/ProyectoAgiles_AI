@@ -5,7 +5,7 @@ using EduMonitor.Core.Services;
 
 namespace EduMonitor.Infrastructure.Services;
 
-public class IndicadoresService : IIndicadoresService
+public partial class IndicadoresService : IIndicadoresService
 {
     private const decimal PonderacionTareas = 0.30m;
     private const decimal PonderacionApe = 0.30m;

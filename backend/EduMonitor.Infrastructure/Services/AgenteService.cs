@@ -15,8 +15,14 @@ namespace EduMonitor.Infrastructure.Services;
 /// Fuente de datos de las herramientas del agente pedagógico y registro de sus trazas.
 /// Todo se lee de AcademicoDB con la identidad del docente, y se entrega seudonimizado.
 /// </summary>
-public sealed partial class AgenteService(AcademicoDbContext db, CatalogoService catalogo, ICalculoPonderadoService calculo)
+public sealed partial class AgenteService(
+    AcademicoDbContext db,
+    CatalogoService catalogo,
+    ICalculoPonderadoService calculo,
+    AlertasService? alertas = null)
 {
+    private readonly AlertasService _alertas = alertas ?? new AlertasService(db, catalogo, calculo, new IndicadoresService());
+
     public const int MaximoTrazas = 100;
     public const string EstudianteNoEncontrado = "agente_estudiante_no_encontrado";
     public const string CodigoInvalido = "agente_codigo_invalido";
@@ -68,6 +74,16 @@ public sealed partial class AgenteService(AcademicoDbContext db, CatalogoService
         var normalizado = CodigoEstudiante(int.Parse(coincidencia.Groups[1].Value, CultureInfo.InvariantCulture));
         return datos.Estudiantes.SingleOrDefault(e => e.Codigo == normalizado)
             ?? throw new AcademicoException(404, "No hay un estudiante evaluado con ese código en la materia y parcial.", EstudianteNoEncontrado);
+    }
+
+    public async Task<AlertasAgenteDto> Alertas(int usuarioId, bool admin, int cursoId, int parcialId, CancellationToken ct = default)
+    {
+        var resultado = await _alertas.Alertas(usuarioId, admin, cursoId, parcialId, ct);
+        var conAlertas = resultado.Estudiantes
+            .Where(e => e.Alertas.Count > 0)
+            .Select(e => new EstudianteAlertasAgenteDto(CodigoEstudiante(e.EstudianteId), Math.Round(e.NotaFinalParcial, 2), e.Indicadores, e.Alertas))
+            .ToList();
+        return new AlertasAgenteDto(resultado.Configuracion, resultado.ProgresoCurso, resultado.EstudiantesConAlertas, conAlertas);
     }
 
     public async Task<int> RegistrarTraza(int usuarioId, bool admin, RegistrarTrazaAgenteRequest request, CancellationToken ct = default)

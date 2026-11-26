@@ -25,6 +25,10 @@ public class AgenteController(AgenteService agente) : ControllerBase
     public async Task<IActionResult> Estudiante(int cursoId, int parcialId, string codigo, CancellationToken ct) =>
         Ok(await agente.Estudiante(UsuarioId, Admin, cursoId, parcialId, codigo, ct));
 
+    [HttpGet("materias/{cursoId:int}/parciales/{parcialId:int}/alertas")]
+    public async Task<IActionResult> Alertas(int cursoId, int parcialId, CancellationToken ct) =>
+        Ok(await agente.Alertas(UsuarioId, Admin, cursoId, parcialId, ct));
+
     [HttpPost("trazas")]
     public async Task<IActionResult> RegistrarTraza(RegistrarTrazaAgenteRequest request, CancellationToken ct) =>
         StatusCode(201, new { id = await agente.RegistrarTraza(UsuarioId, Admin, request, ct) });

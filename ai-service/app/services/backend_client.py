@@ -55,6 +55,9 @@ class BackendAcademico:
             f"/api/academico/agente/materias/{curso_id}/parciales/{parcial_id}/estudiantes/{codigo}"
         )
 
+    def alertas(self, curso_id: int, parcial_id: int) -> Dict[str, Any]:
+        return self._get(f"/api/academico/agente/materias/{curso_id}/parciales/{parcial_id}/alertas")
+
     def registrar_traza(self, traza: Dict[str, Any]) -> Optional[int]:
         datos = self._request("POST", "/api/academico/agente/trazas", json=traza)
         return datos.get("id") if isinstance(datos, dict) else None

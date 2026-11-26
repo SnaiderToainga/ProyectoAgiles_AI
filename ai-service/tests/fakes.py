@@ -67,6 +67,30 @@ class BackendFalso:
                 return copy.deepcopy(e)
         raise BackendError("No hay un estudiante evaluado con ese código.", 404, recuperable=True)
 
+    def alertas(self, curso_id: int, parcial_id: int) -> Dict[str, Any]:
+        self.llamadas.append(f"alertas:{curso_id}:{parcial_id}")
+        if self.fallo:
+            raise self.fallo
+        return {
+            "reglas": {"atrasosActivo": True, "atrasosMinimo": 2},
+            "progresoCurso": {"completadas": 10, "exigibles": 12, "porcentajeFinalizacion": 83.3},
+            "estudiantesConAlertas": 1,
+            "estudiantes": [
+                {
+                    "codigo": "EST-001",
+                    "notaFinal": 5.40,
+                    "alertas": [
+                        {
+                            "regla": "atrasos",
+                            "titulo": "Actividades vencidas sin entrega",
+                            "evidencia": "2 actividades vencieron sin entrega (umbral configurado: 2).",
+                            "actividades": ["APE 1", "Tarea 3"],
+                        }
+                    ],
+                }
+            ],
+        }
+
     def registrar_traza(self, traza: Dict[str, Any]) -> Optional[int]:
         self.trazas.append(traza)
         return len(self.trazas)

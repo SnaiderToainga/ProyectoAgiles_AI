@@ -32,6 +32,15 @@ public record EstudianteAgenteDto(
 
 public record DatosAgenteCursoDto(ContextoAgenteDto Contexto, List<EstudianteAgenteDto> Estudiantes);
 
+public record EstudianteAlertasAgenteDto(string Codigo, decimal NotaFinal, IndicadoresProgresoDto Progreso, List<AlertaAcademicaDto> Alertas);
+
+// Resultado de las reglas deterministas (RF-07) para que el agente lo explique; solo códigos seudónimos.
+public record AlertasAgenteDto(
+    ConfiguracionAlertasDto Reglas,
+    IndicadoresProgresoDto ProgresoCurso,
+    int EstudiantesConAlertas,
+    List<EstudianteAlertasAgenteDto> Estudiantes);
+
 public record PasoTrazaAgenteDto(
     [Required, StringLength(80)] string Herramienta,
     [StringLength(2000)] string? Parametros,

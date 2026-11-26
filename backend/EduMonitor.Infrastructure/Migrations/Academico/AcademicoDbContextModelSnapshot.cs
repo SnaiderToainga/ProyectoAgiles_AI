@@ -22,6 +22,52 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.ConfiguracionAlertas", b =>
+                {
+                    b.Property<int>("CursoId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ActualizadoPorUsuarioId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("AtrasosActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("AtrasosMinimo")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("DescensoActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("DescensoPuntos")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("DescensoUltimas")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("FechaActualizacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("FinalizacionActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("FinalizacionMinimaPct")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<bool>("RendimientoActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("RendimientoUmbral")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.HasKey("CursoId");
+
+                    b.ToTable("ConfiguracionesAlertas", (string)null);
+                });
+
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.DetallePlanRefuerzo", b =>
                 {
                     b.Property<int>("Id")
@@ -459,6 +505,9 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
+
                     b.Property<int?>("ParcialId")
                         .HasColumnType("int");
 
@@ -548,6 +597,15 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .IsUnique();
 
                     b.ToTable("Matriculas", (string)null);
+                });
+
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.ConfiguracionAlertas", b =>
+                {
+                    b.HasOne("EduMonitor.Core.Entities.Curso", null)
+                        .WithOne()
+                        .HasForeignKey("EduMonitor.Core.Entities.Academico.ConfiguracionAlertas", "CursoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.DetallePlanRefuerzo", b =>

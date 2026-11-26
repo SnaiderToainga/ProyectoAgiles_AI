@@ -65,6 +65,15 @@ DECLARACIONES = [
         ),
     ),
     types.FunctionDeclaration(
+        name="identificar_alertas",
+        description=(
+            "Obtiene de la API académica las alertas académicas del parcial actual, calculadas con las reglas "
+            "configuradas por el docente (rendimiento bajo el umbral, descenso en las últimas evaluaciones, "
+            "actividades vencidas sin entrega y baja finalización), con la evidencia de cada una y el progreso "
+            "de entregas del curso."
+        ),
+    ),
+    types.FunctionDeclaration(
         name="diagnosticar_estudiante",
         description=(
             "Obtiene de la API académica el detalle de un estudiante (por su código anónimo EST-###): "
@@ -96,6 +105,7 @@ class HerramientasAgente:
             "consultar_resumen_curso": self._resumen_curso,
             "listar_estudiantes_en_riesgo": self._en_riesgo,
             "analizar_temas_y_actividades": self._temas,
+            "identificar_alertas": self._alertas,
             "diagnosticar_estudiante": self._diagnostico,
         }
 
@@ -161,6 +171,10 @@ class HerramientasAgente:
     def _temas(self, _: Dict[str, Any]) -> Dict[str, Any]:
         _, estudiantes, _ = self._datos()
         return ChatTools.tool_analisis_temas(estudiantes)
+
+    def _alertas(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        # Las reglas ya se evaluaron de forma determinista en la API; aquí solo se entregan al modelo.
+        return self.backend.alertas(self.curso_id, self.parcial_id)
 
     def _diagnostico(self, argumentos: Dict[str, Any]) -> Dict[str, Any]:
         codigo = str(argumentos.get("codigo", "")).strip().upper()
