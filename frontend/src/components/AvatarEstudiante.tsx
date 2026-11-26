@@ -11,7 +11,7 @@ interface AvatarEstudianteProps {
 const SIZE_CLASSES: Record<NonNullable<AvatarEstudianteProps['size']>, string> = {
   sm: 'w-8 h-8 text-[11px]',
   md: 'w-9 h-9 text-xs',
-  lg: 'w-11 h-11 text-sm',
+  lg: 'w-[38px] h-[38px] text-[13px]',
 }
 
 function obtenerIniciales(apellidos: string, nombres: string): string {
@@ -19,6 +19,11 @@ function obtenerIniciales(apellidos: string, nombres: string): string {
   const n = (nombres || '').trim().split(/\s+/)[0] || ''
   const combinado = `${a.charAt(0)}${n.charAt(0)}`.toUpperCase()
   return combinado || 'ES'
+}
+
+function esPlaceholderMoodle(url: string): boolean {
+  if (!url) return false
+  return url.includes('/theme/image.php/') && url.includes('/u/f')
 }
 
 /**
@@ -32,7 +37,8 @@ export function AvatarEstudiante({
   enRiesgo = false,
   size = 'md',
 }: AvatarEstudianteProps) {
-  const urlLimpia = fotoUrl?.trim() || ''
+  const urlCruda = fotoUrl?.trim() || ''
+  const urlLimpia = esPlaceholderMoodle(urlCruda) ? '' : urlCruda
   const [errorCarga, setErrorCarga] = useState(false)
 
   useEffect(() => {
@@ -49,8 +55,9 @@ export function AvatarEstudiante({
         alt={`Foto de ${apellidos} ${nombres}`.trim()}
         referrerPolicy="no-referrer"
         onError={() => setErrorCarga(true)}
-        className={`${dimension} rounded-full object-cover shrink-0 border ${
-          enRiesgo ? 'border-red-300 ring-2 ring-red-100' : 'border-zinc-200'
+        style={{ borderRadius: '50%' }}
+        className={`${dimension} object-cover shrink-0 border ${
+          enRiesgo ? 'border-[#fecaca]' : 'border-[#e5e7eb]'
         }`}
       />
     )
@@ -59,11 +66,8 @@ export function AvatarEstudiante({
   return (
     <div
       aria-label={`Avatar con iniciales de ${apellidos} ${nombres}`.trim()}
-      className={`${dimension} rounded-full font-bold flex items-center justify-center shrink-0 border ${
-        enRiesgo
-          ? 'bg-red-50 text-[#8B151A] border-red-200'
-          : 'bg-zinc-100 text-zinc-700 border-zinc-200'
-      }`}
+      style={{ borderRadius: '50%' }}
+      className={`k-avatar ${enRiesgo ? 'risk' : ''} ${dimension}`}
     >
       {iniciales}
     </div>

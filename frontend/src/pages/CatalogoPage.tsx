@@ -1,22 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
-import {
-  BookOpen,
-  Layers,
-  Plus,
-  RefreshCw,
-  Search,
-  ChevronDown,
-  ChevronUp,
-  ClipboardList,
-  ArrowRight,
-  CheckCircle2,
-  FolderOpen,
-} from 'lucide-react'
+import { Plus, RefreshCw, ChevronDown } from 'lucide-react'
 import clienteAxios from '../api/clienteAxios'
 import { NOMBRE_COMPONENTE, type EvaluacionDto } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
+import { SearchAutocompleteInput } from '../components/SearchAutocompleteInput'
+import { useChatIa } from '../context/ChatIaContext'
 
 export interface Tema {
   id: number
@@ -60,6 +50,7 @@ function limpiarTituloUnidad(numero: number, nombre: string): string {
 export function CatalogoPage() {
   const [searchParams] = useSearchParams()
   const cursoParam = searchParams.get('curso')
+  const { materiaActivaId: materiaContextoId } = useChatIa()
 
   const [materias, setMaterias] = useState<MateriaApi[]>([])
   const [evaluacionesCurso, setEvaluacionesCurso] = useState<EvaluacionDto[]>([])
@@ -108,8 +99,10 @@ export function CatalogoPage() {
   useEffect(() => {
     if (cursoParam) {
       setMateriaSeleccionadaId(Number(cursoParam))
+    } else if (materiaContextoId) {
+      setMateriaSeleccionadaId(materiaContextoId)
     }
-  }, [cursoParam])
+  }, [cursoParam, materiaContextoId])
 
   const materiaActual = useMemo(
     () => materias.find((m) => m.id === materiaSeleccionadaId) || materias[0],
@@ -181,19 +174,6 @@ export function CatalogoPage() {
       }))
       .filter((u) => u.temas.length > 0 || u.nombre.toLowerCase().includes(q))
   }, [parcialActual, busquedaTema, evaluacionesPorTema])
-
-  const statsParcial = useMemo(() => {
-    if (!parcialActual) return { unidades: 0, temas: 0, actividades: 0 }
-    const temas = parcialActual.unidades.reduce((acc, u) => acc + u.temas.length, 0)
-    const actividades = evaluacionesCurso.filter(
-      (ev) => !parcialActual || ev.parcialId === null || ev.parcialId === parcialActual.id
-    ).length
-    return {
-      unidades: parcialActual.unidades.length,
-      temas,
-      actividades,
-    }
-  }, [parcialActual, evaluacionesCurso])
 
   const toggleUnidad = (num: number) => {
     setUnidadesAbiertas((prev) =>
@@ -299,88 +279,54 @@ export function CatalogoPage() {
     )
   }
 
-  return (
-    <div className="space-y-5">
-      {/* Selector de Asignaturas estilo Tarjetas Compactas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {materias.map((m) => {
-          const activa = m.id === materiaActual.id
-          const totalTemasMat = m.parciales.reduce(
-            (accP, p) => accP + p.unidades.reduce((accU, u) => accU + u.temas.length, 0),
-            0
-          )
-          return (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setMateriaSeleccionadaId(m.id)}
-              className={`text-left p-3.5 rounded-lg border transition cursor-pointer flex items-center justify-between gap-3 ${
-                activa
-                  ? 'bg-[#8B151A] text-white border-[#8B151A] shadow-xs'
-                  : 'bg-white text-[#18181b] border-[#e4e4e7] hover:border-[#8B151A]/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className={`p-2 rounded-md shrink-0 ${
-                    activa ? 'bg-white/15 text-white' : 'bg-[#f4f4f5] text-[#8B151A]'
-                  }`}
-                >
-                  <BookOpen className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold truncate">{m.nombre}</p>
-                  <p className={`text-[11px] ${activa ? 'text-white/80' : 'text-[#71717a]'}`}>
-                    {m.codigo} · {m.semestre}
-                  </p>
-                </div>
-              </div>
-              <span
-                className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${
-                  activa ? 'bg-white/20 text-white' : 'bg-[#f4f4f5] text-[#52525b]'
-                }`}
-              >
-                {totalTemasMat} temas
-              </span>
-            </button>
-          )
-        })}
-      </div>
+  const todosLosTemas = parcialActual.unidades.flatMap((u) => u.temas.map((t) => t.nombre))
 
-      {/* Cabecera de Asignatura + Acciones */}
-      <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-lg p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xs">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-bold text-[#18181b]">{materiaActual.nombre}</h1>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-[#f4f4f5] border border-[#e4e4e7] text-[#52525b]">
-              {materiaActual.codigo}
-            </span>
+  return (
+    <div className="space-y-4">
+      <div className="cadence-header">
+        <div className="toolbar-group">
+          <div className="parcial-tabs">
+            {materiaActual.parciales.map((p) => (
+              <button
+                key={p.numero}
+                type="button"
+                className={`parcial-tab ${p.numero === parcialActual.numero ? 'active' : ''}`}
+                onClick={() => setParcialSeleccionado(p.numero)}
+              >
+                Parcial {p.numero}
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-[#52525b]">
-            Semestre: <strong className="text-[#18181b]">{materiaActual.semestre}</strong> • Parcial{' '}
-            {parcialActual.numero}:{' '}
-            <strong className="text-[#18181b]">{statsParcial.unidades}</strong> unidad(es),{' '}
-            <strong className="text-[#18181b]">{statsParcial.temas}</strong> tema(s) y{' '}
-            <strong className="text-[#18181b]">{statsParcial.actividades}</strong> actividad(es) evaluativa(s)
-          </p>
+          <SearchAutocompleteInput
+            value={busquedaTema}
+            onSearch={setBusquedaTema}
+            suggestions={todosLosTemas}
+            placeholder="Buscar tema o actividad..."
+            className="w-[260px]"
+          />
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => setUnidadesAbiertas(parcialActual.unidades.map((u) => u.numero))}
+          >
+            Expandir
+          </button>
+          <button type="button" className="link-btn" onClick={() => setUnidadesAbiertas([])}>
+            Colapsar
+          </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="toolbar-group">
           <button
             type="button"
+            className="btn-secondary"
             onClick={sincronizarDesdeMoodle}
             disabled={sincronizando}
-            className="px-3.5 py-2 border border-[#d4d4d8] hover:bg-[#f4f4f5] disabled:opacity-60 text-[#18181b] rounded text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${sincronizando ? 'animate-spin' : ''}`} />
-            {sincronizando ? 'Sincronizando Moodle...' : 'Sincronizar Moodle'}
+            {sincronizando ? 'Sincronizando...' : 'Sincronizar Moodle'}
           </button>
-
-          <button
-            type="button"
-            onClick={() => abrirModalAgregarTema()}
-            className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
-          >
+          <button type="button" className="btn-primary" onClick={() => abrirModalAgregarTema()}>
             <Plus className="w-3.5 h-3.5" />
             Agregar Tema
           </button>
@@ -390,232 +336,122 @@ export function CatalogoPage() {
       {alertaSync && (
         <div
           role={alertaSync.tipo === 'exito' ? 'status' : 'alert'}
-          className={`p-3.5 rounded-md border-l-4 text-xs font-medium flex items-center gap-2 ${
-            alertaSync.tipo === 'exito'
-              ? 'bg-emerald-50 border-emerald-600 text-emerald-800'
-              : 'bg-amber-50 border-amber-500 text-amber-800'
-          }`}
+          className="px-3.5 py-2.5 bg-[#f8f9fb] border border-[#e5e7eb] text-xs text-black"
+          style={{ borderLeft: `3px solid ${alertaSync.tipo === 'exito' ? 'var(--green)' : 'var(--uta)'}` }}
         >
-          {alertaSync.tipo === 'exito' && <CheckCircle2 className="w-4 h-4 shrink-0" />}
-          <span>{alertaSync.texto}</span>
+          {alertaSync.texto}
         </div>
       )}
 
-      {/* Contenedor de Parciales, Buscador y Unidades */}
-      <div className="bg-white border border-[#e4e4e7] rounded-lg overflow-hidden shadow-xs">
-        <div className="p-3 sm:px-4 border-b border-[#e4e4e7] bg-[#f4f4f5] flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Pestañas de Parcial */}
-          <div className="flex items-center gap-1 bg-[#e4e4e7] p-1 rounded-md self-start">
-            {materiaActual.parciales.map((p) => {
-              const activo = p.numero === parcialActual.numero
-              return (
-                <button
-                  key={p.numero}
-                  type="button"
-                  onClick={() => setParcialSeleccionado(p.numero)}
-                  className={`px-4 py-1.5 rounded text-xs font-semibold transition cursor-pointer ${
-                    activo
-                      ? 'bg-white text-[#8B151A] shadow-xs'
-                      : 'text-[#52525b] hover:text-[#18181b]'
-                  }`}
-                >
-                  Parcial {p.numero}
-                </button>
-              )
-            })}
+      <div className="flex flex-col gap-3">
+        {unidadesFiltradas.length === 0 ? (
+          <div className="table-card p-8 text-center text-xs text-black">
+            No se encontraron unidades o temas que coincidan con &quot;{busquedaTema}&quot;.
           </div>
-
-          {/* Buscador y Controles de Acordeón */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="w-3.5 h-3.5 text-[#71717a] absolute left-2.5 top-2" />
-              <input
-                type="text"
-                value={busquedaTema}
-                onChange={(e) => setBusquedaTema(e.target.value)}
-                placeholder="Buscar tema o actividad..."
-                className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-white border border-[#d4d4d8] rounded focus:outline-none focus:border-[#8B151A]"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#52525b]">
-              <button
-                type="button"
-                onClick={() => setUnidadesAbiertas(parcialActual.unidades.map((u) => u.numero))}
-                className="px-2 py-1 hover:text-[#18181b] cursor-pointer"
-              >
-                Expandir
-              </button>
-              <span className="text-[#d4d4d8]">|</span>
-              <button
-                type="button"
-                onClick={() => setUnidadesAbiertas([])}
-                className="px-2 py-1 hover:text-[#18181b] cursor-pointer"
-              >
-                Colapsar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Árbol de Unidades, Temas y Actividades Vinculadas */}
-        <div className="p-4 space-y-4">
-          {unidadesFiltradas.length === 0 ? (
-            <div className="py-10 text-center space-y-2 text-xs text-[#71717a]">
-              <FolderOpen className="w-6 h-6 mx-auto text-[#a1a1aa]" />
-              <p>No se encontraron unidades o temas que coincidan con &quot;{busquedaTema}&quot;.</p>
-            </div>
-          ) : (
-            unidadesFiltradas.map((u) => {
-              const abierta = unidadesAbiertas.includes(u.numero) || busquedaTema.trim().length > 0
-              const tituloUnidad = limpiarTituloUnidad(u.numero, u.nombre)
-              return (
+        ) : (
+          unidadesFiltradas.map((u) => {
+            const abierta = unidadesAbiertas.includes(u.numero) || busquedaTema.trim().length > 0
+            const tituloUnidad = limpiarTituloUnidad(u.numero, u.nombre)
+            return (
+              <div key={u.id} className="table-card">
                 <div
-                  key={u.id}
-                  className="border border-[#e4e4e7] rounded-lg overflow-hidden"
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-[#f8f9fb] cursor-pointer"
+                  onClick={() => toggleUnidad(u.numero)}
                 >
-                  <div className="bg-[#fafafa] px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e4e7]">
+                  <span className="font-semibold text-[13.5px] text-black">
+                    Unidad {u.numero}: {tituloUnidad}
+                  </span>
+                  <span className="flex items-center gap-3 text-xs text-black">
                     <button
                       type="button"
-                      onClick={() => toggleUnidad(u.numero)}
-                      className="flex items-center gap-2 text-left cursor-pointer group flex-1 min-w-0"
+                      className="link-btn"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        abrirModalAgregarTema(u.id)
+                      }}
                     >
-                      <Layers className="w-4 h-4 text-[#8B151A] shrink-0" />
-                      <div className="min-w-0">
-                        <span className="font-bold text-xs text-[#18181b] group-hover:text-[#8B151A] transition">
-                          Unidad {u.numero}: {tituloUnidad}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white border border-[#e4e4e7] text-[#52525b] shrink-0">
-                        {u.temas.length} tema(s)
-                      </span>
+                      + Tema aquí
                     </button>
-
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => abrirModalAgregarTema(u.id)}
-                        className="text-[11px] font-semibold text-[#8B151A] hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Tema aquí
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleUnidad(u.numero)}
-                        className="text-xs font-semibold text-[#71717a] hover:text-[#18181b] flex items-center gap-1 cursor-pointer"
-                      >
-                        {abierta ? (
-                          <>
-                            Ocultar <ChevronUp className="w-3.5 h-3.5" />
-                          </>
-                        ) : (
-                          <>
-                            Mostrar <ChevronDown className="w-3.5 h-3.5" />
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {abierta && (
-                    <div className="p-4 bg-white divide-y divide-[#f4f4f5]">
-                      {u.temas.length === 0 ? (
-                        <div className="py-3 flex items-center justify-between text-xs text-[#71717a]">
-                          <span>No hay temas registrados en esta unidad.</span>
-                          <button
-                            type="button"
-                            onClick={() => abrirModalAgregarTema(u.id)}
-                            className="font-semibold text-[#8B151A] hover:underline cursor-pointer"
-                          >
-                            + Crear primer tema
-                          </button>
-                        </div>
-                      ) : (
-                        u.temas.map((t, idx) => {
-                          const evsTema = evaluacionesPorTema.get(t.id) || []
-                          const descLimpia =
-                            t.descripcion &&
-                            !t.descripcion.includes('Sprint') &&
-                            t.descripcion !== 'Contenido curricular correspondiente a la unidad académica.'
-                              ? t.descripcion
-                              : null
-
-                          return (
-                            <div
-                              key={t.id}
-                              className="py-3 first:pt-0 last:pb-0 space-y-2"
-                            >
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#8B151A]/10 text-[#8B151A]">
-                                      T{u.numero}.{idx + 1}
-                                    </span>
-                                    <p className="text-xs font-bold text-[#18181b]">{t.nombre}</p>
-                                  </div>
-                                  {descLimpia && (
-                                    <p className="text-[11px] text-[#52525b] pl-9">{descLimpia}</p>
-                                  )}
-                                </div>
-
-                                <Link
-                                  to={`/evaluaciones?materia=${materiaActual.id}`}
-                                  className="text-[11px] font-semibold text-[#52525b] hover:text-[#8B151A] flex items-center gap-1 shrink-0"
-                                >
-                                  Ver notas <ArrowRight className="w-3 h-3" />
-                                </Link>
-                              </div>
-
-                              {/* Actividades de Moodle vinculadas a este tema */}
-                              <div className="pl-9">
-                                {evsTema.length === 0 ? (
-                                  <span className="text-[10px] text-[#a1a1aa] italic">
-                                    Sin actividades evaluativas vinculadas aún en este tema.
-                                  </span>
-                                ) : (
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="text-[10px] font-semibold text-[#71717a] flex items-center gap-1 mr-1">
-                                      <ClipboardList className="w-3 h-3" />
-                                      Actividades ({evsTema.length}):
-                                    </span>
-                                    {evsTema.map((ev) => (
-                                      <span
-                                        key={ev.id}
-                                        className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border ${
-                                          ev.publicado
-                                            ? 'bg-[#fafafa] text-[#27272a] border-[#e4e4e7]'
-                                            : 'bg-amber-50 text-amber-800 border-amber-200'
-                                        }`}
-                                      >
-                                        <strong className="text-[#8B151A]">
-                                          {NOMBRE_COMPONENTE[ev.tipo]}
-                                        </strong>
-                                        <span>· {ev.nombre}</span>
-                                        {!ev.publicado && <span>(Pendiente)</span>}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  )}
+                    <span className="tabular-nums">{u.temas.length} temas</span>
+                    <ChevronDown
+                      className="w-3.5 h-3.5"
+                      style={{ transform: abierta ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
+                    />
+                  </span>
                 </div>
-              )
-            })
-          )}
-        </div>
+
+                {abierta && (
+                  <div>
+                    {u.temas.length === 0 ? (
+                      <div className="px-4 py-3 text-xs text-black flex items-center justify-between border-t border-[#eef0f3]">
+                        <span>No hay temas registrados en esta unidad.</span>
+                        <button type="button" className="link-btn" onClick={() => abrirModalAgregarTema(u.id)}>
+                          + Crear primer tema
+                        </button>
+                      </div>
+                    ) : (
+                      u.temas.map((t, idx) => {
+                        const evsTema = evaluacionesPorTema.get(t.id) || []
+                        const descLimpia =
+                          t.descripcion &&
+                          !t.descripcion.includes('Sprint') &&
+                          t.descripcion !== 'Contenido curricular correspondiente a la unidad académica.'
+                            ? t.descripcion
+                            : null
+                        return (
+                          <div
+                            key={t.id}
+                            className="px-4 py-3 border-t border-[#eef0f3] flex flex-wrap items-start justify-between gap-3"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="text-[13px] font-semibold text-black">
+                                <span className="tabular-nums text-[11px] mr-2">
+                                  T{u.numero}.{idx + 1}
+                                </span>
+                                {t.nombre}
+                              </div>
+                              {descLimpia && <div className="text-[12px] text-black">{descLimpia}</div>}
+                              {evsTema.length === 0 ? (
+                                <div className="text-[11.5px] text-black italic">
+                                  Sin actividades evaluativas vinculadas aún en este tema.
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                  {evsTema.map((ev) => (
+                                    <span
+                                      key={ev.id}
+                                      className="text-[11px] px-2 py-0.5 border border-[#e5e7eb] bg-white text-black"
+                                    >
+                                      <strong>{NOMBRE_COMPONENTE[ev.tipo]}</strong> · {ev.nombre}
+                                      {!ev.publicado && ' (Pendiente)'}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="badge-clean neutral tabular-nums">{evsTema.length} eval.</span>
+                              <Link to={`/evaluaciones?materia=${materiaActual.id}`} className="link-btn">
+                                Ver notas →
+                              </Link>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
       </div>
 
       {/* Modal para Agregar Tema (CA-02.3 y CA-02.4) */}
       {modalAbierto && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-md border border-[#e4e4e7] w-full max-w-md overflow-hidden shadow-xl">
-            <div className="bg-[#8B151A] px-5 py-3.5 flex items-center justify-between text-white">
+            <div className="border-b border-[#e5e7eb] px-5 py-3.5 flex items-center justify-between text-black">
               <h3 className="text-sm font-bold">
                 Agregar Tema — Parcial {parcialActual.numero}
               </h3>
@@ -623,7 +459,7 @@ export function CatalogoPage() {
                 type="button"
                 disabled={guardando}
                 onClick={() => setModalAbierto(false)}
-                className="text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
+                className="text-xs font-semibold text-black hover:text-[#8B151A] cursor-pointer"
               >
                 ✕
               </button>
@@ -687,14 +523,14 @@ export function CatalogoPage() {
                   type="button"
                   disabled={guardando}
                   onClick={() => setModalAbierto(false)}
-                  className="px-4 py-2 rounded border border-[#d4d4d8] text-xs font-semibold text-[#52525b] hover:bg-[#f4f4f5] cursor-pointer"
+                  className="btn-secondary"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={guardando}
-                  className="px-4 py-2 rounded bg-[#8B151A] hover:bg-[#6E1014] text-white text-xs font-semibold cursor-pointer disabled:opacity-60"
+                  className="btn-primary"
                 >
                   {guardando ? 'Guardando...' : 'Guardar Tema'}
                 </button>

@@ -206,18 +206,32 @@ export function FiltrosCascada({
         <div>
           <label
             htmlFor="filtro-busqueda-estudiante"
-            className="block text-[10px] font-bold uppercase tracking-wider text-[#52525b] mb-1"
+            className="block text-[10px] font-bold uppercase tracking-wider text-black mb-1"
           >
             Buscar estudiante
           </label>
-          <input
-            id="filtro-busqueda-estudiante"
-            type="text"
-            value={busqueda}
-            onChange={(e) => onBusquedaChange(e.target.value)}
-            placeholder="Nombre, apellido o correo..."
-            className="w-full text-xs px-2.5 py-2 border border-[#d4d4d8] rounded bg-white text-[#18181b] placeholder-[#a1a1aa] focus:outline-none focus:border-[#8B151A]"
-          />
+          <div className="flex items-stretch">
+            <input
+              id="filtro-busqueda-estudiante"
+              type="text"
+              value={busqueda}
+              onChange={(e) => onBusquedaChange(e.target.value)}
+              placeholder="Nombre, apellido o correo..."
+              className="w-full text-xs px-2.5 py-2 border border-[#d4d4d8] bg-white text-black placeholder-[#52525b] focus:outline-none focus:border-black"
+            />
+            <button
+              type="button"
+              onClick={() => onBusquedaChange(busqueda)}
+              title="Buscar estudiante"
+              aria-label="Buscar estudiante"
+              className="px-2.5 bg-[#f4f5f7] hover:bg-[#e5e7eb] border border-l-0 border-[#d4d4d8] text-black flex items-center justify-center cursor-pointer"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </section>

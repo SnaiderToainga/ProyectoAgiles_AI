@@ -45,13 +45,13 @@ function extraerMensajeErrorApi(error: unknown): string | undefined {
 }
 
 export function EvaluacionesPage() {
-  const { actualizarContextoChat } = useChatIa()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const { actualizarContextoChat, abrirChatConEstudiante, materiaActivaId: materiaContextoId } = useChatIa()
+  const [searchParams] = useSearchParams()
   const materiaQuery = searchParams.get('materia')
 
   const [materias, setMaterias] = useState<MateriaDto[]>([])
   const [materiaActivaId, setMateriaActivaId] = useState<number>(
-    materiaQuery ? Number(materiaQuery) : 0
+    materiaQuery ? Number(materiaQuery) : materiaContextoId ?? 0
   )
   const [parcialNumero, setParcialNumero] = useState<number>(1)
 
@@ -66,6 +66,9 @@ export function EvaluacionesPage() {
   const [estudianteExpandidoId, setEstudianteExpandidoId] = useState<number | null>(null)
   const [exportandoMatrizPdf, setExportandoMatrizPdf] = useState(false)
   const [exportandoEstPdfId, setExportandoEstPdfId] = useState<number | null>(null)
+  const [evalMode, setEvalMode] = useState<'board' | 'table' | 'activities'>('board')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [sortBy, setSortBy] = useState<'apellidos' | 'nota_asc' | 'nota_desc'>('apellidos')
 
   // Filtros en cascada y paginación (T-12.6, T-12.7, T-12.8)
   const [unidadFiltroId, setUnidadFiltroId] = useState<number | null>(null)
@@ -93,7 +96,7 @@ export function EvaluacionesPage() {
         if (!vigente) return
         setMaterias(data)
         if (data.length > 0) {
-          const idInicial = materiaQuery ? Number(materiaQuery) : data[0].id
+          const idInicial = materiaQuery ? Number(materiaQuery) : materiaContextoId ?? data[0].id
           const existe = data.some((m) => m.id === idInicial)
           setMateriaActivaId(existe ? idInicial : data[0].id)
         }
@@ -110,6 +113,12 @@ export function EvaluacionesPage() {
       vigente = false
     }
   }, [materiaQuery])
+
+  useEffect(() => {
+    if (materiaContextoId && materias.some((m) => m.id === materiaContextoId)) {
+      setMateriaActivaId(materiaContextoId)
+    }
+  }, [materiaContextoId, materias])
 
   const materiaActual = useMemo(
     () => materias.find((m) => m.id === materiaActivaId) || materias[0],
@@ -277,9 +286,22 @@ export function EvaluacionesPage() {
   const totalPaginas = Math.max(1, Math.ceil(filasRendimiento.length / tamanoPagina))
   const paginaSegura = Math.min(paginaActual, totalPaginas)
   const indiceInicio = (paginaSegura - 1) * tamanoPagina
+  const filasOrdenadas = useMemo(() => {
+    const copia = [...filasRendimiento]
+    if (sortBy === 'nota_asc') copia.sort((a, b) => a.notaFiltrada - b.notaFiltrada)
+    else if (sortBy === 'nota_desc') copia.sort((a, b) => b.notaFiltrada - a.notaFiltrada)
+    else
+      copia.sort((a, b) =>
+        `${a.estudiante.apellidos} ${a.estudiante.nombres}`.localeCompare(
+          `${b.estudiante.apellidos} ${b.estudiante.nombres}`
+        )
+      )
+    return copia
+  }, [filasRendimiento, sortBy])
+
   const filasPaginadas = useMemo(
-    () => filasRendimiento.slice(indiceInicio, indiceInicio + tamanoPagina),
-    [filasRendimiento, indiceInicio, tamanoPagina]
+    () => filasOrdenadas.slice(indiceInicio, indiceInicio + tamanoPagina),
+    [filasOrdenadas, indiceInicio, tamanoPagina]
   )
 
   const exportarMatrizPdf = async () => {
@@ -522,45 +544,156 @@ export function EvaluacionesPage() {
     )
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Selector de Asignatura y Parcial */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e4e7] pb-3">
-        <div className="flex flex-wrap gap-2">
-          {materias.map((m) => {
-            const activa = m.id === materiaActual.id
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  setMateriaActivaId(m.id)
-                  setAlertaSync(null)
-                  setUnidadFiltroId(null)
-                  setTemaFiltroId(null)
-                  setActividadFiltroId(null)
-                  setPaginaActual(1)
-                  setSearchParams({ materia: String(m.id) })
-                }}
-                className={`px-4 py-2 rounded text-xs font-semibold transition cursor-pointer ${
-                  activa
-                    ? 'bg-[#8B151A] text-white'
-                    : 'bg-white text-[#18181b] border border-[#d4d4d8] hover:bg-[#f4f4f5]'
-                }`}
+  const SORT_LABEL = { apellidos: 'A–Z', nota_asc: 'Menor nota', nota_desc: 'Mayor nota' } as const
+  const cicloSort = () =>
+    setSortBy((s) => (s === 'apellidos' ? 'nota_asc' : s === 'nota_asc' ? 'nota_desc' : 'apellidos'))
+  const filtrosActivos = [
+    unidadFiltroId !== null,
+    temaFiltroId !== null,
+    actividadFiltroId !== null,
+    estadoFiltro !== 'todos',
+    busquedaEstudiante.trim() !== '',
+  ].filter(Boolean).length
+
+  const columnasKanban = [
+    { id: 'riesgo', titulo: 'En Riesgo (< 7.0)', icono: '!', color: '#b91c1c', filas: filasOrdenadas.filter((f) => f.notaFiltrada < 7) },
+    { id: 'regular', titulo: 'Regular (7.0 – 8.4)', icono: '•', color: '#d97706', filas: filasOrdenadas.filter((f) => f.notaFiltrada >= 7 && f.notaFiltrada < 8.5) },
+    { id: 'sobresaliente', titulo: 'Sobresaliente (8.5 – 10)', icono: '✓', color: '#15803d', filas: filasOrdenadas.filter((f) => f.notaFiltrada >= 8.5) },
+  ]
+
+  const renderTarjeta = (fila: (typeof filasOrdenadas)[number]) => {
+    const est = fila.estudiante
+    const expandido = estudianteExpandidoId === est.estudianteId
+    const nota = (tipo: number) => {
+      const c = fila.componentesFiltrados.find((x) => x.tipo === tipo)
+      return c && c.evaluaciones.length > 0 ? c.promedioComponente.toFixed(1) : '—'
+    }
+    return (
+      <div key={est.estudianteId} className="k-card">
+        <div className="k-top">
+          <AvatarEstudiante
+            nombres={est.nombres}
+            apellidos={est.apellidos}
+            fotoUrl={est.fotoUrl}
+            enRiesgo={fila.enRiesgoFiltrado}
+            size="sm"
+          />
+          <div style={{ minWidth: 0 }}>
+            <div className="k-name">
+              {est.apellidos} {est.nombres}
+            </div>
+            <div className="k-sub">{est.correo}</div>
+          </div>
+        </div>
+        <div className="k-mid">
+          <span>
+            Promedio: <strong className="tabular-nums">{fila.notaFiltrada.toFixed(2)}</strong> / 10
+          </span>
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => setEstudianteExpandidoId(expandido ? null : est.estudianteId)}
+          >
+            {expandido ? 'Ocultar ▴' : 'Detalle ▾'}
+          </button>
+        </div>
+        {expandido && (
+          <div className="k-expand">
+            {fila.componentesFiltrados.flatMap((comp) =>
+              comp.evaluaciones.map((ev) => (
+                <div key={ev.itemEvaluacionId} className="flex justify-between gap-2">
+                  <span className="truncate">
+                    {NOMBRE_COMPONENTE[comp.tipo]} · {ev.nombre}
+                  </span>
+                  <strong
+                    className="tabular-nums shrink-0"
+                    style={{ color: ev.esDeficiente ? 'var(--uta)' : '#000' }}
+                  >
+                    {ev.nota === null ? 'Sin nota' : ev.nota.toFixed(2)}
+                  </strong>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        <div className="k-foot">
+          <span className="tabular-nums">
+            T {nota(1)} · A {nota(2)} · E {nota(3)}
+          </span>
+          <span style={{ display: 'flex', gap: 10 }}>
+            {est.enRiesgo && (
+              <Link
+                to={`/tutoria?materia=${materiaActual.id}&parcial=${parcialActual.numero}&estudiante=${est.estudianteId}`}
+                className="link-btn"
+                style={{ color: 'var(--uta)' }}
               >
-                {m.nombre} ({m.codigo})
-              </button>
-            )
-          })}
+                Tutoría
+              </Link>
+            )}
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => abrirChatConEstudiante(est, materiaActual.id)}
+            >
+              IA
+            </button>
+            <button
+              type="button"
+              className="link-btn"
+              disabled={exportandoEstPdfId === est.estudianteId}
+              onClick={() => exportarIndividualPdf(est.estudianteId)}
+            >
+              {exportandoEstPdfId === est.estudianteId ? '...' : 'PDF'}
+            </button>
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  const estadoTexto = (fila: (typeof filasOrdenadas)[number]) =>
+    metricasCurso.actividadAislada && !fila.entregoActividad
+      ? { t: 'Pendiente', c: 'warn' }
+      : fila.esCriticoFiltrado
+      ? { t: 'Crítico', c: 'risk' }
+      : fila.enRiesgoFiltrado
+      ? { t: 'En Riesgo', c: 'risk' }
+      : { t: 'Aprobado', c: 'ok' }
+
+  return (
+    <div className="space-y-4">
+      <div className="cadence-toolbar">
+        <div className="toolbar-group">
+          <div className="parcial-tabs">
+            <button type="button" className={`parcial-tab ${evalMode === 'board' ? 'active' : ''}`} onClick={() => setEvalMode('board')}>
+              Tablero
+            </button>
+            <button type="button" className={`parcial-tab ${evalMode === 'table' ? 'active' : ''}`} onClick={() => setEvalMode('table')}>
+              Matriz
+            </button>
+            <button type="button" className={`parcial-tab ${evalMode === 'activities' ? 'active' : ''}`} onClick={() => setEvalMode('activities')}>
+              Actividades ({actividadesTabla.length})
+            </button>
+          </div>
+          <button
+            type="button"
+            className={`tool-pill ${filtersOpen ? 'active' : ''}`}
+            onClick={() => setFiltersOpen((v) => !v)}
+          >
+            Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ''}
+          </button>
+          <button type="button" className="tool-pill" onClick={cicloSort}>
+            Orden: {SORT_LABEL[sortBy]}
+          </button>
         </div>
 
-        <div className="flex items-center gap-1 bg-[#f4f4f5] p-1 rounded border border-[#e4e4e7]">
-          {materiaActual.parciales.map((p) => {
-            const activo = p.numero === parcialActual.numero
-            return (
+        <div className="toolbar-group">
+          <div className="parcial-tabs">
+            {materiaActual.parciales.map((p) => (
               <button
                 key={p.id}
                 type="button"
+                className={`parcial-tab ${p.numero === parcialActual.numero ? 'active' : ''}`}
                 onClick={() => {
                   setParcialNumero(p.numero)
                   setUnidadFiltroId(null)
@@ -568,703 +701,454 @@ export function EvaluacionesPage() {
                   setActividadFiltroId(null)
                   setPaginaActual(1)
                 }}
-                className={`px-3 py-1 rounded text-xs font-semibold transition cursor-pointer ${
-                  activo
-                    ? 'bg-white text-[#8B151A] shadow-xs'
-                    : 'text-[#52525b] hover:text-[#18181b]'
-                }`}
               >
                 Parcial {p.numero}
               </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Encabezado Principal */}
-      <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-bold text-[#18181b]">
-            Evaluaciones y Ponderación Institucional
-          </h1>
-          <p className="text-xs text-[#52525b] mt-0.5">
-            {materiaActual.nombre} ({materiaActual.codigo}) • Parcial {parcialActual.numero}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={sincronizarMoodle}
-            disabled={sincronizando}
-            className="px-3.5 py-2 border border-[#d4d4d8] hover:bg-[#f4f4f5] disabled:opacity-60 text-[#27272a] rounded text-xs font-semibold transition cursor-pointer"
-          >
-            {sincronizando ? 'Sincronizando Moodle...' : 'Sincronizar con Moodle'}
+            ))}
+          </div>
+          <button type="button" className="tool-pill" onClick={sincronizarMoodle} disabled={sincronizando}>
+            {sincronizando ? 'Sincronizando...' : 'Moodle'}
           </button>
-
           <button
             type="button"
+            className="tool-pill"
             onClick={exportarMatrizPdf}
             disabled={exportandoMatrizPdf || cargandoDatos}
-            className="px-3.5 py-2 border border-[#8B151A] text-[#8B151A] hover:bg-red-50 disabled:opacity-60 rounded text-xs font-semibold transition cursor-pointer"
           >
-            {exportandoMatrizPdf ? 'Generando PDF...' : 'Exportar Matriz PDF'}
+            {exportandoMatrizPdf ? 'Generando...' : 'PDF'}
           </button>
-
-          <button
-            type="button"
-            onClick={abrirModalNueva}
-            className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer"
-          >
+          <button type="button" className="btn-primary" onClick={abrirModalNueva}>
             + Nueva Evaluación
           </button>
         </div>
       </div>
 
-      {/* Notificación de Sincronización Moodle / Exportación PDF */}
       {alertaSync && (
         <div
           role="alert"
-          className={`p-3.5 rounded-md border-l-4 text-xs font-medium ${
-            alertaSync.tipo === 'exito'
-              ? 'bg-emerald-50 border-emerald-600 text-emerald-800'
-              : alertaSync.tipo === 'advertencia'
-              ? 'bg-amber-50 border-amber-500 text-amber-800'
-              : 'bg-red-50 border-red-600 text-red-800'
-          }`}
+          className="px-3.5 py-2.5 bg-[#f8f9fb] border border-[#e5e7eb] text-xs text-black"
+          style={{
+            borderLeft: `3px solid ${
+              alertaSync.tipo === 'exito' ? 'var(--green)' : alertaSync.tipo === 'advertencia' ? 'var(--amber)' : 'var(--uta)'
+            }`,
+          }}
         >
           {alertaSync.mensaje}
         </div>
       )}
 
-      {/* Aviso interactivo para aprobar actividades importadas de Moodle en 1 clic */}
       {pendientesPublicar.length > 0 && (
-        <div className="p-3.5 rounded-md border border-amber-300 bg-amber-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="text-xs text-amber-900">
-            <p className="font-semibold">
-              Hay {pendientesPublicar.length} actividad(es) de este parcial pendientes de aprobar para reflejarse en el cálculo 30/30/40.
-            </p>
-            <p className="text-[11px] text-amber-800 mt-0.5">
-              Ya traen su clasificación preliminar y temas vinculados desde Moodle; puedes editarlas individualmente abajo o aprobarlas todas juntas.
-            </p>
+        <div className="table-card px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-black">
+            <strong>
+              Hay {pendientesPublicar.length} actividad(es) de este parcial pendientes de aprobar para reflejarse en
+              el cálculo 30/30/40.
+            </strong>{' '}
+            Ya traen su clasificación preliminar y temas vinculados desde Moodle.
           </div>
           {aprobablesRapido.length > 0 && (
-            <button
-              type="button"
-              onClick={publicarTodasPendientes}
-              disabled={publicandoLote}
-              className="shrink-0 px-3.5 py-2 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded text-xs font-semibold transition cursor-pointer"
-            >
-              {publicandoLote
-                ? 'Publicando actividades...'
-                : `Aprobar y publicar todas (${aprobablesRapido.length})`}
+            <button type="button" className="btn-primary" onClick={publicarTodasPendientes} disabled={publicandoLote}>
+              {publicandoLote ? 'Publicando actividades...' : `Aprobar y publicar todas (${aprobablesRapido.length})`}
             </button>
           )}
         </div>
       )}
 
-      {/* Filtros en Cascada: Parcial -> Unidad -> Tema -> Actividad (T-12.6 / T-12.7) */}
-      <FiltrosCascada
-        parciales={materiaActual.parciales}
-        parcialNumero={parcialActual.numero}
-        unidades={parcialActual.unidades}
-        unidadId={unidadFiltroId}
-        temas={temasCascada}
-        temaId={temaFiltroId}
-        actividades={actividadesCascada}
-        actividadId={actividadFiltroId}
-        estadoFiltro={estadoFiltro}
-        busqueda={busquedaEstudiante}
-        totalActividadesFiltradas={evaluacionesEnAlcance.length}
-        totalEstudiantesFiltrados={filasRendimiento.length}
-        totalEstudiantesCurso={rendimiento.length}
-        onParcialChange={(num) => {
-          setParcialNumero(num)
-          setUnidadFiltroId(null)
-          setTemaFiltroId(null)
-          setActividadFiltroId(null)
-          setPaginaActual(1)
-        }}
-        onUnidadChange={(id) => {
-          setUnidadFiltroId(id)
-          setTemaFiltroId(null)
-          setActividadFiltroId(null)
-          setPaginaActual(1)
-        }}
-        onTemaChange={(id) => {
-          setTemaFiltroId(id)
-          setActividadFiltroId(null)
-          setPaginaActual(1)
-        }}
-        onActividadChange={(id) => {
-          setActividadFiltroId(id)
-          setPaginaActual(1)
-        }}
-        onEstadoChange={(est) => {
-          setEstadoFiltro(est)
-          setPaginaActual(1)
-        }}
-        onBusquedaChange={(q) => {
-          setBusquedaEstudiante(q)
-          setPaginaActual(1)
-        }}
-        onLimpiarFiltros={limpiarFiltrosCascada}
-      />
+      {filtersOpen && (
+        <FiltrosCascada
+          parciales={materiaActual.parciales}
+          parcialNumero={parcialActual.numero}
+          unidades={parcialActual.unidades}
+          unidadId={unidadFiltroId}
+          temas={temasCascada}
+          temaId={temaFiltroId}
+          actividades={actividadesCascada}
+          actividadId={actividadFiltroId}
+          estadoFiltro={estadoFiltro}
+          busqueda={busquedaEstudiante}
+          totalActividadesFiltradas={evaluacionesEnAlcance.length}
+          totalEstudiantesFiltrados={filasRendimiento.length}
+          totalEstudiantesCurso={rendimiento.length}
+          onParcialChange={(num) => {
+            setParcialNumero(num)
+            setUnidadFiltroId(null)
+            setTemaFiltroId(null)
+            setActividadFiltroId(null)
+            setPaginaActual(1)
+          }}
+          onUnidadChange={(id) => {
+            setUnidadFiltroId(id)
+            setTemaFiltroId(null)
+            setActividadFiltroId(null)
+            setPaginaActual(1)
+          }}
+          onTemaChange={(id) => {
+            setTemaFiltroId(id)
+            setActividadFiltroId(null)
+            setPaginaActual(1)
+          }}
+          onActividadChange={(id) => {
+            setActividadFiltroId(id)
+            setPaginaActual(1)
+          }}
+          onEstadoChange={(est) => {
+            setEstadoFiltro(est)
+            setPaginaActual(1)
+          }}
+          onBusquedaChange={(q) => {
+            setBusquedaEstudiante(q)
+            setPaginaActual(1)
+          }}
+          onLimpiarFiltros={limpiarFiltrosCascada}
+        />
+      )}
 
-      {/* Tarjetas de Ponderación Oficial en Vivo (T-12.8: 30% Tareas, 30% APE, 40% Examen) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-md p-4 border border-[#e4e4e7]">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-[#52525b]">Tareas Formativas</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 bg-blue-50 text-blue-700 rounded">
-              30%
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-[#18181b] mt-2">
-            {metricasCurso.promTareas}{' '}
-            <span className="text-xs font-normal text-[#71717a]">/ 10</span>
-          </p>
-          <p className="text-[11px] text-[#52525b] mt-1">
-            Aporte promedio: <strong className="text-[#18181b]">{metricasCurso.aporteTareas} pts</strong>
-          </p>
-        </div>
-
-        <div className="bg-white rounded-md p-4 border border-[#e4e4e7]">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-[#52525b]">Prácticas APE</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 bg-purple-50 text-purple-700 rounded">
-              30%
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-[#18181b] mt-2">
-            {metricasCurso.promApe}{' '}
-            <span className="text-xs font-normal text-[#71717a]">/ 10</span>
-          </p>
-          <p className="text-[11px] text-[#52525b] mt-1">
-            Aporte promedio: <strong className="text-[#18181b]">{metricasCurso.aporteApe} pts</strong>
-          </p>
-        </div>
-
-        <div className="bg-white rounded-md p-4 border border-[#e4e4e7]">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-[#52525b]">Examen Sumativo</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-50 text-amber-700 rounded">
-              40%
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-[#18181b] mt-2">
-            {metricasCurso.promExamen}{' '}
-            <span className="text-xs font-normal text-[#71717a]">/ 10</span>
-          </p>
-          <p className="text-[11px] text-[#52525b] mt-1">
-            Aporte promedio: <strong className="text-[#18181b]">{metricasCurso.aporteExamen} pts</strong>
-          </p>
-        </div>
-
-        <div
-          className={`bg-white rounded-md p-4 border ${
-            metricasCurso.totalEnRiesgo > 0 ? 'border-red-400 bg-red-50/20' : 'border-[#8B151A]'
-          }`}
-        >
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-[#8B151A]">
-              {hayFiltroCurricular ? 'Promedio del Alcance' : 'Promedio del Curso'}
-            </span>
-            <span
-              className={`text-[11px] font-bold px-2 py-0.5 rounded ${
-                metricasCurso.totalEnRiesgo > 0
-                  ? 'bg-red-100 text-red-800'
-                  : 'bg-emerald-100 text-emerald-800'
-              }`}
-            >
-              {metricasCurso.totalEnRiesgo} en riesgo
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-[#8B151A] mt-2">
-            {metricasCurso.promedioCurso}{' '}
-            <span className="text-xs font-normal text-[#71717a]">/ 10.00 pts</span>
-          </p>
-          <p className="text-[11px] text-[#52525b] mt-1">
-            Evaluados: <strong className="text-[#18181b]">{filasRendimiento.length}</strong> • Aprobación:{' '}
-            <strong className="text-[#18181b]">{metricasCurso.porcentajeAprobados}%</strong>
-          </p>
-        </div>
-      </div>
-
-      {/* Panel de Métricas de Actividad Específica Aislada (CA-06.5) */}
-      {metricasCurso.actividadAislada && (
-        <div
-          role="region"
-          aria-label="Resumen de actividad específica seleccionada"
-          className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center"
-        >
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B151A]">
-              Actividad Aislada • {NOMBRE_COMPONENTE[metricasCurso.actividadAislada.tipo]} (
+      {metricasCurso.actividadAislada && evalMode !== 'activities' && (
+        <section className="stat-strip" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+          <div className="stat-cell">
+            <span className="stat-k">
+              Actividad aislada · {NOMBRE_COMPONENTE[metricasCurso.actividadAislada.tipo]} (
               {PONDERACION_COMPONENTE[metricasCurso.actividadAislada.tipo]})
             </span>
-            <h2 className="text-sm font-bold text-[#18181b] mt-0.5">
-              {metricasCurso.actividadAislada.nombre}
-            </h2>
+            <span className="text-[13.5px] font-semibold text-black">{metricasCurso.actividadAislada.nombre}</span>
           </div>
+          <div className="stat-cell">
+            <span className="stat-k">Promedio del grupo</span>
+            <span className="stat-v">{metricasCurso.actividadAislada.promedioActividad}<span style={{ fontSize: 12 }}>/10</span></span>
+          </div>
+          <div className="stat-cell">
+            <span className="stat-k">Tasa de entrega</span>
+            <span className="stat-v">{metricasCurso.actividadAislada.tasaEntregaPorcentaje}%</span>
+            <div className="stat-note">
+              {metricasCurso.actividadAislada.entregados} de {metricasCurso.actividadAislada.totalEstudiantes} entregaron
+            </div>
+          </div>
+        </section>
+      )}
 
-          <div className="bg-[#fafafa] border border-[#e4e4e7] rounded p-3">
-            <span className="text-[11px] font-semibold text-[#52525b]">
-              Promedio del Grupo (Escala 0–10)
-            </span>
-            <p className="text-xl font-bold text-[#18181b] mt-0.5">
-              {metricasCurso.actividadAislada.promedioActividad}{' '}
-              <span className="text-xs font-normal text-[#71717a]">/ 10.00</span>
-            </p>
-          </div>
-
-          <div className="bg-[#fafafa] border border-[#e4e4e7] rounded p-3">
-            <span className="text-[11px] font-semibold text-[#52525b]">
-              Tasa de Entrega de la Actividad
-            </span>
-            <p className="text-xl font-bold text-[#8B151A] mt-0.5">
-              {metricasCurso.actividadAislada.tasaEntregaPorcentaje}%{' '}
-              <span className="text-xs font-normal text-[#52525b]">
-                ({metricasCurso.actividadAislada.entregados} de{' '}
-                {metricasCurso.actividadAislada.totalEstudiantes} entregaron)
-              </span>
-            </p>
-          </div>
+      {evalMode === 'board' && (
+        <div className="kanban-board">
+          {columnasKanban.map((col) => (
+            <div key={col.id} className="kanban-col">
+              <div className="kanban-col-head">
+                <span className="kanban-col-title">
+                  <span className="col-badge-icon" style={{ background: col.color }}>
+                    {col.icono}
+                  </span>
+                  {col.titulo}
+                </span>
+                <span className="text-xs font-semibold tabular-nums text-black">{col.filas.length}</span>
+              </div>
+              {col.filas.length === 0 ? (
+                <div className="text-[12px] text-black px-1 py-3">Sin estudiantes en este rango.</div>
+              ) : (
+                col.filas.map((fila) => renderTarjeta(fila))
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Tabla Dinámica de Calificaciones Reales por Estudiante con Avatares y Paginación */}
-      <div className="bg-white rounded-md border border-[#e4e4e7] overflow-hidden">
-        <div className="p-4 border-b border-[#e4e4e7] flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="font-bold text-sm text-[#18181b]">
-              Calificaciones Reales por Estudiante — Parcial {parcialActual.numero}
-            </h2>
-            <p className="text-[11px] text-[#71717a]">
-              {metricasCurso.actividadAislada
-                ? `Vista aislada: ${metricasCurso.actividadAislada.nombre} (Escala normalizada 0 a 10)`
-                : hayFiltroCurricular
-                ? 'Promedios recalculados en vivo según el filtro curricular seleccionado'
-                : 'Ponderación institucional: 30% Tareas • 30% APE • 40% Examen'}
-            </p>
+      {evalMode === 'table' && (
+        <div className="table-card">
+          <div className="table-toolbar">
+            <div>
+              <span className="card-title">Calificaciones Reales por Estudiante — Parcial {parcialActual.numero}</span>
+              <div className="text-[12px] text-black">
+                {metricasCurso.actividadAislada
+                  ? `Vista aislada: ${metricasCurso.actividadAislada.nombre}`
+                  : hayFiltroCurricular
+                  ? 'Promedios recalculados en vivo según el filtro curricular'
+                  : 'Ponderación institucional: 30% Tareas • 30% APE • 40% Examen'}
+              </div>
+            </div>
+            <span className="text-xs text-black tabular-nums">
+              {cargandoDatos ? 'Actualizando...' : `${filasRendimiento.length} de ${rendimiento.length} estudiante(s)`}
+            </span>
           </div>
-          <span className="text-xs text-[#71717a]">
-            {cargandoDatos
-              ? 'Actualizando...'
-              : `${filasRendimiento.length} de ${rendimiento.length} estudiante(s)`}
-          </span>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#f4f4f5] text-[#52525b] border-b border-[#e4e4e7]">
-              <tr>
-                <th className="py-2.5 px-4 font-semibold">Estudiante</th>
-                {metricasCurso.actividadAislada && (
-                  <th className="py-2.5 px-4 font-semibold text-right text-[#8B151A]">
-                    Nota Actividad (0–10)
-                  </th>
-                )}
-                <th className="py-2.5 px-4 font-semibold text-right">Tareas (30%)</th>
-                <th className="py-2.5 px-4 font-semibold text-right">APE (30%)</th>
-                <th className="py-2.5 px-4 font-semibold text-right">Examen (40%)</th>
-                <th className="py-2.5 px-4 font-semibold text-right">Promedio</th>
-                <th className="py-2.5 px-4 font-semibold text-center">Estado</th>
-                <th className="py-2.5 px-4 font-semibold text-center">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e4e4e7]">
-              {filasPaginadas.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="em-table">
+              <thead>
                 <tr>
-                  <td
-                    colSpan={metricasCurso.actividadAislada ? 8 : 7}
-                    className="py-6 px-4 text-center text-[#71717a]"
-                  >
-                    {rendimiento.length === 0
-                      ? 'No hay estudiantes matriculados o sincronizados en esta asignatura. Presiona "Sincronizar con Moodle" para importar calificaciones reales.'
-                      : 'Ningún estudiante coincide con los filtros curriculares o de búsqueda actuales.'}
-                  </td>
+                  <th>Estudiante</th>
+                  {metricasCurso.actividadAislada && <th className="num-col">Nota Actividad</th>}
+                  <th className="num-col">Tareas 30%</th>
+                  <th className="num-col">APE 30%</th>
+                  <th className="num-col">Examen 40%</th>
+                  <th className="num-col">Promedio</th>
+                  <th>Estado</th>
+                  <th className="num-col">Acción</th>
                 </tr>
-              ) : (
-                filasPaginadas.map((fila) => {
-                  const est = fila.estudiante
-                  const compTareas = fila.componentesFiltrados.find((c) => c.tipo === 1)
-                  const compApe = fila.componentesFiltrados.find((c) => c.tipo === 2)
-                  const compExamen = fila.componentesFiltrados.find((c) => c.tipo === 3)
-                  const expandido = estudianteExpandidoId === est.estudianteId
-
-                  return (
-                    <Fragment key={est.estudianteId}>
-                      <tr className="hover:bg-[#fafafa] transition">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <AvatarEstudiante
-                              nombres={est.nombres}
-                              apellidos={est.apellidos}
-                              fotoUrl={est.fotoUrl}
-                              enRiesgo={fila.enRiesgoFiltrado}
-                              size="sm"
-                            />
-                            <div className="min-w-0">
-                              <p className="font-semibold text-[#18181b] truncate">
-                                {est.apellidos} {est.nombres}
-                              </p>
-                              <p className="text-[11px] text-[#71717a] truncate">{est.correo}</p>
-                              {est.temasDeficientes.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {est.temasDeficientes.map((t) => (
-                                    <span
-                                      key={t.temaId}
-                                      className="inline-block bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[10px] font-medium"
-                                    >
-                                      {t.nombreTema}
-                                      {t.notaObtenida !== null ? ` (${t.notaObtenida.toFixed(2)})` : ''}
-                                    </span>
-                                  ))}
+              </thead>
+              <tbody>
+                {filasPaginadas.length === 0 ? (
+                  <tr>
+                    <td colSpan={metricasCurso.actividadAislada ? 8 : 7} style={{ textAlign: 'center' }}>
+                      {rendimiento.length === 0
+                        ? 'No hay estudiantes sincronizados. Presiona "Moodle" para importar calificaciones reales.'
+                        : 'Ningún estudiante coincide con los filtros actuales.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filasPaginadas.map((fila) => {
+                    const est = fila.estudiante
+                    const comp = (tipo: number) => {
+                      const c = fila.componentesFiltrados.find((x) => x.tipo === tipo)
+                      return c && c.evaluaciones.length > 0 ? c.promedioComponente.toFixed(2) : '—'
+                    }
+                    const expandido = estudianteExpandidoId === est.estudianteId
+                    const estado = estadoTexto(fila)
+                    return (
+                      <Fragment key={est.estudianteId}>
+                        <tr>
+                          <td>
+                            <div className="flex items-center gap-2.5">
+                              <AvatarEstudiante
+                                nombres={est.nombres}
+                                apellidos={est.apellidos}
+                                fotoUrl={est.fotoUrl}
+                                enRiesgo={fila.enRiesgoFiltrado}
+                                size="sm"
+                              />
+                              <div style={{ minWidth: 0 }}>
+                                <div className="k-name">
+                                  {est.apellidos} {est.nombres}
                                 </div>
-                              )}
+                                <div className="k-sub">{est.correo}</div>
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        {metricasCurso.actividadAislada && (
-                          <td className="py-3 px-4 text-right font-bold">
-                            {fila.notaActividadAislada !== null ? (
-                              <span
-                                className={
-                                  fila.notaActividadAislada < 7 ? 'text-red-700' : 'text-[#18181b]'
-                                }
-                              >
-                                {fila.notaActividadAislada.toFixed(2)}
-                              </span>
-                            ) : (
-                              <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
-                                Sin entregar
-                              </span>
-                            )}
                           </td>
-                        )}
-                        <td className="py-3 px-4 text-right font-medium text-[#18181b]">
-                          {compTareas && compTareas.evaluaciones.length > 0
-                            ? compTareas.promedioComponente.toFixed(2)
-                            : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium text-[#18181b]">
-                          {compApe && compApe.evaluaciones.length > 0
-                            ? compApe.promedioComponente.toFixed(2)
-                            : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium text-[#18181b]">
-                          {compExamen && compExamen.evaluaciones.length > 0
-                            ? compExamen.promedioComponente.toFixed(2)
-                            : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-[#18181b]">
-                          {fila.notaFiltrada.toFixed(2)}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
-                              fila.enRiesgoFiltrado
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-emerald-100 text-emerald-700'
-                            }`}
-                          >
-                            {metricasCurso.actividadAislada && !fila.entregoActividad
-                              ? 'Pendiente'
-                              : fila.esCriticoFiltrado
-                              ? 'Crítico'
-                              : fila.enRiesgoFiltrado
-                              ? 'En Riesgo'
-                              : 'Aprobado'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-2.5">
+                          {metricasCurso.actividadAislada && (
+                            <td className="num-col tabular-nums">
+                              {fila.notaActividadAislada !== null ? fila.notaActividadAislada.toFixed(2) : 'Sin entregar'}
+                            </td>
+                          )}
+                          <td className="num-col tabular-nums">{comp(1)}</td>
+                          <td className="num-col tabular-nums">{comp(2)}</td>
+                          <td className="num-col tabular-nums">{comp(3)}</td>
+                          <td className="num-col tabular-nums" style={{ fontWeight: 700 }}>
+                            {fila.notaFiltrada.toFixed(2)}
+                          </td>
+                          <td>
+                            <span className={`badge-clean ${estado.c}`}>{estado.t}</span>
+                          </td>
+                          <td className="num-col">
                             <button
                               type="button"
-                              onClick={() =>
-                                setEstudianteExpandidoId(expandido ? null : est.estudianteId)
-                              }
-                              className="text-[11px] font-semibold text-[#52525b] hover:text-[#18181b] cursor-pointer"
+                              className="link-btn"
+                              style={{ marginRight: 10 }}
+                              onClick={() => setEstudianteExpandidoId(expandido ? null : est.estudianteId)}
                             >
                               {expandido ? 'Ocultar' : 'Detalle'}
                             </button>
                             <button
                               type="button"
-                              onClick={() => exportarIndividualPdf(est.estudianteId)}
+                              className="link-btn"
+                              style={{ marginRight: 10 }}
                               disabled={exportandoEstPdfId === est.estudianteId}
-                              className="text-[11px] font-semibold text-[#18181b] hover:text-[#8B151A] hover:underline disabled:opacity-50 cursor-pointer"
+                              onClick={() => exportarIndividualPdf(est.estudianteId)}
                             >
                               {exportandoEstPdfId === est.estudianteId ? '...' : 'PDF'}
                             </button>
                             {est.enRiesgo && (
                               <Link
                                 to={`/tutoria?materia=${materiaActual.id}&parcial=${parcialActual.numero}&estudiante=${est.estudianteId}`}
-                                className="text-[11px] font-semibold text-[#8B151A] hover:underline"
+                                className="link-btn"
+                                style={{ color: 'var(--uta)' }}
                               >
                                 Diagnosticar IA →
                               </Link>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                      {expandido && (
-                        <tr key={`${est.estudianteId}-detalle`} className="bg-[#fafafa]">
-                          <td
-                            colSpan={metricasCurso.actividadAislada ? 8 : 7}
-                            className="px-4 py-3"
-                          >
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              {fila.componentesFiltrados.map((comp) => (
-                                <div
-                                  key={comp.tipo}
-                                  className="bg-white border border-[#e4e4e7] rounded p-3 space-y-1.5"
-                                >
-                                  <p className="text-[11px] font-bold text-[#18181b]">
-                                    {NOMBRE_COMPONENTE[comp.tipo]} ({PONDERACION_COMPONENTE[comp.tipo]})
-                                  </p>
-                                  {comp.evaluaciones.length === 0 ? (
-                                    <p className="text-[11px] text-[#71717a] italic">
-                                      Sin actividades en el alcance seleccionado.
-                                    </p>
-                                  ) : (
-                                    comp.evaluaciones.map((ev) => (
-                                      <div
-                                        key={ev.itemEvaluacionId}
-                                        className="border-t border-[#f4f4f5] pt-1 space-y-0.5"
-                                      >
-                                        <div className="flex justify-between items-center text-[11px]">
-                                          <span className="text-[#3f3f46] truncate pr-2">
-                                            {ev.nombre}
-                                          </span>
-                                          <span
-                                            className={`font-semibold shrink-0 ${
-                                              ev.nota === null
-                                                ? 'text-[#71717a] italic'
-                                                : ev.esDeficiente
-                                                ? 'text-red-700'
-                                                : 'text-[#18181b]'
-                                            }`}
-                                          >
-                                            {ev.nota === null ? 'Sin nota' : `${ev.nota.toFixed(2)} / 10`}
-                                          </span>
-                                        </div>
-                                        {ev.temas && ev.temas.length > 0 && (
-                                          <div className="flex flex-wrap gap-1">
-                                            {ev.temas.map((tm) => (
-                                              <span
-                                                key={tm.temaId}
-                                                className="text-[10px] text-[#52525b] bg-[#f4f4f5] px-1.5 py-0.2 rounded"
-                                              >
-                                                Tema: {tm.nombre}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
-                              ))}
-                            </div>
                           </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                        {expandido && (
+                          <tr>
+                            <td colSpan={metricasCurso.actividadAislada ? 8 : 7} style={{ background: '#fafafa' }}>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {fila.componentesFiltrados.map((c) => (
+                                  <div key={c.tipo} className="bg-white border border-[#e5e7eb] p-3 space-y-1.5">
+                                    <p className="text-[11.5px] font-bold text-black">
+                                      {NOMBRE_COMPONENTE[c.tipo]} ({PONDERACION_COMPONENTE[c.tipo]})
+                                    </p>
+                                    {c.evaluaciones.length === 0 ? (
+                                      <p className="text-[11px] text-black italic">Sin actividades en el alcance.</p>
+                                    ) : (
+                                      c.evaluaciones.map((ev) => (
+                                        <div
+                                          key={ev.itemEvaluacionId}
+                                          className="flex justify-between gap-2 text-[11.5px] border-t border-[#eef0f3] pt-1"
+                                        >
+                                          <span className="truncate">{ev.nombre}</span>
+                                          <strong
+                                            className="tabular-nums shrink-0"
+                                            style={{ color: ev.esDeficiente ? 'var(--uta)' : '#000' }}
+                                          >
+                                            {ev.nota === null ? 'Sin nota' : `${ev.nota.toFixed(2)} / 10`}
+                                          </strong>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
-        {/* Controles de Paginación (CA-06.5) */}
-        {filasRendimiento.length > 0 && (
-          <div className="px-4 py-3 border-t border-[#e4e4e7] bg-[#fafafa] flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 text-[#52525b]">
-              <span>
-                Mostrando <strong className="text-[#18181b]">{indiceInicio + 1}</strong>–
-                <strong className="text-[#18181b]">
-                  {Math.min(indiceInicio + tamanoPagina, filasRendimiento.length)}
-                </strong>{' '}
-                de <strong className="text-[#18181b]">{filasRendimiento.length}</strong> estudiantes
-              </span>
-              <select
-                aria-label="Estudiantes por página"
-                value={tamanoPagina}
-                onChange={(e) => {
-                  setTamanoPagina(Number(e.target.value))
-                  setPaginaActual(1)
-                }}
-                className="px-2 py-1 border border-[#d4d4d8] rounded bg-white text-[#18181b] text-xs"
-              >
-                <option value={5}>5 / pág.</option>
-                <option value={10}>10 / pág.</option>
-                <option value={15}>15 / pág.</option>
-                <option value={25}>25 / pág.</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={paginaSegura <= 1}
-                onClick={() => setPaginaActual((p) => Math.max(1, p - 1))}
-                className="px-2.5 py-1 border border-[#d4d4d8] rounded bg-white text-[#18181b] hover:bg-[#f4f4f5] disabled:opacity-40 cursor-pointer"
-              >
-                Anterior
-              </button>
-              {Array.from({ length: totalPaginas }, (_, idx) => idx + 1).map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => setPaginaActual(num)}
-                  className={`px-2.5 py-1 rounded text-xs font-semibold cursor-pointer ${
-                    num === paginaSegura
-                      ? 'bg-[#8B151A] text-white'
-                      : 'border border-[#d4d4d8] bg-white text-[#18181b] hover:bg-[#f4f4f5]'
-                  }`}
+          {filasRendimiento.length > 0 && (
+            <div className="px-4 py-3 border-t border-[#eef0f3] flex flex-wrap items-center justify-between gap-3 text-xs text-black">
+              <div className="flex items-center gap-2">
+                <span className="tabular-nums">
+                  Mostrando <strong>{indiceInicio + 1}</strong>–
+                  <strong>{Math.min(indiceInicio + tamanoPagina, filasRendimiento.length)}</strong> de{' '}
+                  <strong>{filasRendimiento.length}</strong> estudiantes
+                </span>
+                <select
+                  aria-label="Estudiantes por página"
+                  value={tamanoPagina}
+                  onChange={(e) => {
+                    setTamanoPagina(Number(e.target.value))
+                    setPaginaActual(1)
+                  }}
+                  className="px-2 py-1 border border-[#e5e7eb] bg-white text-black text-xs"
                 >
-                  {num}
+                  <option value={5}>5 / pág.</option>
+                  <option value={10}>10 / pág.</option>
+                  <option value={15}>15 / pág.</option>
+                  <option value={25}>25 / pág.</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={paginaSegura <= 1}
+                  onClick={() => setPaginaActual((p) => Math.max(1, p - 1))}
+                >
+                  Anterior
                 </button>
-              ))}
-              <button
-                type="button"
-                disabled={paginaSegura >= totalPaginas}
-                onClick={() => setPaginaActual((p) => Math.min(totalPaginas, p + 1))}
-                className="px-2.5 py-1 border border-[#d4d4d8] rounded bg-white text-[#18181b] hover:bg-[#f4f4f5] disabled:opacity-40 cursor-pointer"
-              >
-                Siguiente
-              </button>
+                {Array.from({ length: totalPaginas }, (_, idx) => idx + 1).map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    className={num === paginaSegura ? 'btn-primary' : 'btn-secondary'}
+                    onClick={() => setPaginaActual(num)}
+                  >
+                    {num}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={paginaSegura >= totalPaginas}
+                  onClick={() => setPaginaActual((p) => Math.min(totalPaginas, p + 1))}
+                >
+                  Siguiente
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Tabla de Actividades Académicas Registradas / Importadas en el Alcance */}
-      <div className="bg-white rounded-md border border-[#e4e4e7] overflow-hidden">
-        <div className="p-4 border-b border-[#e4e4e7] flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="font-bold text-sm text-[#18181b]">
-              Actividades de Evaluación — {materiaActual.nombre}
-            </h2>
-            <p className="text-[11px] text-[#71717a]">
-              {actividadesTabla.length} de {evaluacionesVisibles.length} actividad(es) • {pendientesPublicar.length} pendiente(s) de publicar
-            </p>
-          </div>
-          {aprobablesRapido.length > 0 && (
-            <button
-              type="button"
-              onClick={publicarTodasPendientes}
-              disabled={publicandoLote}
-              className="px-3 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded text-[11px] font-semibold transition cursor-pointer"
-            >
-              {publicandoLote ? 'Publicando...' : `Aprobar pendientes (${aprobablesRapido.length})`}
-            </button>
           )}
         </div>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#f4f4f5] text-[#52525b] border-b border-[#e4e4e7]">
-              <tr>
-                <th className="py-2.5 px-4 font-semibold">Actividad Académica</th>
-                <th className="py-2.5 px-4 font-semibold">Componente</th>
-                <th className="py-2.5 px-4 font-semibold">Ponderación</th>
-                <th className="py-2.5 px-4 font-semibold">Temas Vinculados</th>
-                <th className="py-2.5 px-4 font-semibold text-center">Clasificación</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e4e4e7]">
-              {actividadesTabla.length === 0 ? (
+      {evalMode === 'activities' && (
+        <div className="table-card">
+          <div className="table-toolbar">
+            <div>
+              <span className="card-title">Actividades de Evaluación — {materiaActual.nombre}</span>
+              <div className="text-[12px] text-black tabular-nums">
+                {actividadesTabla.length} de {evaluacionesVisibles.length} actividad(es) • {pendientesPublicar.length}{' '}
+                pendiente(s) de publicar
+              </div>
+            </div>
+            {aprobablesRapido.length > 0 && (
+              <button type="button" className="btn-primary" onClick={publicarTodasPendientes} disabled={publicandoLote}>
+                {publicandoLote ? 'Publicando...' : `Aprobar pendientes (${aprobablesRapido.length})`}
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="em-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="py-5 px-4 text-center text-[#71717a]">
-                    No existen actividades registradas para este alcance o parcial.
-                  </td>
+                  <th>Actividad Académica</th>
+                  <th>Componente</th>
+                  <th>Ponderación</th>
+                  <th>Temas Vinculados</th>
+                  <th className="num-col">Clasificación</th>
                 </tr>
-              ) : (
-                actividadesTabla.map((ev) => {
-                  const temas = temasDisponibles.filter((t) => ev.temaIds.includes(t.id))
-                  return (
-                    <tr key={ev.id} className="hover:bg-[#fafafa] transition">
-                      <td className="py-3 px-4">
-                        <p className="font-medium text-[#18181b]">{ev.nombre}</p>
-                        <span
-                          className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                            ev.publicado
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-800 border border-amber-200'
-                          }`}
-                        >
-                          {ev.publicado ? 'Publicada en cálculo' : 'Pendiente de aprobar'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
-                            ev.tipo === 1
-                              ? 'bg-blue-100 text-blue-800'
-                              : ev.tipo === 2
-                              ? 'bg-purple-100 text-purple-800'
-                              : ev.tipo === 3
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          {NOMBRE_COMPONENTE[ev.tipo]}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-[#52525b]">
-                        {PONDERACION_COMPONENTE[ev.tipo]}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex flex-wrap gap-1">
-                          {temas.length === 0 ? (
-                            <span className="text-[11px] text-[#a1a1aa] italic">
-                              Pendiente de vincular
-                            </span>
-                          ) : (
-                            temas.map((t) => (
-                              <span
-                                key={t.id}
-                                title={t.nombre}
-                                className="bg-[#f4f4f5] text-[#3f3f46] px-1.5 py-0.5 rounded text-[10px] border border-[#e4e4e7]"
-                              >
-                                {t.nombre}
-                              </span>
-                            ))
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-3">
+              </thead>
+              <tbody>
+                {actividadesTabla.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center' }}>
+                      No existen actividades registradas para este alcance o parcial.
+                    </td>
+                  </tr>
+                ) : (
+                  actividadesTabla.map((ev) => {
+                    const temas = temasDisponibles.filter((t) => ev.temaIds.includes(t.id))
+                    return (
+                      <tr key={ev.id}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{ev.nombre}</div>
+                          <span className={`badge-clean ${ev.publicado ? 'ok' : 'warn'}`} style={{ fontSize: 11.5 }}>
+                            {ev.publicado ? 'Publicada en cálculo' : 'Pendiente de aprobar'}
+                          </span>
+                        </td>
+                        <td>{NOMBRE_COMPONENTE[ev.tipo]}</td>
+                        <td className="tabular-nums">{PONDERACION_COMPONENTE[ev.tipo]}</td>
+                        <td>
+                          <div className="flex flex-wrap gap-1">
+                            {temas.length === 0 ? (
+                              <span className="text-[11.5px] italic">Pendiente de vincular</span>
+                            ) : (
+                              temas.map((t) => (
+                                <span
+                                  key={t.id}
+                                  title={t.nombre}
+                                  className="text-[11px] px-1.5 py-0.5 border border-[#e5e7eb] bg-white"
+                                >
+                                  {t.nombre}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </td>
+                        <td className="num-col">
                           {!ev.publicado && ev.tipo !== 0 && ev.temaIds.length > 0 && (
                             <button
                               type="button"
-                              onClick={() => publicarEvaluacionRapida(ev)}
+                              className="link-btn"
+                              style={{ marginRight: 10, color: 'var(--green)' }}
                               disabled={publicandoLote}
-                              className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50 cursor-pointer"
+                              onClick={() => publicarEvaluacionRapida(ev)}
                             >
                               Publicar
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => abrirModalClasificar(ev)}
-                            className="text-xs font-semibold text-[#8B151A] hover:underline cursor-pointer"
-                          >
+                          <button type="button" className="link-btn" onClick={() => abrirModalClasificar(ev)}>
                             {ev.tipo === 0 ? 'Clasificar' : 'Editar'}
                           </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Modal de Registro o Clasificación de Evaluación */}
       {mostrarModal && (
@@ -1360,14 +1244,14 @@ export function EvaluacionesPage() {
                   type="button"
                   disabled={guardando}
                   onClick={() => setMostrarModal(false)}
-                  className="px-3 py-1.5 text-xs text-[#52525b] hover:bg-[#f4f4f5] rounded transition cursor-pointer"
+                  className="btn-secondary"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={guardando}
-                  className="px-4 py-1.5 text-xs bg-[#8B151A] hover:bg-[#6E1014] text-white font-semibold rounded transition cursor-pointer"
+                  className="btn-primary"
                 >
                   {guardando ? 'Guardando...' : 'Guardar Evaluación'}
                 </button>

@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback, type FormEvent } from 'react
 import { useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import {
-  Search,
   CalendarCheck,
   FileText,
   Sparkles,
@@ -31,6 +30,7 @@ import {
   type SolicitudPlanIa,
 } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
+import { SearchAutocompleteInput } from '../components/SearchAutocompleteInput'
 
 interface CitaTutoriaLocal {
   modalidad: string
@@ -59,8 +59,8 @@ function extraerMensajeErrorApi(error: unknown): string | undefined {
 
 export function TutoriaPage() {
   const { user } = useAuth()
-  const { actualizarContextoChat } = useChatIa()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const { actualizarContextoChat, materiaActivaId: chatMateriaId } = useChatIa()
+  const [searchParams] = useSearchParams()
   const materiaQuery = searchParams.get('materia')
   const parcialQuery = searchParams.get('parcial')
   const estudianteQuery = searchParams.get('estudiante')
@@ -69,6 +69,12 @@ export function TutoriaPage() {
   const [materiaActivaId, setMateriaActivaId] = useState<number>(
     materiaQuery ? Number(materiaQuery) : 0
   )
+
+  useEffect(() => {
+    if (chatMateriaId && chatMateriaId !== materiaActivaId && materias.some((m) => m.id === chatMateriaId)) {
+      setMateriaActivaId(chatMateriaId)
+    }
+  }, [chatMateriaId, materiaActivaId, materias])
   const [parcialNumero, setParcialNumero] = useState<number>(
     parcialQuery ? Number(parcialQuery) : 1
   )
@@ -479,15 +485,6 @@ export function TutoriaPage() {
     return 'bg-emerald-100 text-emerald-800'
   }
 
-  const badgeRiesgo = (nivel: string) => {
-    const n = nivel.toLowerCase()
-    if (n.includes('crít') || n.includes('crit') || n === 'alto') {
-      return 'bg-red-100 text-red-800'
-    }
-    if (n === 'medio') return 'bg-amber-100 text-amber-800'
-    return 'bg-emerald-100 text-emerald-800'
-  }
-
   if (cargando) return <p role="status" className="text-xs text-[#52525b]">Cargando módulo de tutoría...</p>
   if (errorCarga) return <p role="alert" className="text-xs text-red-700">{errorCarga}</p>
   if (!materiaActual || !parcialActual) {
@@ -505,87 +502,77 @@ export function TutoriaPage() {
 
   return (
     <div className="space-y-5">
-      {/* Selector de Asignatura y Parcial */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e4e7] pb-3">
-        <div className="flex flex-wrap gap-2">
-          {materias.map((m) => {
-            const activa = m.id === materiaActual.id
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  setMateriaActivaId(m.id)
-                  setSearchParams({ materia: String(m.id) })
-                }}
-                className={`px-4 py-2 rounded text-xs font-semibold transition cursor-pointer ${
-                  activa
-                    ? 'bg-[#8B151A] text-white'
-                    : 'bg-white text-[#18181b] border border-[#d4d4d8] hover:bg-[#f4f4f5]'
-                }`}
-              >
-                {m.nombre} ({m.codigo})
-              </button>
-            )
-          })}
+      {/* Barra superior única estilo Cadence */}
+      <div className="cadence-toolbar">
+        <div className="toolbar-group">
+          <div className="parcial-tabs" role="tablist" aria-label="Filtrar por estado de plan">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filtroEstadoPlan === 'todos'}
+              onClick={() => setFiltroEstadoPlan('todos')}
+              className={`parcial-tab ${filtroEstadoPlan === 'todos' ? 'active' : ''}`}
+            >
+              Todos ({estudiantesEnRiesgo.length})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filtroEstadoPlan === 'sin_plan'}
+              onClick={() => setFiltroEstadoPlan('sin_plan')}
+              className={`parcial-tab ${filtroEstadoPlan === 'sin_plan' ? 'active' : ''}`}
+            >
+              Sin plan ({sinPlanCount})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filtroEstadoPlan === 'con_plan'}
+              onClick={() => setFiltroEstadoPlan('con_plan')}
+              className={`parcial-tab ${filtroEstadoPlan === 'con_plan' ? 'active' : ''}`}
+            >
+              Con plan ({conPlanCount})
+            </button>
+          </div>
+
+          <div className="w-[220px]">
+            <SearchAutocompleteInput
+              value={busquedaAlumno}
+              onSearch={setBusquedaAlumno}
+              suggestions={estudiantesEnRiesgo.map((e) => `${e.apellidos} ${e.nombres}`)}
+              placeholder="Buscar estudiante..."
+            />
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-[#f4f4f5] p-1 rounded border border-[#e4e4e7]">
-          {materiaActual.parciales.map((p) => {
-            const activo = p.numero === parcialActual.numero
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setParcialNumero(p.numero)}
-                className={`px-3 py-1 rounded text-xs font-semibold transition cursor-pointer ${
-                  activo
-                    ? 'bg-white text-[#8B151A] shadow-xs'
-                    : 'text-[#52525b] hover:text-[#18181b]'
-                }`}
-              >
-                Parcial {p.numero}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Cabecera */}
-      <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-bold text-[#18181b]">
-            Tutoría Académica y Planes Remediales con IA
-          </h1>
-          <p className="text-xs text-[#52525b] mt-0.5">
-            {materiaActual.nombre} ({materiaActual.codigo}) • Parcial {parcialActual.numero} • Seguimiento personalizado (&lt; 7.00)
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="px-2.5 py-1 rounded bg-red-50 border border-red-200 font-semibold text-red-800">
-            {estudiantesEnRiesgo.length} en riesgo
-          </span>
-          <span className="px-2.5 py-1 rounded bg-emerald-50 border border-emerald-200 font-semibold text-emerald-800">
-            {conPlanCount} con plan
-          </span>
-          {sinPlanCount > 0 && (
-            <span className="px-2.5 py-1 rounded bg-amber-50 border border-amber-200 font-semibold text-amber-800">
-              {sinPlanCount} pendiente(s)
-            </span>
-          )}
+        <div className="toolbar-group">
+          <div className="parcial-tabs">
+            {materiaActual.parciales.map((p) => {
+              const activo = p.numero === parcialActual.numero
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setParcialNumero(p.numero)}
+                  className={`parcial-tab ${activo ? 'active' : ''}`}
+                >
+                  Parcial {p.numero}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
       {alertaPlan && (
-        <div role="alert" className="p-3.5 bg-amber-50 border-l-4 border-amber-500 rounded text-xs text-amber-800 font-medium">
+        <div role="alert" className="p-3.5 bg-[#f8f9fb] border-l-4 border-[#b45309] text-xs text-[#b45309] font-medium">
           {alertaPlan}
         </div>
       )}
 
       {mensajeExito && (
-        <div role="status" className="p-3.5 bg-emerald-50 border-l-4 border-emerald-600 rounded text-xs text-emerald-800 font-medium flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+        <div role="status" className="p-3.5 bg-[#f8f9fb] border-l-4 border-[#15803d] text-xs text-[#15803d] font-medium flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[#15803d] shrink-0" />
           <span>{mensajeExito}</span>
         </div>
       )}
@@ -593,8 +580,8 @@ export function TutoriaPage() {
       {cargandoCurso ? (
         <p role="status" className="text-xs text-[#52525b]">Cargando estudiantes y planes guardados...</p>
       ) : estudiantesEnRiesgo.length === 0 ? (
-        <div className="bg-white border border-[#e4e4e7] rounded-md p-6 text-center">
-          <p className="text-sm font-semibold text-[#18181b]">
+        <div className="em-card p-6 text-center">
+          <p className="text-sm font-semibold text-black">
             No hay estudiantes en riesgo académico en este parcial
           </p>
           <p className="text-xs text-[#71717a] mt-1">
@@ -602,60 +589,17 @@ export function TutoriaPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="tutoria-split">
           {/* Lista Interactiva de Estudiantes en Riesgo */}
-          <div className="bg-white border border-[#e4e4e7] rounded-md overflow-hidden self-start">
-            <div className="p-3.5 border-b border-[#e4e4e7] bg-[#f4f4f5] space-y-2.5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-[#18181b]">Estudiantes en Riesgo</h2>
-                <span className="text-[11px] text-[#71717a]">
-                  {estudiantesFiltrados.length} de {estudiantesEnRiesgo.length}
-                </span>
-              </div>
-
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-[#71717a] absolute left-2.5 top-2" />
-                <input
-                  type="text"
-                  value={busquedaAlumno}
-                  onChange={(e) => setBusquedaAlumno(e.target.value)}
-                  placeholder="Buscar estudiante..."
-                  className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-white border border-[#d4d4d8] rounded focus:outline-none focus:border-[#8B151A]"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-1 bg-[#e4e4e7] p-0.5 rounded text-[10px] font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstadoPlan('todos')}
-                  className={`py-1 rounded cursor-pointer transition ${
-                    filtroEstadoPlan === 'todos' ? 'bg-white text-[#8B151A]' : 'text-[#52525b]'
-                  }`}
-                >
-                  Todos ({estudiantesEnRiesgo.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstadoPlan('sin_plan')}
-                  className={`py-1 rounded cursor-pointer transition ${
-                    filtroEstadoPlan === 'sin_plan' ? 'bg-white text-[#8B151A]' : 'text-[#52525b]'
-                  }`}
-                >
-                  Sin plan ({sinPlanCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstadoPlan('con_plan')}
-                  className={`py-1 rounded cursor-pointer transition ${
-                    filtroEstadoPlan === 'con_plan' ? 'bg-white text-[#8B151A]' : 'text-[#52525b]'
-                  }`}
-                >
-                  Con plan ({conPlanCount})
-                </button>
-              </div>
+          <div className="em-card self-start">
+            <div className="em-card-head">
+              <h2 className="card-title">Estudiantes en Riesgo</h2>
+              <span className="text-[11px] font-semibold text-[#6b7280] tabular-nums">
+                {estudiantesFiltrados.length} de {estudiantesEnRiesgo.length}
+              </span>
             </div>
 
-            <div className="divide-y divide-[#e4e4e7] max-h-[540px] overflow-y-auto">
+            <div className="divide-y divide-[#eef0f3] max-h-[560px] overflow-y-auto">
               {estudiantesFiltrados.length === 0 ? (
                 <p className="p-4 text-xs text-center text-[#71717a]">
                   No hay coincidencias con el filtro actual.
@@ -671,8 +615,8 @@ export function TutoriaPage() {
                       key={est.estudianteId}
                       type="button"
                       onClick={() => setEstudianteActivoId(est.estudianteId)}
-                      className={`w-full text-left p-3.5 transition cursor-pointer ${
-                        seleccionado ? 'bg-[#fef2f2] border-l-4 border-l-[#8B151A]' : 'hover:bg-[#fafafa]'
+                      className={`list-row w-full text-left cursor-pointer block ${
+                        seleccionado ? 'bg-[#f3f4f6] border-l-[3px] border-l-[#18181b]' : 'hover:bg-[#fafafa]'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -684,32 +628,26 @@ export function TutoriaPage() {
                             enRiesgo={est.enRiesgo}
                             size="sm"
                           />
-                          <span className="text-xs font-bold text-[#18181b] truncate">
+                          <span className="text-xs font-bold text-black truncate">
                             {est.apellidos} {est.nombres}
                           </span>
                         </div>
-                        <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 text-[11px] font-bold shrink-0">
+                        <span className="badge-clean bad tabular-nums shrink-0">
                           {est.notaFinalParcial.toFixed(2)}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center justify-between gap-1 mt-1.5">
-                        <span className="text-[11px] text-[#71717a]">
+                        <span className="text-[11px] text-[#6b7280]">
                           {est.temasDeficientes.length} tema(s) crítico(s)
                         </span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           {tieneCita && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-100 text-sky-800">
-                              Cita
-                            </span>
+                            <span className="badge-clean">Cita</span>
                           )}
                           {tienePlan ? (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                              Plan guardado
-                            </span>
+                            <span className="badge-clean ok">Plan guardado</span>
                           ) : (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
-                              Pendiente
-                            </span>
+                            <span className="badge-clean warn">Pendiente</span>
                           )}
                         </div>
                       </div>
@@ -722,10 +660,10 @@ export function TutoriaPage() {
 
           {/* Detalle del Estudiante y Plan Remedial */}
           {estudianteActual && (
-            <div className="lg:col-span-2 space-y-4">
+            <div className="space-y-4">
               {/* Resumen de Brechas y Botón Generar Plan */}
-              <div className="bg-white border border-[#e4e4e7] rounded-md p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="em-card">
+                <div className="em-card-head">
                   <div className="flex items-center gap-3">
                     <AvatarEstudiante
                       nombres={estudianteActual.nombres}
@@ -735,16 +673,16 @@ export function TutoriaPage() {
                       size="lg"
                     />
                     <div>
-                      <h2 className="text-sm font-bold text-[#18181b]">
+                      <h2 className="card-title">
                         {estudianteActual.apellidos} {estudianteActual.nombres}
                       </h2>
-                      <p className="text-xs text-[#52525b]">
+                      <p className="card-sub">
                         Promedio Parcial {parcialActual.numero}:{' '}
-                        <strong className="text-red-700">
+                        <strong className="text-[#991b1b]">
                           {estudianteActual.notaFinalParcial.toFixed(2)} / 10.00
                         </strong>{' '}
                         • Brecha vs aprobación:{' '}
-                        <strong className="text-[#18181b]">
+                        <strong className="text-black">
                           -{(7.0 - estudianteActual.notaFinalParcial).toFixed(2)} pts
                         </strong>
                       </p>
@@ -755,9 +693,9 @@ export function TutoriaPage() {
                     type="button"
                     onClick={generarPlanConIa}
                     disabled={generandoIa}
-                    className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] disabled:opacity-60 text-white rounded text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                    className="btn-primary disabled:opacity-60"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <Sparkles className="w-3.5 h-3.5" />
                     {generandoIa
                       ? 'Generando...'
                       : planActual
@@ -766,126 +704,114 @@ export function TutoriaPage() {
                   </button>
                 </div>
 
-                {/* Cita de Tutoría Confirmada (si existe) */}
-                {citaActual && (
-                  <div className="p-3 bg-sky-50 border border-sky-200 rounded-md flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 text-sky-900">
-                      <CalendarCheck className="w-4 h-4 text-sky-700 shrink-0" />
-                      <span>
-                        <strong>Tutoría programada:</strong> {citaActual.modalidad} —{' '}
-                        {citaActual.fecha.replace('T', ' ')}
+                {/* Franja de Componentes 30/30/40 + Nota Final */}
+                <section className="stat-strip border-0 border-b border-[#e5e7eb]">
+                  {estudianteActual.componentes.map((comp) => (
+                    <div key={comp.tipo} className="stat-cell">
+                      <span className="stat-k">
+                        {NOMBRE_COMPONENTE[comp.tipo]} ({Math.round(comp.ponderacion * 100)}%)
                       </span>
+                      <span className={`stat-v ${comp.esDeficiente ? 'text-[#991b1b]' : 'text-[#15803d]'}`}>
+                        {comp.promedioComponente.toFixed(2)}
+                      </span>
+                      <div className="stat-note">sobre 10.00</div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setModalAgendar(true)}
-                      className="text-[11px] font-semibold text-sky-800 hover:underline cursor-pointer"
-                    >
-                      Reprogramar
-                    </button>
+                  ))}
+                  <div className="stat-cell">
+                    <span className="stat-k">Nota Final</span>
+                    <span className="stat-v text-[#991b1b]">
+                      {estudianteActual.notaFinalParcial.toFixed(2)}
+                    </span>
+                    <div className="stat-note">Mínimo 7.00</div>
                   </div>
-                )}
+                </section>
 
-                {/* Componentes 30/30/40 con barra visual */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-[#e4e4e7]">
-                  {estudianteActual.componentes.map((comp) => {
-                    const pct = Math.min(100, Math.max(0, (comp.promedioComponente / 10) * 100))
-                    return (
-                      <div
-                        key={comp.tipo}
-                        className={`p-3 rounded border text-xs space-y-1.5 ${
-                          comp.esDeficiente
-                            ? 'bg-red-50/40 border-red-200'
-                            : 'bg-emerald-50/30 border-emerald-200'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-[#52525b]">
-                            {NOMBRE_COMPONENTE[comp.tipo]} ({Math.round(comp.ponderacion * 100)}%)
-                          </span>
-                          <span className="font-bold text-xs text-[#18181b]">
-                            {comp.promedioComponente.toFixed(2)} / 10
-                          </span>
-                        </div>
-                        <div className="w-full h-1.5 bg-white rounded-full overflow-hidden border border-[#e4e4e7]">
-                          <div
-                            className={`h-full rounded-full ${
-                              comp.esDeficiente ? 'bg-red-600' : 'bg-emerald-600'
-                            }`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
+                <div className="em-card-body space-y-4">
+                  {/* Cita de Tutoría Confirmada (si existe) */}
+                  {citaActual && (
+                    <div className="p-3 bg-[#f8f9fb] border border-[#e5e7eb] flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 text-black">
+                        <CalendarCheck className="w-4 h-4 text-[#18181b] shrink-0" />
+                        <span>
+                          <strong>Tutoría programada:</strong> {citaActual.modalidad} —{' '}
+                          {citaActual.fecha.replace('T', ' ')}
+                        </span>
                       </div>
-                    )
-                  })}
-                </div>
+                      <button
+                        type="button"
+                        onClick={() => setModalAgendar(true)}
+                        className="link-btn"
+                      >
+                        Reprogramar
+                      </button>
+                    </div>
+                  )}
 
-                {/* Actividades específicas con nota < 7.00 */}
-                {actividadesDeficientesEstudiante.length > 0 && (
-                  <div className="pt-1 space-y-1.5">
-                    <p className="text-[11px] font-semibold text-[#52525b]">
-                      Actividades específicas por debajo de 7.00 ({actividadesDeficientesEstudiante.length}):
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {actividadesDeficientesEstudiante.map((act) => (
-                        <div
-                          key={act.itemEvaluacionId}
-                          className="p-2 rounded bg-[#fafafa] border border-[#e4e4e7] flex items-center justify-between gap-2 text-[11px]"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-[#18181b] truncate">{act.nombre}</p>
-                            <p className="text-[10px] text-[#71717a] truncate">
-                              {act.componenteNombre}
-                              {act.temas && act.temas.length > 0
-                                ? ` · ${act.temas.map((t) => t.nombre).join(', ')}`
-                                : ''}
-                            </p>
+                  {/* Actividades específicas con nota < 7.00 */}
+                  {actividadesDeficientesEstudiante.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#6b7280]">
+                        Actividades por debajo de 7.00 ({actividadesDeficientesEstudiante.length})
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {actividadesDeficientesEstudiante.map((act) => (
+                          <div
+                            key={act.itemEvaluacionId}
+                            className="p-2.5 bg-[#f8f9fb] border border-[#e5e7eb] flex items-center justify-between gap-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-semibold text-black truncate">{act.nombre}</p>
+                              <p className="text-[11px] text-[#6b7280] truncate">
+                                {act.componenteNombre}
+                                {act.temas && act.temas.length > 0
+                                  ? ` · ${act.temas.map((t) => t.nombre).join(', ')}`
+                                  : ''}
+                              </p>
+                            </div>
+                            <span className="badge-clean bad tabular-nums shrink-0">
+                              {(act.nota ?? 0).toFixed(2)}
+                            </span>
                           </div>
-                          <span className="font-mono font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded shrink-0">
-                            {(act.nota ?? 0).toFixed(2)}
-                          </span>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Trazabilidad Causal del Agente */}
-                {trazabilidadCausal && (
-                  <div className="p-3.5 bg-red-50/60 border border-red-200 rounded-md text-xs space-y-1.5 mt-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#8B151A] flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-[#8B151A]" />
-                        Trazabilidad Causal del Agente (Fase 2):
-                      </span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-800 px-2 py-0.5 rounded">
-                        Regla Cognitiva UTA
-                      </span>
+                  {/* Trazabilidad Causal del Agente */}
+                  {trazabilidadCausal && (
+                    <div className="p-3.5 bg-[#f8f9fb] border border-[#e5e7eb] text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-black flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-[#991b1b]" />
+                          Trazabilidad Causal del Agente (Fase 2)
+                        </span>
+                        <span className="badge-clean">Regla Cognitiva UTA</span>
+                      </div>
+                      <p className="text-[#3f3f46] text-xs leading-relaxed">
+                        <strong className="text-black">Clasificación:</strong>{' '}
+                        <span className="text-[#991b1b] font-semibold">{trazabilidadCausal.clasificacion}</span>
+                      </p>
+                      <p className="text-[#3f3f46] text-xs leading-relaxed">
+                        <strong className="text-black">Causa raíz:</strong> {trazabilidadCausal.causaRaiz}
+                      </p>
+                      <p className="text-[#3f3f46] text-xs leading-relaxed">
+                        <strong className="text-black">Temas críticos afectados:</strong>{' '}
+                        {estudianteActual.temasDeficientes.map((t) => t.nombreTema).join(', ') ||
+                          'Conceptos fundamentales de la unidad temática'}
+                      </p>
                     </div>
-                    <p className="text-[#3f3f46] text-[11.5px] leading-relaxed">
-                      <strong className="text-[#18181b]">Clasificación:</strong>{' '}
-                      <span className="text-red-700 font-semibold">{trazabilidadCausal.clasificacion}</span>
-                    </p>
-                    <p className="text-[#3f3f46] text-[11.5px] leading-relaxed">
-                      <strong className="text-[#18181b]">Causa raíz:</strong> {trazabilidadCausal.causaRaiz}
-                    </p>
-                    <p className="text-[#3f3f46] text-[11.5px] leading-relaxed">
-                      <strong className="text-[#18181b]">Temas críticos afectados:</strong>{' '}
-                      {estudianteActual.temasDeficientes.map((t) => t.nombreTema).join(', ') ||
-                        'Conceptos fundamentales de la unidad temática'}
-                    </p>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {/* Spinner Institucional mientras consulta Gemini */}
               {generandoIa && (
                 <div
                   role="status"
-                  className="bg-white border border-[#e4e4e7] rounded-md p-6 flex items-center gap-3"
+                  className="em-card p-6 flex items-center gap-3"
                 >
-                  <div className="h-5 w-5 rounded-full border-2 border-[#8B151A] border-t-transparent animate-spin shrink-0" />
-                  <p className="text-xs font-semibold text-[#18181b]">
+                  <div className="h-5 w-5 rounded-full border-2 border-[#18181b] border-t-transparent animate-spin shrink-0" />
+                  <p className="text-xs font-semibold text-black">
                     Analizando vacíos formativos con IA pedagógica...
                   </p>
                 </div>
@@ -893,11 +819,11 @@ export function TutoriaPage() {
 
               {/* Plan de Refuerzo Persistido / Generado */}
               {!generandoIa && !planActual && (
-                <div className="bg-white border border-dashed border-[#d4d4d8] rounded-md p-6 text-center space-y-2">
-                  <p className="text-xs font-semibold text-[#18181b]">
+                <div className="em-card border-dashed p-6 text-center space-y-2">
+                  <p className="text-xs font-semibold text-black">
                     Este estudiante aún no tiene un plan remedial guardado.
                   </p>
-                  <p className="text-[11px] text-[#71717a]">
+                  <p className="text-xs text-[#6b7280]">
                     Haz clic en &quot;Generar Plan con IA&quot; para diagnosticar los temas críticos y habilitar la edición tipo acta y exportación PDF.
                   </p>
                 </div>
@@ -908,48 +834,44 @@ export function TutoriaPage() {
                   {planActual.esFallback && (
                     <div
                       role="alert"
-                      className="p-3.5 bg-amber-50 border-l-4 border-amber-500 rounded text-xs text-amber-800 font-medium"
+                      className="p-3.5 bg-[#f8f9fb] border-l-4 border-[#b45309] text-xs text-[#b45309] font-medium"
                     >
                       Plan generado mediante motor de contingencia local (la API externa de IA no estuvo disponible).
                     </div>
                   )}
 
                   {/* Tarjeta de Diagnóstico Cualitativo */}
-                  <div className="bg-white border border-[#e4e4e7] rounded-md p-5 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-xs font-bold uppercase tracking-wide text-[#8B151A]">
-                        Diagnóstico Pedagógico Cualitativo
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] font-bold ${badgeRiesgo(
-                            planActual.nivelRiesgo
-                          )}`}
-                        >
+                  <div className="em-card">
+                    <div className="em-card-head">
+                      <h3 className="card-title">Diagnóstico Pedagógico Cualitativo</h3>
+                      <div className="flex items-center gap-3">
+                        <span className={`badge-clean ${planActual.nivelRiesgo === 'Alto' ? 'bad' : planActual.nivelRiesgo === 'Medio' ? 'warn' : 'ok'}`}>
                           Riesgo: {planActual.nivelRiesgo}
                         </span>
-                        <span className="text-[11px] text-[#71717a]">
+                        <span className="text-[11px] text-[#6b7280]">
                           {new Date(planActual.fechaGeneracion).toLocaleDateString()}
                         </span>
                         <button
                           type="button"
                           onClick={handleAbrirEditar}
-                          className="text-[11px] font-semibold text-[#8B151A] hover:underline flex items-center gap-1 cursor-pointer"
+                          className="link-btn flex items-center gap-1"
                         >
                           <Edit3 className="w-3 h-3" />
                           Editar Acta
                         </button>
                       </div>
                     </div>
-                    <p className="text-xs text-[#27272a] leading-relaxed">
-                      {planActual.diagnosticoGeneral}
-                    </p>
+                    <div className="em-card-body">
+                      <p className="text-xs text-[#27272a] leading-relaxed">
+                        {planActual.diagnosticoGeneral}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Acordeones Interactivos de Actividades por Tema */}
-                  <div className="bg-white border border-[#e4e4e7] rounded-md overflow-hidden">
-                    <div className="p-4 border-b border-[#e4e4e7] flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-sm font-bold text-[#18181b]">
+                  <div className="table-card">
+                    <div className="table-toolbar">
+                      <h3 className="card-title">
                         Plan de Acción por Tema ({planActual.detalles.length})
                       </h3>
                       <div className="flex items-center gap-2 text-[11px]">

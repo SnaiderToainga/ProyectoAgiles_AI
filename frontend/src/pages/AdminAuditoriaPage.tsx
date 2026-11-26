@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import clienteAxios from '../api/clienteAxios'
+import { SearchAutocompleteInput } from '../components/SearchAutocompleteInput'
 
 interface LogAcceso {
   id: number
@@ -65,98 +66,85 @@ export function AdminAuditoriaPage() {
   }, [logs, filtroUsuario, filtroResultado])
 
   return (
-    <div className="space-y-6">
-      {/* Migas de pan */}
-      <div className="text-xs text-[#71717a] flex items-center gap-1.5">
-        <span>Inicio</span>
-        <span>›</span>
-        <span>Auditoría de Seguridad</span>
-        <span>›</span>
-        <span className="font-semibold text-[#18181b]">Registro de Auditoría</span>
+    <div className="space-y-5">
+      {/* Franja de indicadores de seguridad */}
+      <section className="stat-strip">
+        <div className="stat-cell">
+          <span className="stat-k">Accesos Válidos Hoy</span>
+          <span className="stat-v text-[#15803d]">{kpis.totalValidos}</span>
+          <div className="stat-note">Tokens JWT emitidos</div>
+        </div>
+
+        <div className="stat-cell">
+          <span className="stat-k">Intentos Fallidos</span>
+          <span className="stat-v text-[#b45309]">{kpis.totalFallidos}</span>
+          <div className="stat-note">Contraseñas incorrectas</div>
+        </div>
+
+        <div className="stat-cell">
+          <span className="stat-k">Cuentas Bloqueadas (Status=0)</span>
+          <span className="stat-v text-[#991b1b]">{kpis.cuentasBloqueadas}</span>
+          <div className="stat-note">3 fallos consecutivos</div>
+        </div>
+
+        <div className="stat-cell">
+          <span className="stat-k">Usuarios Activos (Status=1)</span>
+          <span className="stat-v">{kpis.usuariosActivos}</span>
+          <div className="stat-note">En el sistema</div>
+        </div>
+      </section>
+
+      {/* Barra de controles */}
+      <div className="cadence-toolbar">
+        <div className="toolbar-group">
+          <div className="parcial-tabs" role="tablist" aria-label="Filtrar por resultado">
+            {[
+              { id: 'Todos', label: 'Todos los resultados' },
+              { id: 'Exitoso', label: 'Exitosos (200)' },
+              { id: 'Fallido', label: 'Fallidos / Bloqueos' },
+            ].map((op) => (
+              <button
+                key={op.id}
+                type="button"
+                role="tab"
+                aria-selected={filtroResultado === op.id}
+                onClick={() => setFiltroResultado(op.id)}
+                className={`parcial-tab ${filtroResultado === op.id ? 'active' : ''}`}
+              >
+                {op.label}
+              </button>
+            ))}
+          </div>
+          <div className="w-[260px]">
+            <SearchAutocompleteInput
+              value={filtroUsuario}
+              onSearch={setFiltroUsuario}
+              suggestions={logs.map((l) => l.emailIntentado || '').filter(Boolean)}
+              placeholder="Buscar por usuario o correo..."
+            />
+          </div>
+        </div>
+        <div className="toolbar-group">
+          <button type="button" onClick={cargarLogs} className="btn-secondary">
+            Actualizar Trazas
+          </button>
+        </div>
       </div>
 
-      {/* Encabezado */}
-      <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-        <div>
-          <h1 className="text-lg font-bold text-[#18181b]">
-            Registro de Auditoría de Accesos
-          </h1>
-          <p className="text-xs text-[#52525b] mt-0.5">
-            Monitoreo en tiempo real de inicios de sesión, intentos fallidos, bloqueos automáticos y direcciones IP
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={cargarLogs}
-          className="px-3.5 py-1.5 border border-[#d4d4d8] hover:bg-[#f4f4f5] text-[#18181b] rounded text-xs font-semibold transition"
-        >
-          Actualizar Trazas
-        </button>
-      </div>
-
-      {/* 4 Tarjetas de Métricas de Seguridad (Mockup Página 28) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-md p-4 border border-[#e4e4e7] shadow-sm">
-          <p className="text-xs font-semibold text-[#52525b]">Accesos Válidos Hoy</p>
-          <p className="text-2xl font-bold text-emerald-700 mt-1">{kpis.totalValidos}</p>
-          <p className="text-[11px] text-[#71717a] mt-0.5">Tokens JWT emitidos</p>
-        </div>
-
-        <div className="bg-white rounded-md p-4 border border-[#e4e4e7] shadow-sm">
-          <p className="text-xs font-semibold text-[#52525b]">Intentos Fallidos</p>
-          <p className="text-2xl font-bold text-amber-700 mt-1">{kpis.totalFallidos}</p>
-          <p className="text-[11px] text-[#71717a] mt-0.5">Contraseñas incorrectas</p>
-        </div>
-
-        <div className="bg-white rounded-md p-4 border border-red-300 bg-red-50/20 shadow-sm">
-          <p className="text-xs font-semibold text-red-700">Cuentas Bloqueadas (Status=0)</p>
-          <p className="text-2xl font-bold text-red-700 mt-1">{kpis.cuentasBloqueadas}</p>
-          <p className="text-[11px] text-red-600/80 mt-0.5">3 fallos consecutivos</p>
-        </div>
-
-        <div className="bg-white rounded-md p-4 border border-[#e4e4e7] shadow-sm">
-          <p className="text-xs font-semibold text-[#52525b]">Usuarios Activos (Status=1)</p>
-          <p className="text-2xl font-bold text-[#18181b] mt-1">{kpis.usuariosActivos}</p>
-          <p className="text-[11px] text-[#71717a] mt-0.5">En el sistema</p>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <div className="bg-white border border-[#e4e4e7] rounded-md p-4 flex flex-col sm:flex-row items-center gap-3">
-        <input
-          type="text"
-          value={filtroUsuario}
-          onChange={(e) => setFiltroUsuario(e.target.value)}
-          placeholder="Buscar por usuario o correo..."
-          className="w-full sm:flex-1 p-2 border border-[#d4d4d8] rounded text-xs text-[#18181b] focus:outline-none focus:ring-1 focus:ring-[#8B151A]"
-        />
-
-        <select
-          value={filtroResultado}
-          onChange={(e) => setFiltroResultado(e.target.value)}
-          className="w-full sm:w-40 p-2 border border-[#d4d4d8] rounded text-xs text-[#18181b] bg-white"
-        >
-          <option value="Todos">Todos los resultados</option>
-          <option value="Exitoso">Exitosos (200)</option>
-          <option value="Fallido">Fallidos / Bloqueos</option>
-        </select>
-      </div>
-
-      {/* Tabla de Auditoría (Mockup Página 28) */}
-      <div className="bg-white border border-[#e4e4e7] rounded-md overflow-hidden shadow-sm">
+      {/* Tabla de Auditoría */}
+      <div className="table-card">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-[#f4f4f5] text-[#52525b] font-bold border-b border-[#e4e4e7] uppercase tracking-wider text-[11px]">
+          <table className="em-table">
+            <thead>
               <tr>
-                <th className="px-4 py-3">Fecha y Hora</th>
-                <th className="px-4 py-3">Usuario / Identidad</th>
-                <th className="px-4 py-3">Evento / Detalle</th>
-                <th className="px-4 py-3">IP Origen</th>
-                <th className="px-4 py-3 text-right">Resultado</th>
+                <th>Fecha y Hora</th>
+                <th>Usuario / Identidad</th>
+                <th>Evento / Detalle</th>
+                <th>IP Origen</th>
+                <th className="text-right">Resultado</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#e4e4e7]">
+            <tbody>
               {cargando ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-[#71717a]">
@@ -173,32 +161,26 @@ export function AdminAuditoriaPage() {
                 logsFiltrados.map((log) => {
                   const esBloqueo = log.detalle?.toLowerCase().includes('bloqueada')
                   return (
-                    <tr key={log.id} className="hover:bg-[#fafafa] transition">
-                      <td className="px-4 py-3 text-[#52525b] whitespace-nowrap">
+                    <tr key={log.id}>
+                      <td className="text-[#52525b] whitespace-nowrap">
                         {new Date(log.fechaRegistro).toLocaleString()}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-[#18181b]">
+                      <td className="font-semibold text-black">
                         {log.emailIntentado || `Usuario #${log.usuarioId}`}
                       </td>
-                      <td className="px-4 py-3 text-[#3f3f46]">
+                      <td className="text-[#3f3f46]">
                         {log.detalle}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-[#71717a]">
+                      <td className="font-mono text-[11px] text-[#71717a]">
                         {log.ipOrigen || '127.0.0.1'}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="text-right">
                         {log.exitoso ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                            Exitoso (200)
-                          </span>
+                          <span className="badge-clean ok">Exitoso (200)</span>
                         ) : esBloqueo ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white">
-                            Bloqueo Seguridad
-                          </span>
+                          <span className="badge-clean bad">Bloqueo Seguridad</span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                            Fallido (401)
-                          </span>
+                          <span className="badge-clean warn">Fallido (401)</span>
                         )}
                       </td>
                     </tr>
@@ -209,8 +191,8 @@ export function AdminAuditoriaPage() {
           </table>
         </div>
 
-        <div className="p-4 bg-[#fafafa] border-t border-[#e4e4e7] flex items-center justify-between text-xs text-[#71717a]">
-          <span>Mostrando <strong>{logsFiltrados.length}</strong> eventos registrados</span>
+        <div className="px-4 py-3 bg-[#f8f9fb] border-t border-[#e5e7eb] flex items-center justify-between text-xs text-[#6b7280]">
+          <span>Mostrando <strong className="text-black">{logsFiltrados.length}</strong> eventos registrados</span>
           <span>Seguridad Institucional FISEI</span>
         </div>
       </div>

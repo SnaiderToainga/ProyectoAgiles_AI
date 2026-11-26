@@ -3,18 +3,8 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useChatIa } from '../context/ChatIaContext'
 import clienteAxios from '../api/clienteAxios'
-import { RendimientoBarChart } from '../components/RendimientoBarChart'
-import { AvatarEstudiante } from '../components/AvatarEstudiante'
-import {
-  Sparkles,
-  BookOpen,
-  AlertTriangle,
-  Award,
-  ArrowRight,
-  Users,
-  MessageSquareCode,
-} from 'lucide-react'
-import type { MateriaDto, ResumenAcademicoEstudianteDto } from '../types/academico'
+import { RendimientoBarChart, type PuntoTendencia } from '../components/RendimientoBarChart'
+import { NOMBRE_COMPONENTE, type MateriaDto, type ResumenAcademicoEstudianteDto } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
 
 interface ResumenMateria {
@@ -348,16 +338,13 @@ const MATERIAS_PILOTO_FALLBACK: ResumenMateria[] = [
 export function DashboardPage() {
   const { user } = useAuth()
   const {
-    abierto: chatAbierto,
-    setAbierto: setChatAbierto,
-    toggleChat,
+    materiaActivaId: materiaContextoId,
     actualizarContextoChat,
     abrirChatConEstudiante,
   } = useChatIa()
   const [resumenes, setResumenes] = useState<ResumenMateria[]>([])
   const [materiasOriginales, setMateriasOriginales] = useState<MateriaDto[]>([])
   const [materiaActivaId, setMateriaActivaId] = useState<number | null>(null)
-  const [tabPrioridad, setTabPrioridad] = useState<'riesgo' | 'temas'>('riesgo')
   const [cargando, setCargando] = useState(true)
   const [esModoFallback, setEsModoFallback] = useState(false)
   // Docente recién creado: aún no tiene materias importadas desde Moodle.
@@ -436,31 +423,63 @@ export function DashboardPage() {
     }
   }, [])
 
-  const kpis = useMemo(() => {
-    const totalEstudiantes = resumenes.reduce((acc, r) => acc + r.totalEstudiantes, 0)
-    const materiasConNotas = resumenes.filter((r) => r.totalEstudiantes > 0)
-    const promedioGeneral =
-      materiasConNotas.length > 0
-        ? materiasConNotas.reduce((acc, r) => acc + r.promedio, 0) / materiasConNotas.length
-        : 0
-    const totalEnRiesgo = resumenes.reduce((acc, r) => acc + r.enRiesgo, 0)
-
-    return {
-      totalEstudiantes,
-      promedioGeneral: promedioGeneral.toFixed(2),
-      totalEnRiesgo,
-    }
-  }, [resumenes])
+  const [parcialNum, setParcialNum] = useState(1)
+  const [rendimientoExtra, setRendimientoExtra] = useState<{
+    clave: string
+    lista: ResumenAcademicoEstudianteDto[]
+  } | null>(null)
 
   const resumenSeleccionado = useMemo(() => {
     if (!materiaActivaId && resumenes.length > 0) return resumenes[0]
     return resumenes.find((r) => r.materia.id === materiaActivaId) || resumenes[0] || null
   }, [resumenes, materiaActivaId])
 
-  const estudiantesParaGrafico = useMemo(() => {
-    if (!resumenSeleccionado) return []
-    return resumenSeleccionado.estudiantes
+  // Sincroniza la asignatura elegida en el menú lateral con el Dashboard.
+  useEffect(() => {
+    if (materiaContextoId && resumenes.some((r) => r.materia.id === materiaContextoId)) {
+      setMateriaActivaId(materiaContextoId)
+    }
+  }, [materiaContextoId, resumenes])
+
+  const parcialCargado = useMemo(() => {
+    if (!resumenSeleccionado) return null
+    const ps = resumenSeleccionado.materia.parciales
+    return ps.find((p) => p.numero === 1) || ps[0] || null
   }, [resumenSeleccionado])
+
+  const parcialActual = useMemo(() => {
+    if (!resumenSeleccionado) return null
+    const ps = resumenSeleccionado.materia.parciales
+    return ps.find((p) => p.numero === parcialNum) || ps[0] || null
+  }, [resumenSeleccionado, parcialNum])
+
+  const claveParcial =
+    resumenSeleccionado && parcialActual ? `${resumenSeleccionado.materia.id}-${parcialActual.id}` : ''
+
+  useEffect(() => {
+    if (!resumenSeleccionado || !parcialActual || !parcialCargado) return
+    if (parcialActual.id === parcialCargado.id) return
+    let vigente = true
+    clienteAxios
+      .get<ResumenAcademicoEstudianteDto[]>(
+        `/academico/materias/${resumenSeleccionado.materia.id}/parciales/${parcialActual.id}/rendimiento`
+      )
+      .then(({ data }) => {
+        if (vigente) setRendimientoExtra({ clave: claveParcial, lista: data })
+      })
+      .catch(() => {
+        if (vigente) setRendimientoExtra({ clave: claveParcial, lista: [] })
+      })
+    return () => {
+      vigente = false
+    }
+  }, [resumenSeleccionado, parcialActual, parcialCargado, claveParcial])
+
+  const estudiantesParaGrafico = useMemo(() => {
+    if (!resumenSeleccionado || !parcialActual || !parcialCargado) return []
+    if (parcialActual.id === parcialCargado.id) return resumenSeleccionado.estudiantes
+    return rendimientoExtra?.clave === claveParcial ? rendimientoExtra.lista : []
+  }, [resumenSeleccionado, parcialActual, parcialCargado, rendimientoExtra, claveParcial])
 
   useEffect(() => {
     if (cargando) return
@@ -485,39 +504,72 @@ export function DashboardPage() {
     actualizarContextoChat,
   ])
 
-  const estudiantesEnRiesgoLista = useMemo(
-    () =>
-      [...estudiantesParaGrafico]
-        .filter((e) => e.enRiesgo || e.notaFinalParcial < 7.0)
-        .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial),
-    [estudiantesParaGrafico]
-  )
-
-  const temasCriticosLista = useMemo(() => {
-    const mapa = new Map<string, { nombre: string; cantidad: number; peorNota: number }>()
+  const actividades = useMemo(() => {
+    const mapa = new Map<number, { id: number; nombre: string; tipo: number; notas: number[] }>()
     for (const est of estudiantesParaGrafico) {
-      for (const t of est.temasDeficientes) {
-        const nota = t.notaObtenida ?? est.notaFinalParcial
-        const prev = mapa.get(t.nombreTema)
-        if (prev) {
-          prev.cantidad += 1
-          if (nota < prev.peorNota) prev.peorNota = nota
-        } else {
-          mapa.set(t.nombreTema, { nombre: t.nombreTema, cantidad: 1, peorNota: nota })
+      for (const comp of est.componentes) {
+        for (const ev of comp.evaluaciones) {
+          const item = mapa.get(ev.itemEvaluacionId) ?? {
+            id: ev.itemEvaluacionId,
+            nombre: ev.nombre,
+            tipo: ev.tipo,
+            notas: [] as number[],
+          }
+          if (ev.nota !== null) item.notas.push(ev.nota)
+          mapa.set(ev.itemEvaluacionId, item)
         }
       }
     }
-    return [...mapa.values()].sort((a, b) => b.cantidad - a.cantidad || a.peorNota - b.peorNota)
+    return [...mapa.values()]
   }, [estudiantesParaGrafico])
+
+  const tendencia: PuntoTendencia[] = useMemo(
+    () =>
+      actividades
+        .filter((a) => a.notas.length > 0)
+        .map((a) => ({
+          nombre: a.nombre,
+          promedio: a.notas.reduce((x, y) => x + y, 0) / a.notas.length,
+        })),
+    [actividades]
+  )
+
+  const resumen = useMemo(() => {
+    const total = estudiantesParaGrafico.length
+    const prom = (tipo: number) => {
+      if (total === 0) return 0
+      const vals = estudiantesParaGrafico.map(
+        (e) => e.componentes.find((c) => c.tipo === tipo)?.promedioComponente ?? 0
+      )
+      return vals.reduce((a, b) => a + b, 0) / vals.length
+    }
+    const promedio =
+      total > 0 ? estudiantesParaGrafico.reduce((a, e) => a + e.notaFinalParcial, 0) / total : 0
+    const aprobados = estudiantesParaGrafico.filter((e) => e.notaFinalParcial >= 7).length
+    const riesgo = [...estudiantesParaGrafico]
+      .filter((e) => e.enRiesgo || e.notaFinalParcial < 7)
+      .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
+    return {
+      total,
+      promedio,
+      aprobados,
+      pctAprob: total > 0 ? Math.round((aprobados / total) * 100) : 0,
+      riesgo,
+      criticos: riesgo.filter((e) => e.notaFinalParcial < 4).length,
+      t: prom(1).toFixed(2),
+      a: prom(2).toFixed(2),
+      e: prom(3).toFixed(2),
+    }
+  }, [estudiantesParaGrafico])
+
+  const compNota = (est: ResumenAcademicoEstudianteDto, tipo: number) =>
+    (est.componentes.find((c) => c.tipo === tipo)?.promedioComponente ?? 0).toFixed(2)
 
   if (!cargando && sinMaterias) {
     return (
-      <div className="space-y-5 min-w-0">
-        <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-lg p-4 sm:p-5 shadow-xs">
-          <h1 className="text-lg font-bold text-[#18181b]">Bienvenido, {user?.nombreCompleto || 'Docente'}</h1>
-          <p className="text-xs text-[#52525b] mt-0.5">
-            Período Académico: Octubre 2026 - Febrero 2027 | Ingeniería en Software (FISEI UTA)
-          </p>
+      <div className="space-y-4 min-w-0">
+        <div className="cadence-header">
+          <h1 className="cadence-title">Bienvenido, {user?.nombreCompleto || 'Docente'}</h1>
         </div>
         <PrimeraSincronizacionMoodle />
       </div>
@@ -525,470 +577,185 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="space-y-5 min-w-0">
-      <div className="space-y-5 min-w-0">
-        {/* Encabezado Docente */}
-        <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-lg p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xs">
-          <div>
-            <h1 className="text-lg font-bold text-[#18181b]">
-              Bienvenido, {user?.nombreCompleto || 'Docente'}
-            </h1>
-            <p className="text-xs text-[#52525b] mt-0.5">
-              Período Académico: Octubre 2026 - Febrero 2027 | Ingeniería en Software (FISEI UTA)
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              to="/catalogo"
-              className="px-3 py-1.5 border border-[#e4e4e7] hover:border-[#8B151A] text-[#18181b] hover:text-[#8B151A] rounded text-xs font-semibold transition"
-            >
-              Catálogo Curricular
-            </Link>
-            <Link
-              to="/evaluaciones"
-              className="px-3.5 py-1.5 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition"
-            >
-              Evaluaciones
-            </Link>
-            <Link
-              to="/tutoria"
-              className="px-3 py-1.5 border border-[#e4e4e7] hover:bg-[#f4f4f5] text-[#18181b] rounded text-xs font-semibold transition"
-            >
-              Tutoría IA
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                if (esModoFallback) return
-                toggleChat()
-              }}
-              disabled={esModoFallback}
-              className={`px-3.5 py-1.5 rounded text-xs font-semibold shadow-sm transition flex items-center gap-1.5 ${
-                esModoFallback
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : chatAbierto
-                  ? 'bg-[#18181b] text-white cursor-pointer'
-                  : 'bg-gradient-to-r from-[#8B151A] to-[#6E1014] text-white hover:shadow cursor-pointer'
-              }`}
-              title={
-                esModoFallback
-                  ? 'Asistente IA deshabilitado con datos demostrativos'
-                  : chatAbierto
-                  ? 'Ocultar panel de Asistente IA'
-                  : 'Abrir Asistente Tutor IA'
-              }
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              {chatAbierto && !esModoFallback ? 'Ocultar IA' : 'Asistente Tutor IA'}
-            </button>
-          </div>
-        </div>
-
-        {esModoFallback && (
-          <div
-            role="status"
-            className="p-3 bg-amber-50 border-l-4 border-amber-500 rounded text-xs text-amber-800 flex items-center justify-between"
-          >
-            <span>
-              <b>Datos demostrativos cargados:</b> Mostrando las calificaciones de las 2 asignaturas piloto (12 estudiantes). Inicia el backend (.NET en puerto :5000) para sincronización directa con Moodle.
-            </span>
-            <span className="text-[11px] font-semibold text-amber-900 bg-amber-100 px-2 py-0.5 rounded shrink-0 ml-2">
-              Piloto UTA Activo
-            </span>
+    <div className="space-y-4 min-w-0">
+      <div className="cadence-header">
+        <h1 className="cadence-title">Bienvenido, {user?.nombreCompleto || 'Docente'}</h1>
+        {resumenSeleccionado && (
+          <div className="parcial-tabs">
+            {resumenSeleccionado.materia.parciales.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`parcial-tab ${parcialActual?.numero === p.numero ? 'active' : ''}`}
+                onClick={() => setParcialNum(p.numero)}
+              >
+                Parcial {p.numero}
+              </button>
+            ))}
           </div>
         )}
+      </div>
 
-        {/* KPIs Globales Compactos */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white rounded-lg p-4 border border-[#e4e4e7] shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-semibold text-[#52525b]">Total Estudiantes Evaluados</p>
-              <p className="text-2xl font-bold text-[#18181b] mt-0.5">
-                {cargando ? '...' : kpis.totalEstudiantes}
-              </p>
-              <p className="text-[11px] text-[#71717a] mt-0.5">
-                {resumenes.length} asignatura(s) activas
-              </p>
-            </div>
-            <div className="p-2.5 rounded-lg bg-[#f4f4f5] text-[#52525b]">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
+      {esModoFallback && (
+        <div role="status" className="p-3 bg-[#fafafa] border border-[#e5e7eb] text-xs text-black">
+          <b>Datos demostrativos cargados.</b> Inicia el backend (.NET en el puerto 5000) para sincronizar
+          con Moodle.
+        </div>
+      )}
 
-          <div className="bg-white rounded-lg p-4 border border-[#e4e4e7] shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-semibold text-[#52525b]">Promedio Ponderado General</p>
-              <p className="text-2xl font-bold text-[#18181b] mt-0.5">
-                {cargando ? '...' : kpis.promedioGeneral}{' '}
-                <span className="text-xs font-normal text-[#71717a]">/ 10.00</span>
-              </p>
-              <p className="text-[11px] text-[#71717a] mt-0.5">Modelo 30% Tareas · 30% APE · 40% Examen</p>
-            </div>
-            <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-700">
-              <Award className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div
-            className={`bg-white rounded-lg p-4 border shadow-xs flex items-center justify-between ${
-              kpis.totalEnRiesgo > 0 ? 'border-red-300 bg-red-50/20' : 'border-[#e4e4e7]'
-            }`}
-          >
-            <div>
-              <p className="text-[11px] font-semibold text-[#8B151A]">En Riesgo Académico (&lt; 7.00)</p>
-              <p className="text-2xl font-bold text-[#8B151A] mt-0.5">
-                {cargando ? '...' : kpis.totalEnRiesgo}
-              </p>
-              {kpis.totalEnRiesgo > 0 ? (
-                <Link
-                  to="/tutoria"
-                  className="inline-flex items-center gap-1 mt-0.5 text-[11px] font-semibold text-[#8B151A] hover:underline"
-                >
-                  Gestionar planes IA <ArrowRight className="w-3 h-3" />
-                </Link>
-              ) : (
-                <p className="text-[11px] text-[#71717a] mt-0.5">Sin alertas activas</p>
-              )}
-            </div>
-            <div className="p-2.5 rounded-lg bg-red-100 text-[#8B151A]">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
+      <section className="stat-strip">
+        <div className="stat-cell">
+          <span className="stat-k">Estudiantes</span>
+          <span className="stat-v">{cargando ? '...' : resumen.total}</span>
+          <div className="stat-note">
+            {actividades.length} actividades en Parcial {parcialActual?.numero ?? 1}
           </div>
         </div>
+        <div className="stat-cell">
+          <span className="stat-k">Promedio</span>
+          <span className="stat-v">
+            {resumen.promedio.toFixed(2)}
+            <span style={{ fontSize: 12, fontWeight: 500 }}>/10</span>
+          </span>
+          <div className="stat-note tabular-nums">
+            T {resumen.t} · A {resumen.a} · E {resumen.e}
+          </div>
+        </div>
+        <div className="stat-cell">
+          <span className="stat-k">Aprobación</span>
+          <span className="stat-v" style={{ color: 'var(--green)' }}>
+            {resumen.pctAprob}%
+          </span>
+          <div className="stat-note">
+            {resumen.aprobados} de {resumen.total} aprobados
+          </div>
+        </div>
+        <div className="stat-cell">
+          <span className="stat-k">En riesgo (&lt; 7.00)</span>
+          <span className="stat-v" style={{ color: resumen.riesgo.length ? 'var(--uta)' : '#000' }}>
+            {resumen.riesgo.length}
+          </span>
+          <div className="stat-note">
+            {resumen.criticos} crítico{resumen.criticos === 1 ? '' : 's'} (&lt; 4.00)
+          </div>
+        </div>
+      </section>
 
-        {/* Fila Superior estilo "Active Courses": Selección rápida de Asignatura Activa */}
-        {resumenes.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#52525b]">
-                Asignaturas Activas (Selecciona para analizar)
-              </h2>
-              <Link to="/evaluaciones" className="text-xs font-semibold text-[#8B151A] hover:underline">
-                Ver evaluaciones →
-              </Link>
-            </div>
+      <section className="dash-grid-mid">
+        <RendimientoBarChart
+          estudiantes={estudiantesParaGrafico}
+          materiaNombre={resumenSeleccionado?.materia.nombre}
+          cargando={cargando}
+          tendencia={tendencia}
+          onSeleccionarEstudiante={(est) => abrirChatConEstudiante(est, resumenSeleccionado?.materia.id)}
+        />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {resumenes.map((r) => {
-                const activa = r.materia.id === resumenSeleccionado?.materia.id
-                const aprobados = Math.max(0, r.totalEstudiantes - r.enRiesgo)
-                const tasaPct =
-                  r.totalEstudiantes > 0 ? Math.round((aprobados / r.totalEstudiantes) * 100) : 0
+        <div className="em-card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="em-card-head">
+            <h2 className="card-title">Actividades Evaluadas · Parcial {parcialActual?.numero ?? 1}</h2>
+            <Link to="/evaluaciones" className="link-btn">
+              Ver matriz →
+            </Link>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
+            {actividades.length === 0 ? (
+              <p className="text-xs text-black">Aún no hay actividades publicadas en este parcial.</p>
+            ) : (
+              actividades.map((ev) => {
+                const avg = ev.notas.length ? ev.notas.reduce((a, b) => a + b, 0) / ev.notas.length : 0
                 return (
-                  <button
-                    key={r.materia.id}
-                    type="button"
-                    onClick={() => setMateriaActivaId(r.materia.id)}
-                    className={`text-left bg-white rounded-lg p-4 border transition cursor-pointer shadow-xs space-y-3 ${
-                      activa
-                        ? 'border-[#8B151A] ring-1 ring-[#8B151A]/30'
-                        : 'border-[#e4e4e7] hover:border-[#a1a1aa]'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div
-                          className={`p-2 rounded-md shrink-0 ${
-                            activa ? 'bg-[#8B151A] text-white' : 'bg-[#f4f4f5] text-[#52525b]'
-                          }`}
-                        >
-                          <BookOpen className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-bold text-[#18181b] truncate">
-                            {r.materia.nombre}
-                          </h3>
-                          <p className="text-[11px] text-[#71717a]">
-                            {r.materia.codigo} · {r.totalEstudiantes} estudiante(s)
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#f4f4f5] border border-[#e4e4e7] text-[#18181b] shrink-0">
-                        Prom: {r.promedio.toFixed(2)}
-                      </span>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-[#52525b]">Tasa de aprobación</span>
-                        <span className="font-bold text-[#18181b]">
-                          {tasaPct}% ({r.enRiesgo} en riesgo)
-                        </span>
-                      </div>
-                      <div className="w-full h-2 bg-[#f4f4f5] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            tasaPct >= 75 ? 'bg-emerald-600' : tasaPct >= 50 ? 'bg-blue-600' : 'bg-amber-500'
-                          }`}
-                          style={{ width: `${tasaPct}%` }}
-                        />
+                  <div key={ev.id} className="list-row">
+                    <div style={{ minWidth: 0 }}>
+                      <div className="k-name">{ev.nombre}</div>
+                      <div className="k-sub">
+                        {NOMBRE_COMPONENTE[ev.tipo as 1 | 2 | 3] ?? 'Sin clasificar'} · {ev.notas.length}/
+                        {resumen.total} entregas
                       </div>
                     </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Fila Central 2 Columnas: Gráficos de Rendimiento + Lista Prioritaria (estilo Uxera) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          <div className="lg:col-span-7">
-            <RendimientoBarChart
-              estudiantes={estudiantesParaGrafico}
-              materiaNombre={
-                resumenSeleccionado
-                  ? `${resumenSeleccionado.materia.codigo} - ${resumenSeleccionado.materia.nombre}`
-                  : 'Asignatura'
-              }
-              cargando={cargando}
-              onSeleccionarEstudiante={(est) => {
-                abrirChatConEstudiante(est, resumenSeleccionado?.materia.id)
-              }}
-            />
-          </div>
-
-          {/* Tarjeta "Seguimiento Prioritario" con pestañas En Riesgo / Temas Críticos */}
-          <div className="lg:col-span-5 bg-white rounded-lg border border-[#e4e4e7] overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-[#e4e4e7] space-y-2.5">
-              <div className="flex items-center justify-between">
-                <h2 className="font-bold text-sm text-[#18181b]">Seguimiento Prioritario</h2>
-                <span className="text-[11px] font-semibold text-[#8B151A]">
-                  {resumenSeleccionado?.materia.codigo || 'Curso'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 bg-[#f4f4f5] p-0.5 rounded-md text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setTabPrioridad('riesgo')}
-                  className={`py-1 rounded transition cursor-pointer ${
-                    tabPrioridad === 'riesgo'
-                      ? 'bg-white text-[#8B151A] shadow-xs'
-                      : 'text-[#71717a] hover:text-[#18181b]'
-                  }`}
-                >
-                  En Riesgo ({estudiantesEnRiesgoLista.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTabPrioridad('temas')}
-                  className={`py-1 rounded transition cursor-pointer ${
-                    tabPrioridad === 'temas'
-                      ? 'bg-white text-[#8B151A] shadow-xs'
-                      : 'text-[#71717a] hover:text-[#18181b]'
-                  }`}
-                >
-                  Temas Críticos ({temasCriticosLista.length})
-                </button>
-              </div>
-            </div>
-
-            <div className="divide-y divide-[#e4e4e7] max-h-[410px] overflow-y-auto">
-              {tabPrioridad === 'riesgo' ? (
-                estudiantesEnRiesgoLista.length === 0 ? (
-                  <p className="p-6 text-center text-xs text-[#71717a]">
-                    No hay estudiantes por debajo de 7.00 en esta asignatura.
-                  </p>
-                ) : (
-                  estudiantesEnRiesgoLista.map((est) => (
-                    <div key={est.estudianteId} className="p-3.5 hover:bg-[#fafafa] transition space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <AvatarEstudiante
-                            nombres={est.nombres}
-                            apellidos={est.apellidos}
-                            fotoUrl={est.fotoUrl}
-                            enRiesgo={true}
-                            size="sm"
-                          />
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-[#18181b] truncate">
-                              {est.apellidos} {est.nombres}
-                            </p>
-                            <p className="text-[10px] text-[#71717a] truncate">
-                              {est.temasDeficientes.length > 0
-                                ? est.temasDeficientes.map((t) => t.nombreTema).join(', ')
-                                : 'Sin temas vinculados'}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 shrink-0">
-                          {est.notaFinalParcial.toFixed(2)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-3 text-[11px] font-semibold">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            abrirChatConEstudiante(est, resumenSeleccionado?.materia.id)
-                          }}
-                          disabled={esModoFallback}
-                          className="text-[#52525b] hover:text-[#18181b] cursor-pointer disabled:opacity-50"
-                        >
-                          Consultar IA
-                        </button>
-                        <Link
-                          to={`/tutoria?materia=${resumenSeleccionado?.materia.id || 1}&estudiante=${est.estudianteId}`}
-                          className="text-[#8B151A] hover:underline"
-                        >
-                          Plan Tutoría →
-                        </Link>
-                      </div>
-                    </div>
-                  ))
-                )
-              ) : temasCriticosLista.length === 0 ? (
-                <p className="p-6 text-center text-xs text-[#71717a]">
-                  Sin temas con notas deficientes registradas.
-                </p>
-              ) : (
-                temasCriticosLista.map((tema) => (
-                  <div key={tema.nombre} className="p-3.5 flex items-center justify-between gap-3 hover:bg-[#fafafa]">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-[#18181b] truncate">{tema.nombre}</p>
-                      <p className="text-[10px] text-[#71717a]">
-                        Menor nota observada: <strong className="text-red-700">{tema.peorNota.toFixed(2)}</strong>
-                      </p>
-                    </div>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 shrink-0">
-                      {tema.cantidad} alumno(s)
+                    <span className={`badge-clean tabular-nums ${avg < 7 ? 'risk' : 'neutral'}`}>
+                      {avg.toFixed(2)}
                     </span>
                   </div>
-                ))
-              )}
-            </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="table-card">
+        <div className="table-toolbar">
+          <div>
+            <span className="card-title">Estudiantes en Riesgo ({resumen.riesgo.length})</span>
+            <span style={{ fontSize: 12, marginLeft: 10 }}>
+              Promedio menor a 7.00 en Parcial {parcialActual?.numero ?? 1}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Link to="/evaluaciones" className="btn-secondary">
+              Exportar Matriz PDF
+            </Link>
+            <Link to="/tutoria" className="btn-primary">
+              Abrir Tutoría
+            </Link>
           </div>
         </div>
 
-        {/* Tabla Inferior estilo "My Courses List": Avatares apilados, barra segmentada y promedio */}
-        <div className="bg-white rounded-lg border border-[#e4e4e7] overflow-hidden shadow-xs">
-          <div className="p-4 border-b border-[#e4e4e7] flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-bold text-sm text-[#18181b]">Resumen por Asignatura</h2>
-            <button
-              type="button"
-              onClick={() => setChatAbierto(true)}
-              disabled={esModoFallback}
-              className="text-xs font-semibold text-[#8B151A] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            >
-              <MessageSquareCode className="w-3.5 h-3.5" />
-              Preguntar al Asistente IA sobre estas notas →
-            </button>
-          </div>
-
+        {resumen.riesgo.length === 0 ? (
+          <p className="p-5 text-xs text-black">No hay estudiantes por debajo de 7.00 en este parcial.</p>
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#f4f4f5] text-[#52525b] border-b border-[#e4e4e7]">
+            <table className="em-table">
+              <thead>
                 <tr>
-                  <th className="py-2.5 px-4 font-semibold">Asignatura</th>
-                  <th className="py-2.5 px-4 font-semibold">Participantes</th>
-                  <th className="py-2.5 px-4 font-semibold">Aprobación</th>
-                  <th className="py-2.5 px-4 font-semibold text-right">Promedio</th>
-                  <th className="py-2.5 px-4 font-semibold text-center">Acciones</th>
+                  <th>Estudiante</th>
+                  <th>Tema Crítico</th>
+                  <th className="num-col">Tareas 30%</th>
+                  <th className="num-col">APE 30%</th>
+                  <th className="num-col">Examen 40%</th>
+                  <th className="num-col">Nota Final</th>
+                  <th className="num-col">Acción</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#e4e4e7]">
-                {cargando ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 px-4 text-center text-[#71717a]">
-                      Cargando asignaturas...
+              <tbody>
+                {resumen.riesgo.map((est) => (
+                  <tr key={est.estudianteId}>
+                    <td style={{ fontWeight: 600 }}>
+                      {est.apellidos} {est.nombres}
+                    </td>
+                    <td style={{ fontSize: 12.5 }}>
+                      {est.temasDeficientes[0]?.nombreTema || 'Evaluación parcial'}
+                    </td>
+                    <td className="num-col tabular-nums">{compNota(est, 1)}</td>
+                    <td className="num-col tabular-nums">{compNota(est, 2)}</td>
+                    <td className="num-col tabular-nums">{compNota(est, 3)}</td>
+                    <td className="num-col">
+                      <span className="badge-clean risk tabular-nums">{est.notaFinalParcial.toFixed(2)}</span>
+                    </td>
+                    <td className="num-col">
+                      <Link
+                        to={`/tutoria?materia=${resumenSeleccionado?.materia.id || 1}&estudiante=${est.estudianteId}`}
+                        className="link-btn"
+                        style={{ marginRight: 10 }}
+                      >
+                        Tutoría
+                      </Link>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        style={{ color: 'var(--uta)' }}
+                        onClick={() => abrirChatConEstudiante(est, resumenSeleccionado?.materia.id)}
+                      >
+                        IA
+                      </button>
                     </td>
                   </tr>
-                ) : resumenes.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 px-4 text-center text-[#71717a]">
-                      No existen asignaturas registradas.
-                    </td>
-                  </tr>
-                ) : (
-                  resumenes.map(({ materia, totalEstudiantes, promedio, enRiesgo, estudiantes }) => {
-                    const aprobados = Math.max(0, totalEstudiantes - enRiesgo)
-                    const pctAprob =
-                      totalEstudiantes > 0 ? Math.round((aprobados / totalEstudiantes) * 100) : 0
-                    const bloquesLlenos = Math.round(pctAprob / 10)
-                    const inicialesMat = materia.codigo.slice(0, 3).toUpperCase()
-
-                    return (
-                      <tr key={materia.id} className="hover:bg-[#fafafa] transition">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-8 h-8 rounded-md bg-[#8B151A]/10 text-[#8B151A] font-bold text-[10px] flex items-center justify-center shrink-0">
-                              {inicialesMat}
-                            </span>
-                            <div>
-                              <p className="font-semibold text-[#18181b]">{materia.nombre}</p>
-                              <p className="text-[11px] text-[#71717a]">
-                                {materia.codigo} · {materia.semestre}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center -space-x-2">
-                            {estudiantes.slice(0, 4).map((est) => (
-                              <div key={est.estudianteId} className="ring-2 ring-white rounded-full">
-                                <AvatarEstudiante
-                                  nombres={est.nombres}
-                                  apellidos={est.apellidos}
-                                  fotoUrl={est.fotoUrl}
-                                  size="sm"
-                                />
-                              </div>
-                            ))}
-                            {totalEstudiantes > 4 && (
-                              <span className="w-8 h-8 rounded-full bg-[#f4f4f5] border border-[#e4e4e7] text-[10px] font-bold text-[#52525b] flex items-center justify-center ring-2 ring-white">
-                                +{totalEstudiantes - 4}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="flex gap-0.5" aria-label={`Aprobación ${pctAprob}%`}>
-                              {Array.from({ length: 10 }).map((_, idx) => (
-                                <span
-                                  key={idx}
-                                  className={`w-1.5 h-3.5 rounded-xs ${
-                                    idx < bloquesLlenos ? 'bg-[#8B151A]' : 'bg-[#e4e4e7]'
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <span className="font-semibold text-[#18181b]">{pctAprob}%</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-[#18181b]">
-                          {promedio.toFixed(2)} / 10
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-3">
-                            <Link
-                              to={`/evaluaciones?materia=${materia.id}`}
-                              className="text-xs font-semibold text-[#8B151A] hover:underline"
-                            >
-                              Evaluaciones →
-                            </Link>
-                            {enRiesgo > 0 && (
-                              <Link
-                                to={`/tutoria?materia=${materia.id}`}
-                                className="text-xs font-semibold text-[#52525b] hover:text-[#18181b] hover:underline"
-                              >
-                                Tutoría IA →
-                              </Link>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
+        )}
+      </section>
     </div>
   )
 }

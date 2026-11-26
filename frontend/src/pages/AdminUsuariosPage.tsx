@@ -9,6 +9,7 @@ import {
   type UsuarioAdmin,
   type VinculoMoodle,
 } from '../api/usuariosService'
+import { SearchAutocompleteInput } from '../components/SearchAutocompleteInput'
 
 interface Aviso {
   tipo: 'exito' | 'advertencia' | 'error'
@@ -191,35 +192,40 @@ export function AdminUsuariosPage() {
 
   return (
     <div className="space-y-6">
-      {/* Migas de pan institucionales */}
-      <div className="text-xs text-[#71717a] flex items-center gap-1.5">
-        <span>Inicio</span>
-        <span>›</span>
-        <span>Gestión de Cuentas</span>
-        <span>›</span>
-        <span className="font-semibold text-[#18181b]">Usuarios del Sistema</span>
-      </div>
-
-      {/* Encabezado y Acciones */}
-      <div className="bg-white border border-[#e4e4e7] border-l-4 border-l-[#8B151A] rounded-md p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-        <div>
-          <h1 className="text-lg font-bold text-[#18181b]">Administración de Cuentas de Acceso</h1>
-          <p className="text-xs text-[#52525b] mt-0.5">
-            Alta de docentes y administradores, enlace con Moodle y restablecimiento de acceso tras bloqueos de seguridad
-          </p>
+      {/* Franja de indicadores del directorio */}
+      <section className="stat-strip">
+        <div className="stat-cell">
+          <span className="stat-k">Total Usuarios</span>
+          <span className="stat-v">{usuarios.length}</span>
+          <div className="stat-note">Directorio Institucional UTA</div>
         </div>
-
-        <button
-          type="button"
-          onClick={abrirNuevo}
-          className="px-4 py-2 bg-[#8B151A] hover:bg-[#6E1014] text-white rounded text-xs font-semibold transition cursor-pointer self-start sm:self-auto shadow-sm"
-        >
-          + Nuevo Usuario
-        </button>
-      </div>
+        <div className="stat-cell">
+          <span className="stat-k">Cuentas Activas (Status=1)</span>
+          <span className="stat-v text-[#15803d]">
+            {usuarios.filter((u) => u.status === 1 && u.intentosFallidos < 3).length}
+          </span>
+          <div className="stat-note">Acceso habilitado</div>
+        </div>
+        <div className="stat-cell">
+          <span className="stat-k">Cuentas Bloqueadas (Status=0)</span>
+          <span className="stat-v text-[#8B151A]">
+            {usuarios.filter((u) => u.status !== 1 || u.intentosFallidos >= 3).length}
+          </span>
+          <div className="stat-note">3 fallos consecutivos</div>
+        </div>
+        <div className="stat-cell">
+          <span className="stat-k">Administradores</span>
+          <span className="stat-v">
+            {usuarios.filter((u) => u.rol === 'Administrador').length}
+          </span>
+          <div className="stat-note">
+            {usuarios.filter((u) => u.rol !== 'Administrador').length} docentes
+          </div>
+        </div>
+      </section>
 
       {aviso && (
-        <div role="alert" className={`p-3 border-l-4 rounded text-xs font-medium flex justify-between gap-3 ${ESTILO_AVISO[aviso.tipo]}`}>
+        <div role="alert" className={`p-3 border-l-4 text-xs font-medium flex justify-between gap-3 ${ESTILO_AVISO[aviso.tipo]}`}>
           <span>{aviso.texto}</span>
           <button type="button" onClick={() => setAviso(null)} className="opacity-70 hover:opacity-100" aria-label="Cerrar aviso">
             ✕
@@ -227,56 +233,62 @@ export function AdminUsuariosPage() {
         </div>
       )}
 
-      {/* Filtros de Búsqueda */}
-      <div className="bg-white border border-[#e4e4e7] rounded-md p-4 shadow-sm flex flex-col sm:flex-row gap-3">
-        <div className="flex-1">
-          <input
-            type="text"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por nombre o correo institucional..."
-            className={CAMPO}
-          />
+      {/* Barra de controles */}
+      <div className="cadence-toolbar">
+        <div className="toolbar-group">
+          <div className="parcial-tabs" role="tablist" aria-label="Filtrar por rol">
+            {(['Todos', 'Docente', 'Administrador'] as const).map((rol) => (
+              <button
+                key={rol}
+                type="button"
+                role="tab"
+                aria-selected={filtroRol === rol}
+                onClick={() => setFiltroRol(rol)}
+                className={`parcial-tab ${filtroRol === rol ? 'active' : ''}`}
+              >
+                {rol}
+              </button>
+            ))}
+          </div>
+          <div className="w-[260px]">
+            <SearchAutocompleteInput
+              value={busqueda}
+              onSearch={setBusqueda}
+              suggestions={usuarios.flatMap((u) => [u.nombreCompleto, u.email])}
+              placeholder="Buscar por nombre o correo..."
+            />
+          </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <label htmlFor="filtro-rol" className="text-xs font-medium text-[#52525b]">Rol:</label>
-          <select
-            id="filtro-rol"
-            value={filtroRol}
-            onChange={(e) => setFiltroRol(e.target.value)}
-            className="px-3 py-2 border border-[#d4d4d8] rounded text-xs focus:outline-none focus:border-[#8B151A] bg-white cursor-pointer"
-          >
-            <option value="Todos">Todos</option>
-            <option value="Docente">Docente</option>
-            <option value="Administrador">Administrador</option>
-          </select>
+        <div className="toolbar-group">
+          <button type="button" onClick={abrirNuevo} className="btn-primary">
+            + Nuevo Usuario
+          </button>
         </div>
       </div>
 
       {/* Tabla de Usuarios */}
-      <div className="bg-white border border-[#e4e4e7] rounded-md shadow-sm overflow-hidden">
+      <div className="table-card">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#f4f4f5] text-[#52525b] border-b border-[#e4e4e7]">
+          <table className="em-table">
+            <thead>
               <tr>
-                <th className="py-2.5 px-4 font-semibold">Nombre Completo</th>
-                <th className="py-2.5 px-4 font-semibold">Correo Institucional</th>
-                <th className="py-2.5 px-4 font-semibold">Rol</th>
-                <th className="py-2.5 px-4 font-semibold">Moodle</th>
-                <th className="py-2.5 px-4 font-semibold">Estado</th>
-                <th className="py-2.5 px-4 font-semibold text-center">Intentos Fallidos</th>
-                <th className="py-2.5 px-4 font-semibold text-right">Acciones</th>
+                <th>Nombre Completo</th>
+                <th>Correo Institucional</th>
+                <th>Rol</th>
+                <th>Moodle</th>
+                <th>Estado</th>
+                <th className="text-center">Intentos Fallidos</th>
+                <th className="text-right">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#e4e4e7]">
+            <tbody>
               {cargando ? (
                 <tr>
                   <td colSpan={7} className="text-center py-6 text-[#71717a]">Cargando cuentas de usuario...</td>
                 </tr>
               ) : errorCarga ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-6 text-red-700" role="alert">{errorCarga}</td>
+                  <td colSpan={7} className="text-center py-6 text-[#991b1b]" role="alert">{errorCarga}</td>
                 </tr>
               ) : usuariosFiltrados.length === 0 ? (
                 <tr>
@@ -289,37 +301,35 @@ export function AdminUsuariosPage() {
                   const estaBloqueado = u.status === 0 || u.intentosFallidos >= 3
                   const esDocente = u.rol === 'Docente'
                   return (
-                    <tr key={u.id} className="hover:bg-[#fafafa] transition">
-                      <td className="px-4 py-3 font-semibold text-[#18181b]">{u.nombreCompleto}</td>
-                      <td className="px-4 py-3 text-[#52525b]">{u.email}</td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs text-zinc-700 font-medium">{u.rol}</span>
-                      </td>
-                      <td className="px-4 py-3">
+                    <tr key={u.id}>
+                      <td className="font-semibold text-black">{u.nombreCompleto}</td>
+                      <td className="text-[#52525b]">{u.email}</td>
+                      <td className="text-black font-medium">{u.rol}</td>
+                      <td>
                         {!esDocente ? (
-                          <span className="text-zinc-400">—</span>
+                          <span className="text-[#a1a1aa]">—</span>
                         ) : u.moodleUserId ? (
-                          <span className="text-xs font-semibold text-[#1F3B73]">ID {u.moodleUserId}</span>
+                          <span className="badge-clean ok">ID {u.moodleUserId}</span>
                         ) : (
-                          <span className="text-xs text-amber-700">Sin enlazar</span>
+                          <span className="badge-clean warn">Sin enlazar</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         {estaBloqueado ? (
-                          <span className="text-xs font-semibold text-red-700">Bloqueado</span>
+                          <span className="badge-clean bad">Bloqueado</span>
                         ) : (
-                          <span className="text-xs font-semibold text-emerald-700">Activo</span>
+                          <span className="badge-clean ok">Activo</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-center font-semibold">
-                        <span className={u.intentosFallidos >= 3 ? 'text-red-700' : 'text-zinc-600'}>{u.intentosFallidos}</span>
+                      <td className="text-center font-semibold">
+                        <span className={u.intentosFallidos >= 3 ? 'text-[#991b1b]' : 'text-[#52525b]'}>{u.intentosFallidos}</span>
                       </td>
-                      <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                      <td className="text-right space-x-3 whitespace-nowrap">
                         {esDocente && (
                           <button
                             type="button"
                             onClick={() => abrirMoodle(u)}
-                            className="text-blue-700 hover:underline font-medium cursor-pointer"
+                            className="link-btn"
                           >
                             {u.moodleUserId ? 'Cambiar enlace Moodle' : 'Enlazar Moodle'}
                           </button>
@@ -328,7 +338,7 @@ export function AdminUsuariosPage() {
                           <button
                             type="button"
                             onClick={() => desbloquear(u)}
-                            className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white font-semibold rounded text-xs shadow-xs transition cursor-pointer"
+                            className="link-btn text-[#991b1b] font-semibold"
                           >
                             Desbloquear
                           </button>
@@ -342,15 +352,15 @@ export function AdminUsuariosPage() {
           </table>
         </div>
 
-        <div className="p-4 bg-[#fafafa] border-t border-[#e4e4e7] flex items-center justify-between text-xs text-[#71717a]">
-          <span>Total: <strong>{usuarios.length}</strong> usuarios registrados en el sistema</span>
+        <div className="px-4 py-3 bg-[#f8f9fb] border-t border-[#e5e7eb] flex items-center justify-between text-xs text-[#6b7280]">
+          <span>Total: <strong className="text-black">{usuarios.length}</strong> usuarios registrados en el sistema</span>
           <span>Directorio Institucional UTA</span>
         </div>
       </div>
 
       {/* Recuadro de Política Institucional */}
-      <div className="p-4 bg-white border border-[#e4e4e7] rounded-md text-xs text-[#52525b] space-y-1">
-        <p className="font-bold text-[#18181b]">Política de Seguridad Institucional (FISEI - UTA):</p>
+      <div className="p-4 bg-[#f8f9fb] border border-[#e5e7eb] text-xs text-[#52525b] space-y-1">
+        <p className="font-bold text-black">Política de Seguridad Institucional (FISEI - UTA):</p>
         <p>
           Las contraseñas se guardan cifradas (PBKDF2) y exigen al menos 10 caracteres con mayúscula, minúscula, número y
           símbolo. Las cuentas se bloquean al 3er fallo consecutivo de autenticación. Cada docente se enlaza con su usuario
