@@ -10,6 +10,7 @@ $env:ConnectionStrings__DefaultConnection='Server=(localdb)\MSSQLLocalDB;Databas
 $env:ConnectionStrings__AcademicoConnection='Server=(localdb)\MSSQLLocalDB;Database=AcademicoDB_Cristian_Sprint1;Trusted_Connection=True;TrustServerCertificate=True'
 $env:EDUMONITOR_DEMO_PASSWORD=(Get-Content .local/demo-password.txt -Raw).Trim()
 $env:Jwt__Key=(Get-Content .local/jwt-key.txt -Raw).Trim()
+$env:Database__MigrateOnStartup='true'
 $env:Jwt__Issuer='EduMonitorApi'
 $env:Jwt__Audience='EduMonitorClient'
 $env:ASPNETCORE_ENVIRONMENT='Development'

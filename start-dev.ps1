@@ -21,6 +21,8 @@ if (-not $jwt -or [Text.Encoding]::UTF8.GetByteCount($jwt) -lt 32) {
     exit 1
 }
 $env:Jwt__Key = $jwt
+# Igual que en Docker: la API aplica sus migraciones pendientes al arrancar (operación idempotente).
+$env:Database__MigrateOnStartup = 'true'
 if ($variables['MOODLE_TOKEN']) { $env:Moodle__MoodleToken = $variables['MOODLE_TOKEN'] }
 # Fuera de Docker, Moodle se alcanza por localhost.
 if ($variables['MOODLE_BASE_URL']) { $env:Moodle__BaseUrl = $variables['MOODLE_BASE_URL'] -replace 'host\.docker\.internal', 'localhost' }
