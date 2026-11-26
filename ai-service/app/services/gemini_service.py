@@ -3,6 +3,7 @@ import logging
 from google import genai
 from google.genai import types
 from app.config import settings
+from app.prompts import SYSTEM_PROMPT_PLAN
 from app.schemas import RespuestaPlan, SolicitudPlan
 from app.services.fallback_service import FallbackService
 
@@ -17,8 +18,8 @@ class GeminiService:
         self.client = None
         if self.api_key:
             try:
-                # Google GenAI exige un deadline mínimo de 10 segundos (10000 ms)
-                timeout_ms = max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000)
+                # Google GenAI exige un deadline mínimo de 10 segundos (10000 ms); tope de 14s para evitar esperas largas
+                timeout_ms = min(max(int(settings.GEMINI_TIMEOUT_SECONDS * 1000), 10000), 14000)
                 self.client = genai.Client(
                     api_key=self.api_key,
                     http_options=types.HttpOptions(timeout=timeout_ms),
@@ -31,11 +32,7 @@ class GeminiService:
             logger.warning("Gemini API Key no configurada. Activando motor Fallback.")
             return FallbackService.generar_plan_contingencia(solicitud)
 
-        system_instruction = (
-            "Eres un tutor y pedagogo universitario de la carrera de Ingeniería de Software "
-            "de la Universidad Técnica de Ambato (UTA). Analiza el rendimiento académico "
-            "anonimizado de un estudiante y genera un plan de refuerzo formal en español."
-        )
+        system_instruction = SYSTEM_PROMPT_PLAN
 
         ids_esperados = [t.id for t in solicitud.temasCriticos]
         prompt = f"""
@@ -55,20 +52,25 @@ Reglas obligatorias:
 """
 
         modelos_a_probar = [settings.GEMINI_MODEL]
-        if "gemini-3.1-flash-lite" not in modelos_a_probar:
-            modelos_a_probar.append("gemini-3.1-flash-lite")
+        for respaldo in ("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"):
+            if respaldo not in modelos_a_probar:
+                modelos_a_probar.append(respaldo)
 
         for modelo in modelos_a_probar:
             try:
+                config_kwargs = {
+                    "system_instruction": system_instruction,
+                    "response_mime_type": "application/json",
+                    "response_schema": RespuestaPlan,
+                    "temperature": 0.2,
+                }
+                if "lite" not in modelo.lower():
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
                 response = self.client.models.generate_content(
                     model=modelo,
                     contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        response_mime_type="application/json",
-                        response_schema=RespuestaPlan,
-                        temperature=0.2,
-                    ),
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
 
                 contenido = (response.text or "").strip()

@@ -11,7 +11,7 @@ public sealed class AcademicExceptionHandler : IExceptionHandler
         if(status==0)return false;
         context.Response.StatusCode=status;
         await context.Response.WriteAsJsonAsync(new ProblemDetails{Status=status,Title=exception.Message,
-            Extensions={ ["code"]=exception is MoodleException m?m.Code:"academic_validation" }},ct);
+            Extensions={ ["code"]=exception switch {MoodleException m=>m.Code,AcademicoException a=>a.Codigo,_=>"academic_validation"} }},ct);
         return true;
     }
 }

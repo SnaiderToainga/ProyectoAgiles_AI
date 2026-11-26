@@ -22,6 +22,52 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.ConfiguracionAlertas", b =>
+                {
+                    b.Property<int>("CursoId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ActualizadoPorUsuarioId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("AtrasosActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("AtrasosMinimo")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("DescensoActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("DescensoPuntos")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("DescensoUltimas")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("FechaActualizacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("FinalizacionActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("FinalizacionMinimaPct")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<bool>("RendimientoActivo")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("RendimientoUmbral")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.HasKey("CursoId");
+
+                    b.ToTable("ConfiguracionesAlertas", (string)null);
+                });
+
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.DetallePlanRefuerzo", b =>
                 {
                     b.Property<int>("Id")
@@ -166,6 +212,64 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .IsUnique();
 
                     b.ToTable("Temas");
+                });
+
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.TrazaAgente", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Consulta")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("CursoId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DuracionMs")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("EsFallback")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("Exitoso")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("Fecha")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Modelo")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Modo")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int?>("ParcialId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PasosJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId", "Fecha");
+
+                    b.ToTable("TrazasAgente", (string)null);
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.Unidad", b =>
@@ -348,6 +452,9 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("FotoUrl")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("MoodleUserId")
                         .HasColumnType("int");
 
@@ -390,10 +497,16 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                     b.Property<int>("MoodleItemId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("MoodleModuleId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
 
                     b.Property<int?>("ParcialId")
                         .HasColumnType("int");
@@ -484,6 +597,15 @@ namespace EduMonitor.Infrastructure.Migrations.Academico
                         .IsUnique();
 
                     b.ToTable("Matriculas", (string)null);
+                });
+
+            modelBuilder.Entity("EduMonitor.Core.Entities.Academico.ConfiguracionAlertas", b =>
+                {
+                    b.HasOne("EduMonitor.Core.Entities.Curso", null)
+                        .WithOne()
+                        .HasForeignKey("EduMonitor.Core.Entities.Academico.ConfiguracionAlertas", "CursoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("EduMonitor.Core.Entities.Academico.DetallePlanRefuerzo", b =>

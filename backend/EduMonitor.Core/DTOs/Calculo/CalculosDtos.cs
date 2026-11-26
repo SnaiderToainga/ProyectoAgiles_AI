@@ -8,7 +8,9 @@ public record EvaluacionDetalleDto(
     TipoItemEvaluacion Tipo,
     decimal? Nota,
     bool EsDeficiente,
-    List<TemaReferenciaDto> Temas
+    List<TemaReferenciaDto> Temas,
+    // Entregado (con nota), SinEntrega, PendienteCalificar, PendienteEntrega o NoDeterminado (RF-06).
+    EstadoCalificacion Estado = EstadoCalificacion.NoDeterminado
 );
 
 public record TemaReferenciaDto(
@@ -22,7 +24,9 @@ public record ComponentePonderadoDto(
     decimal PromedioComponente,
     decimal AporteFinal,
     bool EsDeficiente,
-    List<EvaluacionDetalleDto> Evaluaciones
+    List<EvaluacionDetalleDto> Evaluaciones,
+    // false si el estudiante no tiene ninguna actividad evaluada en este componente: no se cuenta como 0.
+    bool Evaluado = true
 );
 
 public record TemaCriticoDto(
@@ -42,5 +46,11 @@ public record ResumenAcademicoEstudianteDto(
     decimal NotaFinalParcial,
     bool EnRiesgo,
     List<ComponentePonderadoDto> Componentes,
-    List<TemaCriticoDto> TemasDeficientes
+    List<TemaCriticoDto> TemasDeficientes,
+    string? FotoUrl = null,
+    // Sin ninguna actividad evaluada: la nota no es 0 ni implica riesgo.
+    bool SinEvaluaciones = false,
+    // La nota se calculó sobre una parte de la ponderación 30/30/40 (faltan componentes por evaluar).
+    bool CalculoProvisional = false,
+    decimal PonderacionEvaluada = 1.00m
 );

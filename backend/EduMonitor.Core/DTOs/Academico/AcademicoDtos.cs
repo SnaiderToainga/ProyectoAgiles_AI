@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using EduMonitor.Core.DTOs.Calculo;
 using EduMonitor.Core.Enums;
 
 namespace EduMonitor.Core.DTOs.Academico;
@@ -25,7 +26,8 @@ public record ClasificarRequest(
 public record TemaDto(int Id, string Nombre, string Descripcion);
 public record UnidadDto(int Id, int Numero, string Nombre, List<TemaDto> Temas);
 public record ParcialDto(int Id, int Numero, List<UnidadDto> Unidades);
-public record MateriaDto(int Id, string Codigo, string Nombre, string Semestre, List<ParcialDto> Parciales);
+public record MateriaDto(int Id, string Codigo, string Nombre, string Semestre, List<ParcialDto> Parciales,
+    DateTime? UltimaSincronizacion = null);
 public record EvaluacionDto(int Id, int? ParcialId, string Nombre, TipoItemEvaluacion Tipo, decimal Ponderacion, bool Publicado, int[] TemaIds);
 
 public record CrearPlanRefuerzoRequest(
@@ -43,6 +45,20 @@ public record CrearDetallePlanRequest(
     [Required, StringLength(50)] string Prioridad,
     [Range(1, 100)] int TiempoEstimadoHoras,
     [StringLength(500)] string RecursoRecomendado = ""
+);
+
+public record ActualizarDetallePlanRequest(
+    [Range(1, int.MaxValue)] int Id,
+    [Required, StringLength(1000, MinimumLength = 1)] string ActividadSugerida,
+    [Required, StringLength(50, MinimumLength = 1)] string Prioridad,
+    [Range(1, 100)] int TiempoEstimadoHoras,
+    [StringLength(500)] string RecursoRecomendado = ""
+);
+
+public record ActualizarPlanRefuerzoRequest(
+    [Required, StringLength(2000, MinimumLength = 1)] string DiagnosticoGeneral,
+    [StringLength(50)] string? NivelRiesgo = null,
+    List<ActualizarDetallePlanRequest>? Detalles = null
 );
 
 public record PlanRefuerzoDto(
@@ -67,7 +83,109 @@ public record DetallePlanRefuerzoDto(
     string RecursoRecomendado
 );
 
-public sealed class AcademicoException(int status, string message) : Exception(message)
+public record MembreteInstitucionalDto(
+    string Universidad,
+    string Facultad,
+    string Carrera,
+    string Sistema,
+    string TituloReporte,
+    string MateriaCodigo,
+    string MateriaNombre,
+    string PeriodoLectivo,
+    int ParcialId,
+    int ParcialNumero,
+    string DocenteTitular,
+    string DocenteCorreo,
+    DateTime FechaEmisionUtc,
+    DateTime? UltimaSincronizacionUtc = null
+);
+
+public record FirmaDocenteDto(
+    string NombreDocente,
+    string CorreoDocente,
+    string Cargo,
+    string EtiquetaCasillero,
+    string LeyendaConformidad,
+    string LineaFirma
+);
+
+public record PiePaginaReporteDto(
+    string TextoInstitucional,
+    string PlantillaNumeracion,
+    string NumeracionInicial,
+    int TotalPaginasEstimadas,
+    int RegistrosPorPagina,
+    List<string> Paginas,
+    string CodigoDocumento,
+    DateTime FechaEmisionUtc
+);
+
+public record ResumenEstadisticoReporteDto(
+    int TotalEstudiantes,
+    int TotalAprobados,
+    int TotalEnRiesgo,
+    decimal PorcentajeAprobados,
+    decimal PorcentajeEnRiesgo,
+    decimal PromedioGeneralCurso,
+    decimal PromedioTareasCurso,
+    decimal AporteTareasCurso,
+    decimal PromedioApeCurso,
+    decimal AporteApeCurso,
+    decimal PromedioExamenCurso,
+    decimal AporteExamenCurso,
+    decimal UmbralAprobacion
+);
+
+public record FilaMatrizConsolidadaDto(
+    int NumeroOrden,
+    int EstudianteId,
+    string Nombres,
+    string Apellidos,
+    string NombreCompleto,
+    string Correo,
+    string? FotoUrl,
+    decimal PromedioTareas,
+    decimal AporteTareas,
+    decimal PromedioApe,
+    decimal AporteApe,
+    decimal PromedioExamen,
+    decimal AporteExamen,
+    decimal NotaFinalParcial,
+    bool EnRiesgo,
+    string EstadoAcademico,
+    List<ComponentePonderadoDto> Componentes,
+    List<TemaCriticoDto> TemasDeficientes,
+    PlanRefuerzoDto? PlanRefuerzoVigente,
+    bool SinEvaluaciones = false,
+    bool CalculoProvisional = false
+);
+
+public record ReporteConsolidadoCursoDto(
+    int CursoId,
+    int ParcialId,
+    int ParcialNumero,
+    MembreteInstitucionalDto Membrete,
+    ResumenEstadisticoReporteDto ResumenEstadistico,
+    List<FilaMatrizConsolidadaDto> Estudiantes,
+    FirmaDocenteDto BloqueFirma,
+    PiePaginaReporteDto PiePagina
+);
+
+public record ReporteIndividualTutoriaDto(
+    int CursoId,
+    int ParcialId,
+    int ParcialNumero,
+    MembreteInstitucionalDto Membrete,
+    FilaMatrizConsolidadaDto Estudiante,
+    string CausaPrincipalRendimiento,
+    PlanRefuerzoDto? PlanRefuerzo,
+    FirmaDocenteDto BloqueFirma,
+    PiePaginaReporteDto PiePagina
+);
+
+public sealed class AcademicoException(int status, string message, string codigo = "academic_validation") : Exception(message)
 {
     public int Status { get; } = status;
+    // Código estable para clientes (p. ej. el servicio de IA distingue un estudiante inexistente de una materia ajena).
+    public string Codigo { get; } = codigo;
 }

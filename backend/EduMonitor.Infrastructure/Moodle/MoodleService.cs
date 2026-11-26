@@ -45,13 +45,25 @@ public sealed class MoodleService(IHttpClientFactory factory, IOptions<MoodleOpt
             if (page.Count < 200) return result;
         }
     }
-    public Task<MoodleTareasDto> ObtenerTareas(int cursoMoodleId, CancellationToken ct = default) =>
-        Call<MoodleTareasDto>("mod_assign_get_assignments", Args("courseids[0]", cursoMoodleId), ct);
+    public async Task<IReadOnlyList<MoodleSeccionDto>> ObtenerContenidoCurso(int cursoMoodleId, CancellationToken ct = default)
+    {
+        return await Call<List<MoodleSeccionDto>>("core_course_get_contents",
+        Args("courseid", cursoMoodleId), ct);
+    }
+    public Task<MoodleTareasDto> ObtenerTareas(int cursoMoodleId, CancellationToken ct = default)
+    {
+        var args = Args("courseids[0]", cursoMoodleId);
+        // La cuenta de servicio lee el curso sin estar matriculada; sin este parámetro Moodle lo omite.
+        args["includenotenrolledcourses"] = "1";
+        return Call<MoodleTareasDto>("mod_assign_get_assignments", args, ct);
+    }
     public Task<MoodleEstadoEntregaDto> ObtenerEstadoEntrega(int tareaId, int usuarioId, CancellationToken ct = default)
     {
         var args = Args("assignid", tareaId); args["userid"] = usuarioId.ToString(CultureInfo.InvariantCulture);
         return Call<MoodleEstadoEntregaDto>("mod_assign_get_submission_status", args, ct);
     }
+    public Task<MoodleSitioDto> ObtenerInfoSitio(CancellationToken ct = default) =>
+        Call<MoodleSitioDto>("core_webservice_get_site_info", new Dictionary<string,string>(), ct);
     private static Dictionary<string,string> Args(string name, int value)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value);
@@ -82,6 +94,7 @@ public sealed class MoodleService(IHttpClientFactory factory, IOptions<MoodleOpt
                     throw new MoodleException("moodle_http_error", $"Moodle respondió HTTP {(int)response.StatusCode}.");
                 using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
                 var root = json.RootElement;
+                ValidarAdvertencias(root);
                 if (root.ValueKind == JsonValueKind.Object)
                 {
                     if (root.TryGetProperty("exception", out _) || root.TryGetProperty("errorcode", out _))
@@ -107,5 +120,21 @@ public sealed class MoodleService(IHttpClientFactory factory, IOptions<MoodleOpt
             { throw new MoodleException("moodle_invalid_json", "La respuesta de Moodle no coincide con el contrato JSON esperado."); }
             await Task.Delay(TimeSpan.FromMilliseconds(250 * (1 << attempt)), ct);
         }
+    }
+
+    private static void ValidarAdvertencias(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.NameEquals("warnings") &&
+                    (property.Value.ValueKind != JsonValueKind.Array || property.Value.GetArrayLength() > 0))
+                    throw new MoodleException("moodle_incomplete", "Moodle devolvió advertencias; se canceló la sincronización para evitar datos parciales.");
+                ValidarAdvertencias(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+            foreach (var child in element.EnumerateArray()) ValidarAdvertencias(child);
     }
 }

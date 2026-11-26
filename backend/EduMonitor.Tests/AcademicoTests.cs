@@ -124,5 +124,155 @@ public class AcademicoTests : IAsyncLifetime
         Assert.Equal(4, p.Detalles[0].TiempoEstimadoHoras);
     }
 
+    [Fact]
+    public async Task ReporteConsolidadoCurso_IncluyeMembreteEstadisticas303040FirmaYPaginacion()
+    {
+        var service = new CatalogoService(db);
+        var curso = await db.Cursos.OrderBy(c => c.Id).FirstAsync();
+        var parcial = await db.Parciales.Where(p => p.CursoId == curso.Id).OrderBy(p => p.Numero).FirstAsync();
+        var tema = await db.Temas.Include(t => t.Unidad).FirstAsync(t => t.Unidad.ParcialId == parcial.Id);
+
+        var idTarea = await service.CrearEvaluacion(77, false, new(parcial.Id, "Tarea 1", TipoItemEvaluacion.Tarea, [tema.Id]));
+        var idApe = await service.CrearEvaluacion(77, false, new(parcial.Id, "APE 1", TipoItemEvaluacion.APE, [tema.Id]));
+        var idExamen = await service.CrearEvaluacion(77, false, new(parcial.Id, "Examen 1", TipoItemEvaluacion.Examen, [tema.Id]));
+
+        // Matricular 16 estudiantes (1 aprobado y 15 en riesgo para validar paginación de 2 páginas)
+        var estudiantes = new List<Estudiante>();
+        for (int i = 1; i <= 16; i++)
+        {
+            var est = new Estudiante
+            {
+                MoodleUserId = 500 + i,
+                Nombres = $"Nombre{i:D2}",
+                Apellidos = $"Apellido{i:D2}",
+                Correo = $"est{i:D2}@uta.edu.ec",
+                FotoUrl = $"https://moodle.uta.edu.ec/avatar/{i}.png"
+            };
+            db.Estudiantes.Add(est);
+            estudiantes.Add(est);
+        }
+        await db.SaveChangesAsync();
+
+        foreach (var (est, idx) in estudiantes.Select((e, idx) => (e, idx)))
+        {
+            db.Matriculas.Add(new Matricula { CursoId = curso.Id, EstudianteId = est.Id });
+            var nota = idx == 0 ? 9.0m : 5.0m;
+            db.Calificaciones.AddRange(
+                new Calificacion { ItemEvaluacionId = idTarea, EstudianteId = est.Id, Nota = nota, Estado = EstadoCalificacion.Entregado },
+                new Calificacion { ItemEvaluacionId = idApe, EstudianteId = est.Id, Nota = nota, Estado = EstadoCalificacion.Entregado },
+                new Calificacion { ItemEvaluacionId = idExamen, EstudianteId = est.Id, Nota = nota, Estado = EstadoCalificacion.Entregado }
+            );
+        }
+        await db.SaveChangesAsync();
+
+        await service.CrearPlan(77, false, new CrearPlanRefuerzoRequest(
+            EstudianteId: estudiantes[1].Id,
+            CursoId: curso.Id,
+            DiagnosticoGeneral: "Requiere refuerzo en pruebas unitarias.",
+            NivelRiesgo: "Alto",
+            EsFallback: false,
+            Detalles: [new CrearDetallePlanRequest(tema.Id, "Taller guiado", "Alta", 3, "Guía FISEI")]
+        ));
+
+        var reporte = await service.ReporteConsolidadoCurso(77, false, curso.Id, parcialNumero: parcial.Numero);
+
+        Assert.Equal(curso.Id, reporte.CursoId);
+        Assert.Equal(parcial.Id, reporte.ParcialId);
+        Assert.Equal("Universidad Técnica de Ambato", reporte.Membrete.Universidad);
+        Assert.Contains("FISEI", reporte.Membrete.Facultad);
+        Assert.Equal("Docente Prueba", reporte.Membrete.DocenteTitular);
+
+        Assert.Equal(16, reporte.ResumenEstadistico.TotalEstudiantes);
+        Assert.Equal(1, reporte.ResumenEstadistico.TotalAprobados);
+        Assert.Equal(15, reporte.ResumenEstadistico.TotalEnRiesgo);
+        Assert.Equal(6.25m, reporte.ResumenEstadistico.PorcentajeAprobados);
+        Assert.Equal(93.75m, reporte.ResumenEstadistico.PorcentajeEnRiesgo);
+
+        Assert.Equal("Docente Prueba", reporte.BloqueFirma.NombreDocente);
+        Assert.Equal("Firma y Rúbrica del Docente Titular", reporte.BloqueFirma.EtiquetaCasillero);
+        Assert.Contains("30/30/40", reporte.BloqueFirma.LeyendaConformidad);
+
+        Assert.Equal(2, reporte.PiePagina.TotalPaginasEstimadas);
+        Assert.Equal("Página 1 de 2", reporte.PiePagina.NumeracionInicial);
+        Assert.Equal(["Página 1 de 2", "Página 2 de 2"], reporte.PiePagina.Paginas);
+
+        var filaConPlan = reporte.Estudiantes.Single(e => e.EstudianteId == estudiantes[1].Id);
+        Assert.True(filaConPlan.EnRiesgo);
+        Assert.NotNull(filaConPlan.PlanRefuerzoVigente);
+        Assert.Equal("Requiere refuerzo en pruebas unitarias.", filaConPlan.PlanRefuerzoVigente!.DiagnosticoGeneral);
+    }
+
+    [Fact]
+    public async Task ReporteIndividualTutoria_IncluyeDiagnosticoCausaPrincipalYFirma()
+    {
+        var service = new CatalogoService(db);
+        var curso = await db.Cursos.OrderBy(c => c.Id).FirstAsync();
+        var parcial = await db.Parciales.Where(p => p.CursoId == curso.Id).OrderBy(p => p.Numero).FirstAsync();
+        var tema = await db.Temas.Include(t => t.Unidad).FirstAsync(t => t.Unidad.ParcialId == parcial.Id);
+
+        var idExamen = await service.CrearEvaluacion(77, false, new(parcial.Id, "Examen Parcial", TipoItemEvaluacion.Examen, [tema.Id]));
+        var estudiante = new Estudiante { MoodleUserId = 801, Nombres = "Ana", Apellidos = "Gómez", Correo = "agomez@uta.edu.ec" };
+        db.Estudiantes.Add(estudiante);
+        await db.SaveChangesAsync();
+
+        db.Matriculas.Add(new Matricula { CursoId = curso.Id, EstudianteId = estudiante.Id });
+        db.Calificaciones.Add(new Calificacion { ItemEvaluacionId = idExamen, EstudianteId = estudiante.Id, Nota = 4.5m, Estado = EstadoCalificacion.Entregado });
+        await db.SaveChangesAsync();
+
+        var reporteInd = await service.ReporteIndividualTutoria(77, false, curso.Id, estudiante.Id, parcialId: parcial.Id);
+
+        Assert.Equal(estudiante.Id, reporteInd.Estudiante.EstudianteId);
+        Assert.True(reporteInd.Estudiante.EnRiesgo);
+        Assert.Contains("Examen (40%)", reporteInd.CausaPrincipalRendimiento);
+        Assert.Equal("Página 1 de 1", reporteInd.PiePagina.NumeracionInicial);
+        Assert.Equal("Docente Prueba", reporteInd.BloqueFirma.NombreDocente);
+    }
+
+    [Fact]
+    public async Task ActualizarPlan_PersisteDiagnosticoYDetallesEnBdYSeReflejaEnReporte()
+    {
+        var service = new CatalogoService(db);
+        var curso = await db.Cursos.OrderBy(c => c.Id).FirstAsync();
+        var parcial = await db.Parciales.Where(p => p.CursoId == curso.Id).OrderBy(p => p.Numero).FirstAsync();
+        var tema = await db.Temas.Include(t => t.Unidad).FirstAsync(t => t.Unidad.ParcialId == parcial.Id);
+
+        var idExamen = await service.CrearEvaluacion(77, false, new(parcial.Id, "Examen Final", TipoItemEvaluacion.Examen, [tema.Id]));
+        var estudiante = new Estudiante { MoodleUserId = 802, Nombres = "Carlos", Apellidos = "Mendoza", Correo = "cmendoza@uta.edu.ec" };
+        db.Estudiantes.Add(estudiante);
+        await db.SaveChangesAsync();
+
+        db.Matriculas.Add(new Matricula { CursoId = curso.Id, EstudianteId = estudiante.Id });
+        db.Calificaciones.Add(new Calificacion { ItemEvaluacionId = idExamen, EstudianteId = estudiante.Id, Nota = 5.0m, Estado = EstadoCalificacion.Entregado });
+        await db.SaveChangesAsync();
+
+        var planId = await service.CrearPlan(77, false, new(
+            estudiante.Id,
+            curso.Id,
+            "Diagnóstico inicial",
+            "Alto",
+            false,
+            [new CrearDetallePlanRequest(tema.Id, "Actividad inicial", "Alta", 3, "Guía inicial")]
+        ));
+
+        var planAntes = (await service.PlanesPorCurso(77, false, curso.Id)).Single(p => p.Id == planId);
+        var detalleId = planAntes.Detalles.Single().Id;
+
+        var actualizado = await service.ActualizarPlan(77, false, planId, new(
+            "Diagnóstico ajustado por el docente titular.",
+            "Medio",
+            [new ActualizarDetallePlanRequest(detalleId, "Taller dirigido de Scrum", "Media", 5, "Diapositivas Unidad 1")]
+        ));
+
+        Assert.Equal("Diagnóstico ajustado por el docente titular.", actualizado.DiagnosticoGeneral);
+        Assert.Equal("Medio", actualizado.NivelRiesgo);
+        Assert.Single(actualizado.Detalles);
+        Assert.Equal("Taller dirigido de Scrum", actualizado.Detalles[0].ActividadSugerida);
+        Assert.Equal(5, actualizado.Detalles[0].TiempoEstimadoHoras);
+
+        var reporteInd = await service.ReporteIndividualTutoria(77, false, curso.Id, estudiante.Id, parcialId: parcial.Id);
+        Assert.Equal("Diagnóstico ajustado por el docente titular.", reporteInd.PlanRefuerzo?.DiagnosticoGeneral);
+        Assert.Equal("Taller dirigido de Scrum", reporteInd.PlanRefuerzo?.Detalles[0].ActividadSugerida);
+    }
+
     private static MoodleItemDto Item(decimal? raw) => new(1, "Tarea", "mod", "assign", 1, raw, 0, 100, null);
 }

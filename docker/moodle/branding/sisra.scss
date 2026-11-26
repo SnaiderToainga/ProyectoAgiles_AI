@@ -1,0 +1,115 @@
+// Identidad visual SISRA para Boost (se aplica después de los estilos del tema).
+$sisra-azul: #1F3B73;
+$sisra-azul-claro: #3559A3;
+$sisra-rojo: #8B151A;
+$sisra-fondo: #F1F3F7;
+
+// Barra superior blanca con acento institucional
+.navbar.fixed-top {
+    border-bottom: 3px solid $sisra-rojo;
+    box-shadow: 0 2px 8px rgba(15, 30, 60, .08);
+}
+.navbar .navbar-brand .logo {
+    max-height: 42px;
+}
+.primary-navigation .navigation .nav-link {
+    color: #2A3550;
+    &.active {
+        color: $sisra-azul;
+        font-weight: 600;
+        border-bottom-color: $sisra-azul;
+    }
+}
+
+// Fondo general y tarjetas con bordes suaves
+#page.drawers,
+#page-wrapper {
+    background-color: $sisra-fondo;
+}
+#region-main,
+.block.card,
+.course-card {
+    border-radius: 12px;
+}
+.block.card {
+    border: 1px solid #E3E7EF;
+}
+.course-card {
+    overflow: hidden;
+    border: 1px solid #E3E7EF;
+    transition: box-shadow .2s ease, transform .2s ease;
+    &:hover {
+        box-shadow: 0 8px 22px rgba(15, 30, 60, .12);
+        transform: translateY(-2px);
+    }
+}
+.progress-bar {
+    background-color: $sisra-azul;
+}
+
+// Encabezado de la página principal
+#page-site-index #page-header h1,
+#page-site-index .page-header-headings h1 {
+    color: $sisra-azul;
+}
+
+// Pantalla de acceso: tarjeta centrada sobre el fondo ilustrado
+body.pagelayout-login #page {
+    background-color: $sisra-fondo;
+    background-position: center;
+}
+#page-login-index {
+    .login-container {
+        position: relative;
+        overflow: hidden;
+        border-radius: 14px;
+        border-top: 6px solid $sisra-azul;
+        box-shadow: 0 14px 40px rgba(15, 30, 60, .18);
+        // Detalle angular institucional en la esquina inferior izquierda
+        &::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(45deg, $sisra-azul 0 50%, transparent 50%),
+                linear-gradient(45deg, $sisra-rojo 0 64%, transparent 64%);
+            background-size: 56px 56px, 36px 36px;
+            background-repeat: no-repeat;
+            background-position: left bottom, left bottom;
+            opacity: .9;
+        }
+    }
+    .login-logo {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: .25rem;
+        img {
+            max-height: 120px;
+        }
+        // Aviso visible de entorno de laboratorio
+        &::after {
+            content: "Entorno académico de pruebas";
+            display: block;
+            margin-top: .6rem;
+            font-size: .78rem;
+            font-weight: 600;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: $sisra-rojo;
+        }
+    }
+    .login-heading {
+        color: $sisra-azul;
+    }
+    .btn-primary {
+        background-color: $sisra-azul;
+        border-color: $sisra-azul;
+        &:hover {
+            background-color: $sisra-azul-claro;
+            border-color: $sisra-azul-claro;
+        }
+    }
+}

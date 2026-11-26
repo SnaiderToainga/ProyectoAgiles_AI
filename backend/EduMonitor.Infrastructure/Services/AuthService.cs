@@ -191,7 +191,9 @@ public class AuthService : IAuthService
 
     private string GenerarTokenJwt(Usuario usuario)
     {
-        var secretKey = _config["Jwt:Key"] ?? "EduMonitorAI_Secret_Key_FISEI_UTA_2026_SecureKey_MustBeLong!";
+        var secretKey = _config["Jwt:Key"];
+        if (!JwtOpciones.ClaveValida(secretKey))
+            throw new InvalidOperationException(JwtOpciones.MensajeClaveInvalida);
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 

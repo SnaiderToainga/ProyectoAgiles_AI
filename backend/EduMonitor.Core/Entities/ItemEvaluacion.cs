@@ -13,6 +13,10 @@ public class ItemEvaluacion
     public Curso Curso { get; set; } = null!;
 
     public int MoodleItemId { get; set; }
+    // ID del módulo del curso, distinto del ID del ítem del libro de notas.
+    public int? MoodleModuleId { get; set; }
+    // Posición de la actividad en el curso de Moodle (sección y orden): define la secuencia cronológica.
+    public int Orden { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public TipoItemEvaluacion Tipo { get; set; }
     public decimal CalificacionMaxima { get; set; } = 10.00m;

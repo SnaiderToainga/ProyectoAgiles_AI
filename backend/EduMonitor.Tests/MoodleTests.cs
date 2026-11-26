@@ -13,6 +13,14 @@ using Microsoft.Extensions.Options;
 namespace EduMonitor.Tests;
 public class MoodleTests
 {
+    [Fact]
+    public async Task AdvertenciaAnidadaEnContenidoCancelaImportacion()
+    {
+        using var handler = new Handler("""[{"id":1,"warnings":[{"warningcode":"restricted"}]}]""");
+        var service = new MoodleService(handler, Options.Create(new MoodleOptions { MoodleToken = "synthetic-token", MaxRetries = 0 }));
+        var ex = await Assert.ThrowsAsync<MoodleException>(() => service.ObtenerContenidoCurso(2));
+        Assert.Equal("moodle_incomplete", ex.Code);
+    }
     private sealed class Handler(string json,bool timeout=false) : HttpMessageHandler,IHttpClientFactory
     {
         public string? Body;
@@ -34,6 +42,57 @@ public class MoodleTests
         var service=new MoodleService(handler,Options.Create(new MoodleOptions{MoodleToken="synthetic-token",MaxRetries=0}));
         Assert.Equal(code,(await Assert.ThrowsAsync<MoodleException>(()=>service.ObtenerParticipantes(2))).Code);
         Assert.DoesNotContain("synthetic-token",handler.Uri!.ToString());Assert.Contains("wstoken=synthetic-token",handler.Body);
+    }
+    [Fact] public async Task ConsultaContenidoCursoConFuncionYParametrosCorrectos()
+    {
+        const string json = """
+        [
+        {
+            "id": 10,
+            "name": "Unidad 1",
+            "section": 1,
+            "modules": [
+            {
+                "id": 20,
+                "name": "Tarea Scrum",
+                "modname": "assign",
+                "instance": 30
+            }
+            ]
+        }
+        ]
+        """;
+
+        using var handler = new Handler(json);
+
+        var service = new MoodleService(
+            handler,
+            Options.Create(new MoodleOptions
+            {
+                MoodleToken = "synthetic-token",
+                MaxRetries = 0
+            }));
+
+        var contenido = await service.ObtenerContenidoCurso(2);
+
+        var seccion = Assert.Single(contenido);
+        Assert.Equal(10, seccion.Id);
+        Assert.Equal("Unidad 1", seccion.Name);
+
+        var modulo = Assert.Single(seccion.Modules);
+        Assert.Equal(20, modulo.Id);
+        Assert.Equal(30, modulo.Instance);
+        Assert.Equal("assign", modulo.Modname);
+
+        Assert.NotNull(handler.Body);
+        Assert.Contains("wsfunction=core_course_get_contents", handler.Body);
+        Assert.Contains("courseid=2", handler.Body);
+        Assert.Contains("moodlewsrestformat=json", handler.Body);
+        Assert.Contains("wstoken=synthetic-token", handler.Body);
+
+        Assert.NotNull(handler.Uri);
+        Assert.Equal("/webservice/rest/server.php", handler.Uri.AbsolutePath);
+        Assert.DoesNotContain("synthetic-token", handler.Uri.ToString());
     }
     [Fact] public async Task TimeoutControlado()
     {
@@ -130,15 +189,89 @@ public class MoodleTests
     private sealed class FakeMoodle : IMoodleService
     {
         public bool Fail;
+        public string? FotoUrl;
         public Task<IReadOnlyList<MoodleCursoDto>> ObtenerCursosPorDocente(int id,CancellationToken ct=default)
         {if(Fail)throw new MoodleException("moodle_invalid_token","Token inválido");return Task.FromResult<IReadOnlyList<MoodleCursoDto>>([new(201,"Metodologías Ágiles","SOF-401")]);}
         public Task<IReadOnlyList<MoodleParticipanteDto>> ObtenerParticipantes(int id,CancellationToken ct=default)=>Task.FromResult<IReadOnlyList<MoodleParticipanteDto>>([
             new(900,"Docente","Ficticio","Docente Ficticio","docente@example.invalid",[new("editingteacher")]),
-            new(901,"Estudiante","Uno","Estudiante Uno","uno@example.invalid",[new("student")])]);
+            new(901,"Estudiante","Uno","Estudiante Uno","uno@example.invalid",[new("student")], FotoUrl)]);
         public Task<MoodleCalificacionesDto> ObtenerCalificacionesPorCurso(int id,CancellationToken ct=default)=>Task.FromResult(new MoodleCalificacionesDto([
-            new(id,901,[new(301,"Cero","manual",null,null,0,0,100,null),new(302,"Sin nota","manual",null,null,null,0,100,null)])]));
-        public Task<MoodleTareasDto> ObtenerTareas(int id,CancellationToken ct=default)=>Task.FromResult(new MoodleTareasDto([]));
+            new(id,901,[new(301,"Cero","mod","assign",101,0,0,100,null),new(302,"Sin nota","mod","assign",102,null,0,100,null)])]));
+        public Task<MoodleTareasDto> ObtenerTareas(int id,CancellationToken ct=default)=>Task.FromResult(new MoodleTareasDto([new(id,[new(102,0,0)])]));
         public Task<MoodleEstadoEntregaDto> ObtenerEstadoEntrega(int id,int user,CancellationToken ct=default)=>Task.FromResult(new MoodleEstadoEntregaDto(null));
+        public Task<IReadOnlyList<MoodleSeccionDto>> ObtenerContenidoCurso(int cursoMoodleId,CancellationToken ct = default)
+    {
+        return Task.FromResult<IReadOnlyList<MoodleSeccionDto>>(
+        [new(10,"PRIMER PARCIAL",1,[new(11,"Cero","assign",101,Visible:1,Uservisible:true),new(12,"Sin nota","assign",102,Visible:1,Uservisible:true)],Visible:1,Uservisible:true)]);
+    }
+    }
+    [Fact] public async Task SincronizaFotoYLaExponeEnRendimiento()
+    {
+        await using var connection =
+            new SqliteConnection("Data Source=:memory:");
+
+        await connection.OpenAsync();
+
+        await using var db = new AcademicoDbContext(
+            new DbContextOptionsBuilder<AcademicoDbContext>()
+                .UseSqlite(connection)
+                .Options);
+
+        await db.Database.EnsureCreatedAsync();
+        await AcademicoSeeder.Seed(
+            db, 77, "Docente", "docente@example.invalid");
+
+        (await db.Docentes.SingleAsync()).MoodleUserId = 900;
+        await db.SaveChangesAsync();
+
+        var fake = new FakeMoodle();
+
+        var sync = new MoodleSyncService(
+            db,
+            new CatalogoService(db),
+            fake,
+            Options.Create(new MoodleOptions()));
+
+        await sync.Cursos(77);
+
+        var curso = await db.Cursos.SingleAsync(
+            c => c.MoodleCourseId == 201);
+
+        var parcial = await db.Parciales.FirstAsync(
+            p => p.CursoId == curso.Id && p.Numero == 1);
+
+        var calculo = new CalculoPonderadoService(db);
+
+        string?[] fotos =
+        [
+            "  http://localhost:8080/foto-prueba.png  ",
+            "   ",
+            null
+        ];
+
+        foreach (var foto in fotos)
+        {
+            fake.FotoUrl = foto;
+            await sync.Notas(77, curso.Id);
+
+            db.ChangeTracker.Clear();
+
+            var estudiante = await db.Estudiantes.SingleAsync(
+                e => e.MoodleUserId == 901);
+
+            var esperada = string.IsNullOrWhiteSpace(foto)
+                ? null
+                : foto.Trim();
+
+            Assert.Equal(esperada, estudiante.FotoUrl);
+
+            var resumen = await calculo.CalcularEstudianteAsync(
+                curso.Id, parcial.Id, estudiante.Id);
+
+            Assert.Equal(esperada, resumen.FotoUrl);
+        }
+
+        Assert.Equal(1, await db.Estudiantes.CountAsync());
     }
     [Fact] public async Task ReimportarNoDuplicaYPreservaCeroNullBorradoresYLogDeFalloSinCurso()
     {

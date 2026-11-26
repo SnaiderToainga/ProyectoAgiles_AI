@@ -1,4 +1,4 @@
-using EduMonitor.Core.DTOs.Academico;
+﻿using EduMonitor.Core.DTOs.Academico;
 using EduMonitor.Core.Entities;
 using EduMonitor.Core.Entities.Academico;
 using EduMonitor.Core.Enums;
@@ -141,6 +141,74 @@ public class CalculoPonderadoTests : IAsyncLifetime
         await _db.SaveChangesAsync();
 
         return (curso.Id, parcial.Id, estudiante.Id);
+    }
+
+    [Fact]
+    public async Task SinActividadesEvaluadas_NoEsCeroNiRiesgo()
+    {
+        // Actividades publicadas pero ninguna calificada: no debe aparecer 0.00 en riesgo (RNF-03).
+        var (cursoId, parcialId, estudianteId) = await PrepararEscenarioAcademicoAsync();
+        await RegistrarConEstadoAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.Tarea, "Tarea", null, EstadoCalificacion.PendienteCalificar);
+        await RegistrarConEstadoAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.Examen, "Examen", null, EstadoCalificacion.PendienteEntrega);
+
+        var r = await _service.CalcularEstudianteAsync(cursoId, parcialId, estudianteId);
+
+        Assert.True(r.SinEvaluaciones);
+        Assert.False(r.EnRiesgo);
+        Assert.Equal(0m, r.NotaFinalParcial);
+        Assert.All(r.Componentes, c => Assert.False(c.Evaluado));
+    }
+
+    [Fact]
+    public async Task ComponentesSinEvaluar_NotaProvisionalSobreLoEvaluado()
+    {
+        // Solo Tareas evaluadas con 8.0: antes daba 2.40 y riesgo; ahora 8.00 provisional sobre el 30 %.
+        var (cursoId, parcialId, estudianteId) = await PrepararEscenarioAcademicoAsync();
+        await RegistrarEvaluacionConNotaAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.Tarea, "Tarea 1", 8.0m);
+
+        var r = await _service.CalcularEstudianteAsync(cursoId, parcialId, estudianteId);
+
+        Assert.Equal(8.00m, r.NotaFinalParcial);
+        Assert.False(r.EnRiesgo);
+        Assert.True(r.CalculoProvisional);
+        Assert.Equal(0.30m, r.PonderacionEvaluada);
+        Assert.False(r.SinEvaluaciones);
+    }
+
+    [Fact]
+    public async Task SinEntregaVencida_CuentaComoCeroYPendienteNo()
+    {
+        // Tarea 10.0 + tarea vencida sin entrega = 5.0; una pendiente de calificar no altera el promedio.
+        var (cursoId, parcialId, estudianteId) = await PrepararEscenarioAcademicoAsync();
+        await RegistrarEvaluacionConNotaAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.Tarea, "Tarea entregada", 10.0m);
+        await RegistrarConEstadoAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.Tarea, "Tarea vencida", null, EstadoCalificacion.SinEntrega);
+        await RegistrarConEstadoAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.Tarea, "Tarea en revisión", null, EstadoCalificacion.PendienteCalificar);
+        await RegistrarEvaluacionConNotaAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.APE, "APE", 9.0m);
+        await RegistrarEvaluacionConNotaAsync(cursoId, parcialId, estudianteId, TipoItemEvaluacion.Examen, "Examen", 9.0m);
+
+        var r = await _service.CalcularEstudianteAsync(cursoId, parcialId, estudianteId);
+        var tareas = r.Componentes.Single(c => c.Tipo == TipoItemEvaluacion.Tarea);
+
+        Assert.Equal(5.00m, tareas.PromedioComponente);
+        Assert.False(r.CalculoProvisional);
+        Assert.Equal(EstadoCalificacion.SinEntrega, tareas.Evaluaciones.Single(e => e.Nombre == "Tarea vencida").Estado);
+        Assert.True(tareas.Evaluaciones.Single(e => e.Nombre == "Tarea vencida").EsDeficiente);
+        var pendiente = tareas.Evaluaciones.Single(e => e.Nombre == "Tarea en revisión");
+        Assert.Equal(EstadoCalificacion.PendienteCalificar, pendiente.Estado);
+        Assert.False(pendiente.EsDeficiente);
+        Assert.Equal(EstadoCalificacion.Entregado, tareas.Evaluaciones.Single(e => e.Nombre == "Tarea entregada").Estado);
+        // (5.0*0.3 + 9*0.3 + 9*0.4) = 1.5 + 2.7 + 3.6 = 7.80
+        Assert.Equal(7.80m, r.NotaFinalParcial);
+    }
+
+    private async Task RegistrarConEstadoAsync(int cursoId, int parcialId, int estudianteId,
+        TipoItemEvaluacion tipo, string nombre, decimal? nota, EstadoCalificacion estado)
+    {
+        var item = new ItemEvaluacion { CursoId = cursoId, ParcialId = parcialId, Nombre = nombre, Tipo = tipo, Publicado = true, CalificacionMaxima = 10.0m };
+        _db.ItemsEvaluacion.Add(item);
+        await _db.SaveChangesAsync();
+        _db.Calificaciones.Add(new Calificacion { ItemEvaluacionId = item.Id, EstudianteId = estudianteId, Nota = nota, Estado = estado });
+        await _db.SaveChangesAsync();
     }
 
     private async Task<ItemEvaluacion> RegistrarEvaluacionConNotaAsync(

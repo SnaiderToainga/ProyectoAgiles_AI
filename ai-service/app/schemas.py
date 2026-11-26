@@ -1,6 +1,11 @@
-from typing import List, Literal
+from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
+from app.prompts import AVISO_ETICO_RNF08
 
+
+# ---------------------------------------------------------------------------
+# Schemas para Generación de Planes de Refuerzo (HU-04B)
+# ---------------------------------------------------------------------------
 
 class ComponenteDeficiente(BaseModel):
     componente: str = Field(..., min_length=1, description="Nombre del componente, ej. Tareas, APE, Examen")
@@ -55,3 +60,87 @@ class RespuestaPlan(BaseModel):
     diagnosticoGeneral: str = Field(..., min_length=1, max_length=2000)
     esFallback: bool = False
     detalles: List[DetallePlan] = Field(..., min_length=1)
+
+
+# ---------------------------------------------------------------------------
+# Schemas para Asistente Conversacional y Chat IA (HU-07 / T-13.4 / T-13.5)
+# ---------------------------------------------------------------------------
+
+class MensajeChat(BaseModel):
+    rol: Literal["user", "assistant", "system"]
+    contenido: str
+
+
+class ContextoCursoChat(BaseModel):
+    """Contexto del curso tal como lo entrega la API académica (sin datos personales)."""
+
+    materia: str = Field(..., min_length=1)
+    codigo: str = Field(..., min_length=1)
+    semestre: Optional[str] = None
+    promedioGeneral: float = Field(0.0, ge=0.0, le=10.0)
+    totalEstudiantes: int = Field(0, ge=0)
+    estudiantesEnRiesgo: int = Field(0, ge=0)
+    aprobados: int = Field(0, ge=0)
+    componentesPromedios: Optional[Dict[str, float]] = None
+
+
+class EvaluacionChatDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: str = Field(..., min_length=1, description="Nombre de la actividad o evaluación")
+    componente: str = Field(..., min_length=1, description="Componente (Tareas, APE, Examen)")
+    nota: float = Field(..., ge=0.0, le=10.0)
+    estado: Optional[str] = Field(None, description="Calificada o Sin entrega (cuenta como 0)")
+    temas: List[str] = Field(default_factory=list)
+
+
+class EstudianteChatDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    codigo: str = Field(..., min_length=1, description="Código anónimo del estudiante, ej. EST-001")
+    notaFinal: float = Field(..., ge=0.0, le=10.0)
+    enRiesgo: bool = False
+    calculoProvisional: bool = False
+    componentes: Optional[Dict[str, float]] = None
+    temasDeficientes: List[str] = Field(default_factory=list)
+    evaluaciones: List[EvaluacionChatDto] = Field(default_factory=list)
+
+
+class SolicitudChat(BaseModel):
+    """Consulta del docente. No transporta notas: el agente las obtiene con sus herramientas."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "modo": "curso",
+                "mensaje": "¿Cuáles estudiantes tienen promedio menor a 7.00?",
+                "historial": [],
+                "cursoId": 1,
+                "parcialId": 1,
+                "estudianteCodigo": None,
+            }
+        },
+    )
+
+    modo: Literal["curso", "estudiante"] = Field("curso", description="Contexto del chat: curso general o estudiante particular")
+    mensaje: str = Field(..., min_length=1, max_length=2000, description="Pregunta del docente, ya anonimizada")
+    historial: List[MensajeChat] = Field(default_factory=list, max_length=40)
+    cursoId: int = Field(..., ge=1, description="Materia consultada; el backend verifica que pertenezca al docente")
+    parcialId: int = Field(..., ge=1)
+    estudianteCodigo: Optional[str] = Field(None, pattern=r"^EST-\d{1,9}$", description="Estudiante seleccionado, si lo hay")
+
+
+class RespuestaChat(BaseModel):
+    respuesta: str = Field(..., min_length=1, description="Respuesta analítica y pedagógica generada por el asistente")
+    advertenciaEtica: str = Field(
+        default=AVISO_ETICO_RNF08,
+        description="Aviso ético de incertidumbre pedagógica conforme a RNF-08",
+    )
+    modo: Literal["curso", "estudiante"]
+    esFallback: bool = False
+    toolsEjecutadas: List[str] = Field(default_factory=list)
+    sugerenciasSeguimiento: List[str] = Field(default_factory=list)
+    tiempoRespuestaMs: int = Field(0, ge=0)
+    modelo: Optional[str] = Field(None, description="Modelo que generó la respuesta; vacío en el motor local")
+    trazaId: Optional[int] = Field(None, description="Identificador de la traza registrada en la API académica")

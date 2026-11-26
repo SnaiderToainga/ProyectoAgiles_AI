@@ -9,8 +9,13 @@ RUN curl -fsSL https://github.com/moodle/moodle/archive/b2c2f2a0c5f9a141896df6c3
     | tar -xz --strip-components=1 -C /var/www/html \
     && mkdir -p /var/moodledata && chown www-data:www-data /var/moodledata
 RUN printf 'max_input_vars=5000\nmemory_limit=256M\nupload_max_filesize=32M\npost_max_size=32M\n' > /usr/local/etc/php/conf.d/moodle.ini
+# Paquete oficial de idioma español de Moodle 4.5, fuera de moodledata para que viaje con la imagen.
+RUN curl -fsSL https://packaging.moodle.org/langpack/4.5/es.zip -o /tmp/es.zip \
+    && php -r '$z = new ZipArchive(); if ($z->open("/tmp/es.zip") !== true) { exit(1); } $z->extractTo("/opt/moodle-lang"); $z->close();' \
+    && rm /tmp/es.zip && test -f /opt/moodle-lang/es/langconfig.php
 COPY config.php /var/www/html/config.php
 COPY scripts /opt/edumonitor
+COPY branding /opt/edumonitor/branding
 RUN chmod +x /opt/edumonitor/entrypoint.sh
 ENTRYPOINT ["/opt/edumonitor/entrypoint.sh"]
 CMD ["apache2-foreground"]

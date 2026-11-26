@@ -295,6 +295,9 @@ namespace EduMonitor.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("FotoUrl")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("MoodleUserId")
                         .HasColumnType("int");
 
@@ -337,10 +340,16 @@ namespace EduMonitor.Infrastructure.Migrations
                     b.Property<int>("MoodleItemId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("MoodleModuleId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
 
                     b.Property<int?>("ParcialId")
                         .HasColumnType("int");

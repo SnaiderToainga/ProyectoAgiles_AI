@@ -2,9 +2,32 @@ using System.Text.Json.Serialization;
 namespace EduMonitor.Core.DTOs;
 
 public sealed record MoodleCursoDto(int Id, string Fullname, string Shortname);
+public sealed record MoodleSeccionDto(
+    int Id,
+    string Name,
+    int Section,
+    List<MoodleModuloDto> Modules,
+    string? Summary = null,
+    int? Visible = null,
+    bool? Uservisible = null);
+
+public sealed record MoodleModuloDto(
+    int Id,
+    string Name,
+    string Modname,
+    int Instance,
+    string? Url = null,
+    int? Visible = null,
+    bool? Uservisible = null);
 public sealed record MoodleRolDto(string Shortname);
-public sealed record MoodleParticipanteDto(int Id, string? Firstname, string? Lastname,
-    string Fullname, string? Email, List<MoodleRolDto> Roles);
+public sealed record MoodleParticipanteDto(
+    int Id,
+    string? Firstname,
+    string? Lastname,
+    string Fullname,
+    string? Email,
+    List<MoodleRolDto> Roles,
+    string? Profileimageurl = null);
 public sealed record MoodleCalificacionesDto(List<MoodleUsuarioNotasDto> Usergrades);
 public sealed record MoodleUsuarioNotasDto(int Courseid, int Userid, List<MoodleItemDto> Gradeitems);
 public sealed record MoodleItemDto(int Id, string? Itemname, string Itemtype, string? Itemmodule,
@@ -19,3 +42,12 @@ public sealed record MoodleIntentoDto(MoodleEntregaDto? Submission, MoodleEntreg
 public sealed record MoodleEntregaDto(string Status, long Timemodified);
 public sealed record SincronizacionDto(int LogId, string Operacion, int Cursos, int Estudiantes,
     int Items, int Calificaciones, int EstadosNoDeterminados, DateTime FechaUtc);
+
+public sealed record MoodleSitioDto(string? Sitename, string? Username, string? Release, string? Siteurl);
+
+public sealed record EstadoMoodleDto(bool EnLinea, string BaseUrl, bool TokenConfigurado, string? Sitio,
+    string? Version, string? CuentaServicio, string? CodigoError, string? Error, int CursosVinculados,
+    int DocentesVinculados, DateTime? UltimaSincronizacionExitosa, DateTime ConsultadoEn);
+
+public sealed record LogSincronizacionDto(int Id, DateTime Fecha, string Operacion, string Estado, bool Exitoso,
+    int TotalRegistros, string? Curso, string? Docente, string? MensajeError);
