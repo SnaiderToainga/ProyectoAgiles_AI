@@ -3,9 +3,13 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useChatIa } from '../context/ChatIaContext'
 import clienteAxios from '../api/clienteAxios'
+import { mensajeDeError } from '../api/usuariosService'
 import { RendimientoBarChart, type PuntoTendencia } from '../components/RendimientoBarChart'
 import { NOMBRE_COMPONENTE, type MateriaDto, type ResumenAcademicoEstudianteDto } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
+import { estaEvaluado, textoNotaFinal } from '../utils/estadoCalificacion'
+import { FechaSincronizacionMoodle } from '../components/FechaSincronizacionMoodle'
+import { AlertasAcademicasPanel } from '../components/AlertasAcademicasPanel'
 
 interface ResumenMateria {
   materia: MateriaDto
@@ -14,326 +18,6 @@ interface ResumenMateria {
   enRiesgo: number
   estudiantes: ResumenAcademicoEstudianteDto[]
 }
-
-// Datos de contingencia local para asignaturas piloto (en caso de que el backend .NET no esté encendido)
-const MATERIAS_PILOTO_FALLBACK: ResumenMateria[] = [
-  {
-    materia: {
-      id: 1,
-      codigo: 'SOF-401',
-      nombre: 'Metodologías Ágiles',
-      semestre: 'Cuarto B',
-      parciales: [{ id: 1, numero: 1, unidades: [] }],
-    },
-    totalEstudiantes: 12,
-    promedio: 7.28,
-    enRiesgo: 4,
-    estudiantes: [
-      {
-        estudianteId: 1,
-        nombres: 'Cesar Steven',
-        apellidos: 'Carrasco Manotoa',
-        correo: 'ccarrasco@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 5.40,
-        enRiesgo: true,
-        componentes: [],
-        temasDeficientes: [{ temaId: 104, nombreTema: 'Historias de Usuario e INVEST', evaluacionOrigen: 'Tarea 2', notaObtenida: 5.0 }],
-      },
-      {
-        estudianteId: 2,
-        nombres: 'Cristian Fernando',
-        apellidos: 'Sivinta Lasluisa',
-        correo: 'csivinta@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 6.80,
-        enRiesgo: true,
-        componentes: [],
-        temasDeficientes: [{ temaId: 105, nombreTema: 'Estimación con Planning Poker', evaluacionOrigen: 'APE 1', notaObtenida: 6.0 }],
-      },
-      {
-        estudianteId: 3,
-        nombres: 'Kevin Ariel',
-        apellidos: 'Vargas Solís',
-        correo: 'kvargas@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 3.50,
-        enRiesgo: true,
-        componentes: [],
-        temasDeficientes: [{ temaId: 101, nombreTema: 'Fundamentos y Roles Scrum', evaluacionOrigen: 'Examen Parcial', notaObtenida: 3.0 }],
-      },
-      {
-        estudianteId: 4,
-        nombres: 'Diego Alejandro',
-        apellidos: 'Morales Silva',
-        correo: 'dmorales@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 5.90,
-        enRiesgo: true,
-        componentes: [],
-        temasDeficientes: [{ temaId: 104, nombreTema: 'Criterios de Aceptación Gherkin', evaluacionOrigen: 'Tarea 3', notaObtenida: 5.5 }],
-      },
-      {
-        estudianteId: 5,
-        nombres: 'Estiven Sebastian',
-        apellidos: 'Chiluisa Vasquez',
-        correo: 'echiluisa@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 9.10,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 6,
-        nombres: 'Snaider Alexander',
-        apellidos: 'Toainga Toapanta',
-        correo: 'stoainga@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 8.75,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 7,
-        nombres: 'Andrea Nicole',
-        apellidos: 'Gómez Salazar',
-        correo: 'agomez@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 9.50,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 8,
-        nombres: 'Mateo Francisco',
-        apellidos: 'Lopez Herrera',
-        correo: 'mlopez@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 7.20,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 9,
-        nombres: 'Javier Enrique',
-        apellidos: 'Ruiz Ortiz',
-        correo: 'jruiz@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 7.60,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 10,
-        nombres: 'Valeria Sofia',
-        apellidos: 'Pérez Cárdenas',
-        correo: 'vperez@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 8.10,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 11,
-        nombres: 'Carlos Daniel',
-        apellidos: 'Mendoza Alvarez',
-        correo: 'cmendoza@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 7.90,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 12,
-        nombres: 'Camila Belén',
-        apellidos: 'Flores Ramos',
-        correo: 'cflores@uta.edu.ec',
-        cursoId: 1,
-        parcialId: 1,
-        notaFinalParcial: 8.30,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-    ],
-  },
-  {
-    materia: {
-      id: 2,
-      codigo: 'SOF-402',
-      nombre: 'Estructuras de Datos',
-      semestre: 'Cuarto B',
-      parciales: [{ id: 2, numero: 1, unidades: [] }],
-    },
-    totalEstudiantes: 12,
-    promedio: 7.05,
-    enRiesgo: 3,
-    estudiantes: [
-      {
-        estudianteId: 1,
-        nombres: 'Cesar Steven',
-        apellidos: 'Carrasco Manotoa',
-        correo: 'ccarrasco@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 6.20,
-        enRiesgo: true,
-        componentes: [],
-        temasDeficientes: [{ temaId: 201, nombreTema: 'Árboles Binarios de Búsqueda', evaluacionOrigen: 'APE 2', notaObtenida: 5.0 }],
-      },
-      {
-        estudianteId: 2,
-        nombres: 'Cristian Fernando',
-        apellidos: 'Sivinta Lasluisa',
-        correo: 'csivinta@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 5.80,
-        enRiesgo: true,
-        componentes: [],
-        temasDeficientes: [{ temaId: 202, nombreTema: 'Grafos y Algoritmo de Dijkstra', evaluacionOrigen: 'Examen', notaObtenida: 4.5 }],
-      },
-      {
-        estudianteId: 3,
-        nombres: 'Kevin Ariel',
-        apellidos: 'Vargas Solís',
-        correo: 'kvargas@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 3.80,
-        enRiesgo: true,
-        componentes: [],
-        temasDeficientes: [{ temaId: 200, nombreTema: 'Listas Enlazadas Dobles', evaluacionOrigen: 'Tarea 1', notaObtenida: 3.5 }],
-      },
-      {
-        estudianteId: 5,
-        nombres: 'Estiven Sebastian',
-        apellidos: 'Chiluisa Vasquez',
-        correo: 'echiluisa@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 8.80,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 6,
-        nombres: 'Snaider Alexander',
-        apellidos: 'Toainga Toapanta',
-        correo: 'stoainga@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 8.40,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 7,
-        nombres: 'Andrea Nicole',
-        apellidos: 'Gómez Salazar',
-        correo: 'agomez@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 9.20,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 8,
-        nombres: 'Mateo Francisco',
-        apellidos: 'Lopez Herrera',
-        correo: 'mlopez@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 7.50,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 9,
-        nombres: 'Javier Enrique',
-        apellidos: 'Ruiz Ortiz',
-        correo: 'jruiz@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 7.10,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 10,
-        nombres: 'Valeria Sofia',
-        apellidos: 'Pérez Cárdenas',
-        correo: 'vperez@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 7.90,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 11,
-        nombres: 'Carlos Daniel',
-        apellidos: 'Mendoza Alvarez',
-        correo: 'cmendoza@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 7.40,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 12,
-        nombres: 'Camila Belén',
-        apellidos: 'Flores Ramos',
-        correo: 'cflores@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 8.10,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-      {
-        estudianteId: 4,
-        nombres: 'Diego Alejandro',
-        apellidos: 'Morales Silva',
-        correo: 'dmorales@uta.edu.ec',
-        cursoId: 2,
-        parcialId: 2,
-        notaFinalParcial: 7.30,
-        enRiesgo: false,
-        componentes: [],
-        temasDeficientes: [],
-      },
-    ],
-  },
-]
 
 export function DashboardPage() {
   const { user } = useAuth()
@@ -346,7 +30,8 @@ export function DashboardPage() {
   const [materiasOriginales, setMateriasOriginales] = useState<MateriaDto[]>([])
   const [materiaActivaId, setMateriaActivaId] = useState<number | null>(null)
   const [cargando, setCargando] = useState(true)
-  const [esModoFallback, setEsModoFallback] = useState(false)
+  // Si la API no responde se informa el error: nunca se muestran estudiantes ni notas inventadas.
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
   // Docente recién creado: aún no tiene materias importadas desde Moodle.
   const [sinMaterias, setSinMaterias] = useState(false)
 
@@ -361,7 +46,6 @@ export function DashboardPage() {
           // Sin materias no se muestran datos de demostración: se ofrece la primera sincronización.
           if (vigente) {
             setResumenes([])
-            setEsModoFallback(false)
             setSinMaterias(true)
           }
           return
@@ -379,9 +63,11 @@ export function DashboardPage() {
                 `/academico/materias/${materia.id}/parciales/${parcial.id}/rendimiento`
               )
               const totalEstudiantes = estudiantes.length
+              // El promedio solo considera a quienes ya tienen actividades evaluadas.
+              const evaluados = estudiantes.filter(estaEvaluado)
               const promedio =
-                totalEstudiantes > 0
-                  ? estudiantes.reduce((acc, e) => acc + e.notaFinalParcial, 0) / totalEstudiantes
+                evaluados.length > 0
+                  ? evaluados.reduce((acc, e) => acc + e.notaFinalParcial, 0) / evaluados.length
                   : 0
               const enRiesgo = estudiantes.filter((e) => e.enRiesgo).length
               return { materia, totalEstudiantes, promedio, enRiesgo, estudiantes }
@@ -392,25 +78,14 @@ export function DashboardPage() {
         )
 
         if (vigente) {
-          if (resultados.length > 0 && resultados.some((r) => r.totalEstudiantes > 0)) {
-            setResumenes(resultados)
-            setMateriaActivaId(resultados[0].materia.id)
-            setEsModoFallback(false)
-          } else {
-            // Usar datos piloto para demostración inmediata
-            setResumenes(MATERIAS_PILOTO_FALLBACK)
-            setMateriasOriginales(MATERIAS_PILOTO_FALLBACK.map((r) => r.materia))
-            setMateriaActivaId(MATERIAS_PILOTO_FALLBACK[0].materia.id)
-            setEsModoFallback(true)
-          }
+          setResumenes(resultados)
+          setMateriaActivaId(resultados[0].materia.id)
+          setErrorCarga(null)
         }
-      } catch {
+      } catch (e) {
         if (vigente) {
-          // Si el backend no responde, activar datos piloto para visualización inmediata
-          setResumenes(MATERIAS_PILOTO_FALLBACK)
-          setMateriasOriginales(MATERIAS_PILOTO_FALLBACK.map((r) => r.materia))
-          setMateriaActivaId(MATERIAS_PILOTO_FALLBACK[0].materia.id)
-          setEsModoFallback(true)
+          setResumenes([])
+          setErrorCarga(mensajeDeError(e, 'No se pudo cargar el rendimiento académico. Verifique que la API esté disponible.'))
         }
       } finally {
         if (vigente) setCargando(false)
@@ -492,7 +167,7 @@ export function DashboardPage() {
       materiaId: materiaActivaId,
       estudiantes: estudiantesParaGrafico,
       rendimientosPorMateria: mapaRendimientos,
-      esModoFallback,
+      esModoFallback: false,
     })
   }, [
     cargando,
@@ -500,7 +175,6 @@ export function DashboardPage() {
     materiasOriginales,
     materiaActivaId,
     estudiantesParaGrafico,
-    esModoFallback,
     actualizarContextoChat,
   ])
 
@@ -536,24 +210,27 @@ export function DashboardPage() {
 
   const resumen = useMemo(() => {
     const total = estudiantesParaGrafico.length
+    const evaluados = estudiantesParaGrafico.filter(estaEvaluado)
+    // Promedio por componente solo entre quienes tienen ese componente evaluado (no cuenta 0 por ausencia).
     const prom = (tipo: number) => {
-      if (total === 0) return 0
-      const vals = estudiantesParaGrafico.map(
-        (e) => e.componentes.find((c) => c.tipo === tipo)?.promedioComponente ?? 0
-      )
-      return vals.reduce((a, b) => a + b, 0) / vals.length
+      const vals = evaluados
+        .map((e) => e.componentes.find((c) => c.tipo === tipo))
+        .filter((c) => c !== undefined && c.evaluado !== false)
+        .map((c) => c!.promedioComponente)
+      return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
     }
     const promedio =
-      total > 0 ? estudiantesParaGrafico.reduce((a, e) => a + e.notaFinalParcial, 0) / total : 0
-    const aprobados = estudiantesParaGrafico.filter((e) => e.notaFinalParcial >= 7).length
-    const riesgo = [...estudiantesParaGrafico]
+      evaluados.length > 0 ? evaluados.reduce((a, e) => a + e.notaFinalParcial, 0) / evaluados.length : 0
+    const aprobados = evaluados.filter((e) => e.notaFinalParcial >= 7).length
+    const riesgo = evaluados
       .filter((e) => e.enRiesgo || e.notaFinalParcial < 7)
       .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
     return {
       total,
+      evaluados: evaluados.length,
       promedio,
       aprobados,
-      pctAprob: total > 0 ? Math.round((aprobados / total) * 100) : 0,
+      pctAprob: evaluados.length > 0 ? Math.round((aprobados / evaluados.length) * 100) : 0,
       riesgo,
       criticos: riesgo.filter((e) => e.notaFinalParcial < 4).length,
       t: prom(1).toFixed(2),
@@ -562,8 +239,10 @@ export function DashboardPage() {
     }
   }, [estudiantesParaGrafico])
 
-  const compNota = (est: ResumenAcademicoEstudianteDto, tipo: number) =>
-    (est.componentes.find((c) => c.tipo === tipo)?.promedioComponente ?? 0).toFixed(2)
+  const compNota = (est: ResumenAcademicoEstudianteDto, tipo: number) => {
+    const comp = est.componentes.find((c) => c.tipo === tipo)
+    return comp && comp.evaluado !== false ? comp.promedioComponente.toFixed(2) : '—'
+  }
 
   if (!cargando && sinMaterias) {
     return (
@@ -596,11 +275,14 @@ export function DashboardPage() {
         )}
       </div>
 
-      {esModoFallback && (
-        <div role="status" className="p-3 bg-[#fafafa] border border-[#e5e7eb] text-xs text-black">
-          <b>Datos demostrativos cargados.</b> Inicia el backend (.NET en el puerto 5000) para sincronizar
-          con Moodle.
+      {errorCarga && (
+        <div role="alert" className="p-3 bg-[#fafafa] border-l-4 border-[#b91c1c] text-xs text-[#b91c1c]">
+          {errorCarga}
         </div>
+      )}
+
+      {resumenSeleccionado && (
+        <FechaSincronizacionMoodle fecha={resumenSeleccionado.materia.ultimaSincronizacion} />
       )}
 
       <section className="stat-strip">
@@ -609,25 +291,26 @@ export function DashboardPage() {
           <span className="stat-v">{cargando ? '...' : resumen.total}</span>
           <div className="stat-note">
             {actividades.length} actividades en Parcial {parcialActual?.numero ?? 1}
+            {resumen.total > resumen.evaluados && ` · ${resumen.total - resumen.evaluados} sin evaluaciones`}
           </div>
         </div>
         <div className="stat-cell">
           <span className="stat-k">Promedio</span>
           <span className="stat-v">
-            {resumen.promedio.toFixed(2)}
-            <span style={{ fontSize: 12, fontWeight: 500 }}>/10</span>
+            {resumen.evaluados > 0 ? resumen.promedio.toFixed(2) : '—'}
+            {resumen.evaluados > 0 && <span style={{ fontSize: 12, fontWeight: 500 }}>/10</span>}
           </span>
           <div className="stat-note tabular-nums">
-            T {resumen.t} · A {resumen.a} · E {resumen.e}
+            {resumen.evaluados > 0 ? `T ${resumen.t} · A ${resumen.a} · E ${resumen.e}` : 'Sin notas calificadas'}
           </div>
         </div>
         <div className="stat-cell">
           <span className="stat-k">Aprobación</span>
           <span className="stat-v" style={{ color: 'var(--green)' }}>
-            {resumen.pctAprob}%
+            {resumen.evaluados > 0 ? `${resumen.pctAprob}%` : '—'}
           </span>
           <div className="stat-note">
-            {resumen.aprobados} de {resumen.total} aprobados
+            {resumen.aprobados} de {resumen.evaluados} evaluados aprobados
           </div>
         </div>
         <div className="stat-cell">
@@ -730,7 +413,7 @@ export function DashboardPage() {
                     <td className="num-col tabular-nums">{compNota(est, 2)}</td>
                     <td className="num-col tabular-nums">{compNota(est, 3)}</td>
                     <td className="num-col">
-                      <span className="badge-clean risk tabular-nums">{est.notaFinalParcial.toFixed(2)}</span>
+                      <span className="badge-clean risk tabular-nums">{textoNotaFinal(est)}</span>
                     </td>
                     <td className="num-col">
                       <Link
@@ -756,6 +439,15 @@ export function DashboardPage() {
           </div>
         )}
       </section>
+
+      {resumenSeleccionado && parcialActual && (
+        <AlertasAcademicasPanel
+          key={`${resumenSeleccionado.materia.id}-${parcialActual.id}`}
+          materiaId={resumenSeleccionado.materia.id}
+          parcialId={parcialActual.id}
+          parcialNumero={parcialActual.numero}
+        />
+      )}
     </div>
   )
 }

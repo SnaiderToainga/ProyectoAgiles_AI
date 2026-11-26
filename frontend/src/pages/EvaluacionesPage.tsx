@@ -30,6 +30,8 @@ import {
   type TipoItemEvaluacion,
 } from '../types/academico'
 import { PrimeraSincronizacionMoodle } from '../components/PrimeraSincronizacionMoodle'
+import { LEYENDA_PROVISIONAL, textoCalificacion } from '../utils/estadoCalificacion'
+import { FechaSincronizacionMoodle } from '../components/FechaSincronizacionMoodle'
 
 interface AlertaEstado {
   tipo: 'exito' | 'advertencia' | 'error'
@@ -288,8 +290,10 @@ export function EvaluacionesPage() {
   const indiceInicio = (paginaSegura - 1) * tamanoPagina
   const filasOrdenadas = useMemo(() => {
     const copia = [...filasRendimiento]
-    if (sortBy === 'nota_asc') copia.sort((a, b) => a.notaFiltrada - b.notaFiltrada)
-    else if (sortBy === 'nota_desc') copia.sort((a, b) => b.notaFiltrada - a.notaFiltrada)
+    const sinNotaAlFinal = (a: { sinEvaluaciones: boolean }, b: { sinEvaluaciones: boolean }) =>
+      Number(a.sinEvaluaciones) - Number(b.sinEvaluaciones)
+    if (sortBy === 'nota_asc') copia.sort((a, b) => sinNotaAlFinal(a, b) || a.notaFiltrada - b.notaFiltrada)
+    else if (sortBy === 'nota_desc') copia.sort((a, b) => sinNotaAlFinal(a, b) || b.notaFiltrada - a.notaFiltrada)
     else
       copia.sort((a, b) =>
         `${a.estudiante.apellidos} ${a.estudiante.nombres}`.localeCompare(
@@ -556,9 +560,12 @@ export function EvaluacionesPage() {
   ].filter(Boolean).length
 
   const columnasKanban = [
-    { id: 'riesgo', titulo: 'En Riesgo (< 7.0)', icono: '!', color: '#b91c1c', filas: filasOrdenadas.filter((f) => f.notaFiltrada < 7) },
-    { id: 'regular', titulo: 'Regular (7.0 – 8.4)', icono: '•', color: '#d97706', filas: filasOrdenadas.filter((f) => f.notaFiltrada >= 7 && f.notaFiltrada < 8.5) },
-    { id: 'sobresaliente', titulo: 'Sobresaliente (8.5 – 10)', icono: '✓', color: '#15803d', filas: filasOrdenadas.filter((f) => f.notaFiltrada >= 8.5) },
+    { id: 'riesgo', titulo: 'En Riesgo (< 7.0)', icono: '!', color: '#b91c1c', filas: filasOrdenadas.filter((f) => f.enRiesgoFiltrado) },
+    { id: 'regular', titulo: 'Regular (7.0 – 8.4)', icono: '•', color: '#d97706', filas: filasOrdenadas.filter((f) => !f.sinEvaluaciones && !f.enRiesgoFiltrado && f.notaFiltrada < 8.5) },
+    { id: 'sobresaliente', titulo: 'Sobresaliente (8.5 – 10)', icono: '✓', color: '#15803d', filas: filasOrdenadas.filter((f) => !f.sinEvaluaciones && !f.enRiesgoFiltrado && f.notaFiltrada >= 8.5) },
+    ...(filasOrdenadas.some((f) => f.sinEvaluaciones)
+      ? [{ id: 'sin-evaluaciones', titulo: 'Sin evaluaciones calificadas', icono: '–', color: '#71717a', filas: filasOrdenadas.filter((f) => f.sinEvaluaciones) }]
+      : []),
   ]
 
   const renderTarjeta = (fila: (typeof filasOrdenadas)[number]) => {
@@ -587,7 +594,11 @@ export function EvaluacionesPage() {
         </div>
         <div className="k-mid">
           <span>
-            Promedio: <strong className="tabular-nums">{fila.notaFiltrada.toFixed(2)}</strong> / 10
+            Promedio:{' '}
+            <strong className="tabular-nums">
+              {fila.sinEvaluaciones ? 'Sin evaluaciones' : fila.notaFiltrada.toFixed(2)}
+            </strong>
+            {!fila.sinEvaluaciones && ' / 10'}
           </span>
           <button
             type="button"
@@ -609,7 +620,7 @@ export function EvaluacionesPage() {
                     className="tabular-nums shrink-0"
                     style={{ color: ev.esDeficiente ? 'var(--uta)' : '#000' }}
                   >
-                    {ev.nota === null ? 'Sin nota' : ev.nota.toFixed(2)}
+                    {textoCalificacion(ev.nota, ev.estado)}
                   </strong>
                 </div>
               ))
@@ -653,7 +664,12 @@ export function EvaluacionesPage() {
 
   const estadoTexto = (fila: (typeof filasOrdenadas)[number]) =>
     metricasCurso.actividadAislada && !fila.entregoActividad
-      ? { t: 'Pendiente', c: 'warn' }
+      ? {
+          t: textoCalificacion(null, fila.estadoActividadAislada),
+          c: fila.enRiesgoFiltrado ? 'risk' : 'warn',
+        }
+      : fila.sinEvaluaciones
+      ? { t: 'Sin evaluaciones', c: 'warn' }
       : fila.esCriticoFiltrado
       ? { t: 'Crítico', c: 'risk' }
       : fila.enRiesgoFiltrado
@@ -709,6 +725,7 @@ export function EvaluacionesPage() {
           <button type="button" className="tool-pill" onClick={sincronizarMoodle} disabled={sincronizando}>
             {sincronizando ? 'Sincronizando...' : 'Moodle'}
           </button>
+          {materiaActual && <FechaSincronizacionMoodle fecha={materiaActual.ultimaSincronizacion} />}
           <button
             type="button"
             className="tool-pill"
@@ -895,7 +912,7 @@ export function EvaluacionesPage() {
                     const est = fila.estudiante
                     const comp = (tipo: number) => {
                       const c = fila.componentesFiltrados.find((x) => x.tipo === tipo)
-                      return c && c.evaluaciones.length > 0 ? c.promedioComponente.toFixed(2) : '—'
+                      return c && c.evaluado !== false && c.evaluaciones.length > 0 ? c.promedioComponente.toFixed(2) : '—'
                     }
                     const expandido = estudianteExpandidoId === est.estudianteId
                     const estado = estadoTexto(fila)
@@ -921,14 +938,16 @@ export function EvaluacionesPage() {
                           </td>
                           {metricasCurso.actividadAislada && (
                             <td className="num-col tabular-nums">
-                              {fila.notaActividadAislada !== null ? fila.notaActividadAislada.toFixed(2) : 'Sin entregar'}
+                              {textoCalificacion(fila.notaActividadAislada, fila.estadoActividadAislada)}
                             </td>
                           )}
                           <td className="num-col tabular-nums">{comp(1)}</td>
                           <td className="num-col tabular-nums">{comp(2)}</td>
                           <td className="num-col tabular-nums">{comp(3)}</td>
                           <td className="num-col tabular-nums" style={{ fontWeight: 700 }}>
-                            {fila.notaFiltrada.toFixed(2)}
+                            {fila.sinEvaluaciones
+                              ? '—'
+                              : `${fila.notaFiltrada.toFixed(2)}${est.calculoProvisional && !metricasCurso.actividadAislada ? '*' : ''}`}
                           </td>
                           <td>
                             <span className={`badge-clean ${estado.c}`}>{estado.t}</span>
@@ -984,7 +1003,7 @@ export function EvaluacionesPage() {
                                             className="tabular-nums shrink-0"
                                             style={{ color: ev.esDeficiente ? 'var(--uta)' : '#000' }}
                                           >
-                                            {ev.nota === null ? 'Sin nota' : `${ev.nota.toFixed(2)} / 10`}
+                                            {textoCalificacion(ev.nota, ev.estado, ' / 10')}
                                           </strong>
                                         </div>
                                       ))
@@ -1002,6 +1021,10 @@ export function EvaluacionesPage() {
               </tbody>
             </table>
           </div>
+
+          {!metricasCurso.actividadAislada && filasRendimiento.some((f) => f.estudiante.calculoProvisional) && (
+            <p className="px-4 pt-2 text-[11px] text-[#52525b]">{LEYENDA_PROVISIONAL}</p>
+          )}
 
           {filasRendimiento.length > 0 && (
             <div className="px-4 py-3 border-t border-[#eef0f3] flex flex-wrap items-center justify-between gap-3 text-xs text-black">

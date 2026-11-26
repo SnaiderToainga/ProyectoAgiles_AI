@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import clienteAxios from '../api/clienteAxios'
 import { SearchAutocompleteInput } from '../components/SearchAutocompleteInput'
+import { listarUsuarios, mensajeDeError, type UsuarioAdmin } from '../api/usuariosService'
+import { TrazasAgenteTabla } from '../components/TrazasAgenteTabla'
 
 interface LogAcceso {
   id: number
@@ -14,45 +16,53 @@ interface LogAcceso {
 
 export function AdminAuditoriaPage() {
   const [logs, setLogs] = useState<LogAcceso[]>([])
+  const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([])
   const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  // Momento de la consulta: referencia para contar los eventos de "hoy".
+  const [consultadoEn, setConsultadoEn] = useState<Date | null>(null)
   const [filtroUsuario, setFiltroUsuario] = useState('')
   const [filtroResultado, setFiltroResultado] = useState('Todos')
 
-  const cargarLogs = async () => {
-    try {
-      setCargando(true)
-      const { data } = await clienteAxios.get<LogAcceso[]>('/auth/auditoria')
-      setLogs(data)
-    } catch {
-      // Datos semilla basados en el Mockup de la página 28 del PDF
-      setLogs([
-        { id: 1, usuarioId: 1, emailIntentado: 'd.proano@uta.edu.ec', fechaRegistro: new Date().toISOString(), exitoso: true, detalle: 'Autenticación exitosa y emisión JWT', ipOrigen: '192.168.1.45' },
-        { id: 2, usuarioId: 2, emailIntentado: 's.toainga@uta.edu.ec', fechaRegistro: new Date(Date.now() - 3600000).toISOString(), exitoso: true, detalle: 'Sesión de Administrador iniciada', ipOrigen: '192.168.1.1' },
-        { id: 3, usuarioId: 3, emailIntentado: 'prueba.bloqueo@uta.edu.ec', fechaRegistro: new Date(Date.now() - 7200000).toISOString(), exitoso: false, detalle: 'Intento 3 fallido - Cuenta bloqueada (Status=0)', ipOrigen: '201.235.12.5' },
-        { id: 4, usuarioId: 3, emailIntentado: 'prueba.bloqueo@uta.edu.ec', fechaRegistro: new Date(Date.now() - 7260000).toISOString(), exitoso: false, detalle: 'Intento 2 fallido - Contraseña incorrecta', ipOrigen: '201.235.12.5' },
-        { id: 5, usuarioId: 3, emailIntentado: 'prueba.bloqueo@uta.edu.ec', fechaRegistro: new Date(Date.now() - 7320000).toISOString(), exitoso: false, detalle: 'Intento 1 fallido - Contraseña incorrecta', ipOrigen: '201.235.12.5' },
-        { id: 6, usuarioId: 1, emailIntentado: 'sistema_moodle', fechaRegistro: new Date(Date.now() - 14400000).toISOString(), exitoso: true, detalle: 'Ingesta de calificaciones cursos piloto Moodle', ipOrigen: '127.0.0.1' },
-      ])
-    } finally {
-      setCargando(false)
-    }
-  }
+  // Solo datos reales de LogsAcceso y de las cuentas; si la API falla se informa, no se inventan trazas.
+  const consultar = useCallback(
+    () =>
+      Promise.all([clienteAxios.get<LogAcceso[]>('/auth/auditoria'), listarUsuarios()])
+        .then(([{ data }, cuentas]) => {
+          setLogs(data)
+          setUsuarios(cuentas)
+          setConsultadoEn(new Date())
+          setError(null)
+        })
+        .catch((e: unknown) => {
+          setLogs([])
+          setUsuarios([])
+          setError(mensajeDeError(e, 'No se pudo cargar la bitácora de auditoría. Verifique que la API esté disponible.'))
+        })
+        .finally(() => setCargando(false)),
+    []
+  )
 
   useEffect(() => {
-    cargarLogs()
-  }, [])
+    void consultar()
+  }, [consultar])
+
+  const cargarLogs = () => {
+    setCargando(true)
+    void consultar()
+  }
 
   const kpis = useMemo(() => {
-    const totalValidos = logs.filter((l) => l.exitoso).length
-    const totalFallidos = logs.filter((l) => !l.exitoso).length
-    const cuentasBloqueadas = logs.filter((l) => l.detalle?.toLowerCase().includes('bloqueada')).length
+    const hoy = consultadoEn?.toDateString()
+    const deHoy = logs.filter((l) => new Date(l.fechaRegistro).toDateString() === hoy)
     return {
-      totalValidos,
-      totalFallidos,
-      cuentasBloqueadas: cuentasBloqueadas > 0 ? cuentasBloqueadas : 1,
-      usuariosActivos: 5,
+      validosHoy: deHoy.filter((l) => l.exitoso).length,
+      fallidosHoy: deHoy.filter((l) => !l.exitoso).length,
+      // Estado actual de las cuentas (Status = 0 bloqueada, 1 activa), no un conteo de mensajes.
+      cuentasBloqueadas: usuarios.filter((u) => u.status === 0).length,
+      usuariosActivos: usuarios.filter((u) => u.status === 1).length,
     }
-  }, [logs])
+  }, [logs, usuarios, consultadoEn])
 
   const logsFiltrados = useMemo(() => {
     return logs.filter((l) => {
@@ -67,24 +77,30 @@ export function AdminAuditoriaPage() {
 
   return (
     <div className="space-y-5">
+      {error && (
+        <div role="alert" className="p-3.5 bg-[#f8f9fb] border-l-4 border-[#b91c1c] text-xs text-[#b91c1c] font-medium">
+          {error}
+        </div>
+      )}
+
       {/* Franja de indicadores de seguridad */}
       <section className="stat-strip">
         <div className="stat-cell">
           <span className="stat-k">Accesos Válidos Hoy</span>
-          <span className="stat-v text-[#15803d]">{kpis.totalValidos}</span>
-          <div className="stat-note">Tokens JWT emitidos</div>
+          <span className="stat-v text-[#15803d]">{kpis.validosHoy}</span>
+          <div className="stat-note">Tokens JWT emitidos hoy</div>
         </div>
 
         <div className="stat-cell">
-          <span className="stat-k">Intentos Fallidos</span>
-          <span className="stat-v text-[#b45309]">{kpis.totalFallidos}</span>
-          <div className="stat-note">Contraseñas incorrectas</div>
+          <span className="stat-k">Intentos Fallidos Hoy</span>
+          <span className="stat-v text-[#b45309]">{kpis.fallidosHoy}</span>
+          <div className="stat-note">Credenciales rechazadas</div>
         </div>
 
         <div className="stat-cell">
           <span className="stat-k">Cuentas Bloqueadas (Status=0)</span>
           <span className="stat-v text-[#991b1b]">{kpis.cuentasBloqueadas}</span>
-          <div className="stat-note">3 fallos consecutivos</div>
+          <div className="stat-note">Bloqueo tras 3 fallos consecutivos</div>
         </div>
 
         <div className="stat-cell">
@@ -100,7 +116,7 @@ export function AdminAuditoriaPage() {
           <div className="parcial-tabs" role="tablist" aria-label="Filtrar por resultado">
             {[
               { id: 'Todos', label: 'Todos los resultados' },
-              { id: 'Exitoso', label: 'Exitosos (200)' },
+              { id: 'Exitoso', label: 'Exitosos' },
               { id: 'Fallido', label: 'Fallidos / Bloqueos' },
             ].map((op) => (
               <button
@@ -154,7 +170,11 @@ export function AdminAuditoriaPage() {
               ) : logsFiltrados.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-[#71717a]">
-                    No hay registros de auditoría que coincidan con el filtro.
+                    {error
+                      ? 'Bitácora no disponible.'
+                      : logs.length === 0
+                        ? 'Aún no hay eventos de acceso registrados.'
+                        : 'No hay registros de auditoría que coincidan con el filtro.'}
                   </td>
                 </tr>
               ) : (
@@ -163,7 +183,7 @@ export function AdminAuditoriaPage() {
                   return (
                     <tr key={log.id}>
                       <td className="text-[#52525b] whitespace-nowrap">
-                        {new Date(log.fechaRegistro).toLocaleString()}
+                        {new Date(log.fechaRegistro).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'medium' })}
                       </td>
                       <td className="font-semibold text-black">
                         {log.emailIntentado || `Usuario #${log.usuarioId}`}
@@ -172,15 +192,15 @@ export function AdminAuditoriaPage() {
                         {log.detalle}
                       </td>
                       <td className="font-mono text-[11px] text-[#71717a]">
-                        {log.ipOrigen || '127.0.0.1'}
+                        {log.ipOrigen || '—'}
                       </td>
                       <td className="text-right">
                         {log.exitoso ? (
-                          <span className="badge-clean ok">Exitoso (200)</span>
+                          <span className="badge-clean ok">Exitoso</span>
                         ) : esBloqueo ? (
                           <span className="badge-clean bad">Bloqueo Seguridad</span>
                         ) : (
-                          <span className="badge-clean warn">Fallido (401)</span>
+                          <span className="badge-clean warn">Fallido</span>
                         )}
                       </td>
                     </tr>
@@ -192,10 +212,15 @@ export function AdminAuditoriaPage() {
         </div>
 
         <div className="px-4 py-3 bg-[#f8f9fb] border-t border-[#e5e7eb] flex items-center justify-between text-xs text-[#6b7280]">
-          <span>Mostrando <strong className="text-black">{logsFiltrados.length}</strong> eventos registrados</span>
+          <span>
+            Mostrando <strong className="text-black">{logsFiltrados.length}</strong> de los últimos {logs.length}{' '}
+            eventos registrados (máximo 100)
+          </span>
           <span>Seguridad Institucional FISEI</span>
         </div>
       </div>
+
+      <TrazasAgenteTabla />
     </div>
   )
 }

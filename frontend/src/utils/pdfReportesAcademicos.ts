@@ -20,6 +20,7 @@ import {
   normalizarTextoPdf,
   obtenerFinalYTabla,
 } from './pdfPlantillaUta'
+import { ESTADO_CALIFICACION, textoCalificacion, textoNotaFinal } from './estadoCalificacion'
 
 function asegurarEspacioVertical(
   doc: ReturnType<typeof crearDocumentoPdfUta> extends Promise<infer T>
@@ -84,8 +85,8 @@ export async function exportarPdfReporteIndividual(
         `${est.promedioTareas.toFixed(2)} (${est.aporteTareas.toFixed(2)})`,
         `${est.promedioApe.toFixed(2)} (${est.aporteApe.toFixed(2)})`,
         `${est.promedioExamen.toFixed(2)} (${est.aporteExamen.toFixed(2)})`,
-        `${est.notaFinalParcial.toFixed(2)} / 10`,
-        est.enRiesgo ? 'EN RIESGO' : 'APROBADO',
+        est.sinEvaluaciones ? 'Sin evaluaciones' : `${textoNotaFinal(est)} / 10`,
+        est.sinEvaluaciones ? 'SIN EVALUACIONES' : est.enRiesgo ? 'EN RIESGO' : 'APROBADO',
       ],
     ],
     didParseCell: (data) => {
@@ -197,8 +198,12 @@ export async function exportarPdfReporteIndividual(
     comp.evaluaciones.map((ev) => [
       normalizarTextoPdf(NOMBRE_COMPONENTE[comp.tipo]),
       normalizarTextoPdf(ev.nombre),
-      ev.nota !== null ? `${ev.nota.toFixed(2)} / 10` : 'Sin calificar',
-      ev.nota === null ? 'Pendiente' : ev.esDeficiente ? 'Deficiente (< 7.00)' : 'Satisfactorio',
+      normalizarTextoPdf(textoCalificacion(ev.nota, ev.estado, ' / 10')),
+      ev.nota === null && ev.estado !== ESTADO_CALIFICACION.SinEntrega
+        ? 'Pendiente'
+        : ev.esDeficiente
+          ? 'Deficiente (< 7.00)'
+          : 'Satisfactorio',
     ])
   )
 
@@ -329,8 +334,8 @@ export async function exportarPdfMatrizConsolidada(
     `${f.promedioTareas.toFixed(2)} (${f.aporteTareas.toFixed(2)})`,
     `${f.promedioApe.toFixed(2)} (${f.aporteApe.toFixed(2)})`,
     `${f.promedioExamen.toFixed(2)} (${f.aporteExamen.toFixed(2)})`,
-    `${f.notaFinalParcial.toFixed(2)}`,
-    f.enRiesgo ? 'EN RIESGO' : 'APROBADO',
+    f.sinEvaluaciones ? 'Sin evaluaciones' : textoNotaFinal(f),
+    f.sinEvaluaciones ? 'SIN EVALUACIONES' : f.enRiesgo ? 'EN RIESGO' : 'APROBADO',
   ])
 
   autoTable(doc, {

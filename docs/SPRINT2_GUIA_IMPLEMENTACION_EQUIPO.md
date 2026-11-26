@@ -113,7 +113,7 @@ dotnet ef database update --context AcademicoDbContext --project backend/EduMoni
 
 #### Configuración Lista y Credenciales de Moodle Docker:
 * **URL:** `http://localhost:8080`
-* **Token REST Activo:** `e08c8e99254bf27f9a2a9b6704cc5c4c` (ya inyectado en `backend/EduMonitor.Api/appsettings.json`).
+* **Token REST:** se genera al levantar Moodle en `docker/moodle/.local/moodle-connection.json` (campo `moodleToken`); nunca se versiona.
 * **ID Docente Moodle:** `3`
 * **Cursos Asignados:** Curso `2` (SOF-401 Metodologías Ágiles) y Curso `3` (SOF-402 Estructuras de Datos).
 

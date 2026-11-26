@@ -20,8 +20,15 @@ builder.Services.AddCors(options =>
     });
 });
 
-// 3. Validación de JWT en la puerta de enlace
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "EduMonitorAI_Secret_Key_FISEI_UTA_2026_SecureKey_MustBeLong!";
+// 3. Validación de JWT en la puerta de enlace: clave obligatoria, sin valor por defecto.
+const string ClavePublicada = "EduMonitorAI_Secret_Key_FISEI_UTA_2026_SecureKey_MustBeLong!";
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32 || jwtKey == ClavePublicada)
+{
+    throw new InvalidOperationException(
+        "Configure Jwt:Key (o la variable Jwt__Key / JWT_KEY) con la misma clave propia de la API, de al menos 32 caracteres. " +
+        "La clave publicada en versiones anteriores del repositorio no se acepta.");
+}
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {

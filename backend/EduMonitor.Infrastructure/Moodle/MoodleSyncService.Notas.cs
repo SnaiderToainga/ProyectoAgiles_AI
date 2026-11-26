@@ -50,6 +50,10 @@ public sealed partial class MoodleSyncService
                 .ToDictionary(x => (x.Modulo.Modname, x.Modulo.Instance));
             var visibles = modulos.Where(x => x.Value.Seccion.Section > 0 && x.Value.Seccion.Visible == 1 &&
                 x.Value.Modulo.Visible == 1).ToDictionary(x => x.Key, x => x.Value);
+            // Orden pedagógico del curso (secciones y módulos tal como aparecen en Moodle): secuencia de las evaluaciones.
+            var ordenCurso = contenido.SelectMany(s => s.Modules.Select(m => (m.Modname, m.Instance)))
+                .Select((clave, indice) => (clave, indice))
+                .GroupBy(x => x.clave).ToDictionary(g => g.Key, g => g.First().indice + 1);
             var filasFuente = alumnos.SelectMany(a => porAlumno[a.Id][0].Gradeitems
                 .Where(i => i.Itemtype == "mod" && i.Itemmodule is "assign" or "quiz")
                 .Select(i => (Alumno: a, Item: i))).ToList();
@@ -178,6 +182,7 @@ public sealed partial class MoodleSyncService
                 }
                 item.Nombre = Texto(fuente.Itemname ?? modulo.Modulo.Name, 200);
                 item.MoodleModuleId = modulo.Modulo.Id;
+                item.Orden = ordenCurso.GetValueOrDefault((fuente.Itemmodule!, fuente.Iteminstance!.Value));
                 item.MinimoMoodle = fuente.Grademin; item.MaximoMoodle = fuente.Grademax; item.CalificacionMaxima = 10;
             }
             // Obtener claves generadas en un solo lote, no por estudiante/evaluación.

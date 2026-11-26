@@ -112,8 +112,16 @@ public class CalculoPonderadoService(AcademicoDbContext db) : ICalculoPonderadoS
 
         var componentes = new List<ComponentePonderadoDto> { compTareas, compApe, compExamen };
 
-        var notaFinal = Math.Round(compTareas.AporteFinal + compApe.AporteFinal + compExamen.AporteFinal, 2, MidpointRounding.AwayFromZero);
-        var enRiesgo = notaFinal < UmbralAprobacion;
+        // Un componente sin actividades evaluadas no suma 0: la nota se calcula sobre la ponderación
+        // evaluada y se marca como provisional (RNF-03: sin métricas engañosas ante datos ausentes).
+        var evaluados = componentes.Where(c => c.Evaluado).ToList();
+        var ponderacionEvaluada = evaluados.Sum(c => c.Ponderacion);
+        var sinEvaluaciones = ponderacionEvaluada == 0m;
+        var notaFinal = sinEvaluaciones
+            ? 0m
+            : Math.Round(evaluados.Sum(c => c.PromedioComponente * c.Ponderacion) / ponderacionEvaluada, 2, MidpointRounding.AwayFromZero);
+        var enRiesgo = !sinEvaluaciones && notaFinal < UmbralAprobacion;
+        var calculoProvisional = !sinEvaluaciones && ponderacionEvaluada < 1.00m;
 
         var temasDeficientes = new List<TemaCriticoDto>();
 
@@ -147,7 +155,10 @@ public class CalculoPonderadoService(AcademicoDbContext db) : ICalculoPonderadoS
             enRiesgo,
             componentes,
             temasDeficientes,
-            estudiante.FotoUrl
+            estudiante.FotoUrl,
+            sinEvaluaciones,
+            calculoProvisional,
+            ponderacionEvaluada
         );
     }
 
@@ -167,16 +178,21 @@ public class CalculoPonderadoService(AcademicoDbContext db) : ICalculoPonderadoS
         foreach (var item in itemsTipo)
         {
             decimal? nota = null;
+            var estado = EstadoCalificacion.NoDeterminado;
             if (notasDict.TryGetValue(item.Id, out var calif))
             {
                 nota = calif.Nota;
+                estado = calif.Estado;
             }
 
-            bool esDeficiente = nota.HasValue && nota.Value < UmbralAprobacion;
+            // Una entrega vencida sin presentar cuenta como 0; pendiente de calificar, por entregar o
+            // sin dato es información ausente y no se promedia.
+            var sinEntrega = !nota.HasValue && estado == EstadoCalificacion.SinEntrega;
+            bool esDeficiente = sinEntrega || (nota.HasValue && nota.Value < UmbralAprobacion);
 
-            if (nota.HasValue)
+            if (nota.HasValue || sinEntrega)
             {
-                sumaNotas += nota.Value;
+                sumaNotas += nota ?? 0m;
                 totalCalificadas++;
             }
 
@@ -190,16 +206,18 @@ public class CalculoPonderadoService(AcademicoDbContext db) : ICalculoPonderadoS
                 item.Tipo,
                 nota,
                 esDeficiente,
-                temasAsignados
+                temasAsignados,
+                estado
             ));
         }
 
-        decimal promedio = totalCalificadas > 0
+        var evaluado = totalCalificadas > 0;
+        decimal promedio = evaluado
             ? Math.Round(sumaNotas / totalCalificadas, 2, MidpointRounding.AwayFromZero)
             : 0m;
 
         decimal aporte = Math.Round(promedio * ponderacion, 2, MidpointRounding.AwayFromZero);
-        bool componenteDeficiente = promedio < UmbralAprobacion;
+        bool componenteDeficiente = evaluado && promedio < UmbralAprobacion;
 
         return new ComponentePonderadoDto(
             tipo,
@@ -207,7 +225,8 @@ public class CalculoPonderadoService(AcademicoDbContext db) : ICalculoPonderadoS
             promedio,
             aporte,
             componenteDeficiente,
-            listaDetalle
+            listaDetalle,
+            evaluado
         );
     }
 }

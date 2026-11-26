@@ -7,12 +7,17 @@ import type {
   TipoItemEvaluacion,
 } from '../types/academico'
 import type { EstadoFiltroAcademico } from '../components/FiltrosCascada'
+import { ESTADO_CALIFICACION, valorPromediable } from './estadoCalificacion'
 
 export interface FilaRendimientoFiltrada {
   estudiante: ResumenAcademicoEstudianteDto
   componentesFiltrados: ComponentePonderadoDto[]
   notaFiltrada: number
   notaActividadAislada: number | null
+  /** Estado de la actividad aislada (sin entrega, pendiente de calificar...), para mostrarlo en la tabla. */
+  estadoActividadAislada: number | null
+  /** Sin actividades evaluadas en el alcance: no se muestra 0.00 ni se marca en riesgo. */
+  sinEvaluaciones: boolean
   entregoActividad: boolean
   enRiesgoFiltrado: boolean
   esCriticoFiltrado: boolean
@@ -99,15 +104,18 @@ export function calcularRendimientoFiltrado(
     .map((est): FilaRendimientoFiltrada => {
       if (!hayFiltroCurricular && actividadId === null) {
         const nota = est.notaFinalParcial
+        const sinEvaluaciones = est.sinEvaluaciones === true
         return {
           estudiante: est,
           componentesFiltrados: est.componentes,
           notaFiltrada: nota,
           notaActividadAislada: null,
+          estadoActividadAislada: null,
+          sinEvaluaciones,
           entregoActividad: true,
           enRiesgoFiltrado: est.enRiesgo,
-          esCriticoFiltrado: nota < 4.0,
-          notaReferencia: nota,
+          esCriticoFiltrado: !sinEvaluaciones && nota < 4.0,
+          notaReferencia: sinEvaluaciones ? null : nota,
         }
       }
 
@@ -123,14 +131,15 @@ export function calcularRendimientoFiltrado(
           detalleAislado = evalsFiltradas.find((ev) => ev.itemEvaluacionId === actividadId)
         }
 
-        const calificadas = evalsFiltradas.filter(
-          (ev): ev is EvaluacionDetalleDto & { nota: number } => ev.nota !== null
-        )
+        // Misma regla que el backend: la entrega vencida cuenta como 0 y lo pendiente no se promedia.
+        const valores = evalsFiltradas
+          .map((ev) => valorPromediable(ev.nota, ev.estado))
+          .filter((v): v is number => v !== null)
+        const evaluado = valores.length > 0
 
-        const promedioComponente =
-          calificadas.length > 0
-            ? redondear2(calificadas.reduce((sum, ev) => sum + ev.nota, 0) / calificadas.length)
-            : 0
+        const promedioComponente = evaluado
+          ? redondear2(valores.reduce((sum, v) => sum + v, 0) / valores.length)
+          : 0
         const aporteFinal = redondear2(promedioComponente * ponderacion)
 
         return {
@@ -138,41 +147,53 @@ export function calcularRendimientoFiltrado(
           ponderacion,
           promedioComponente,
           aporteFinal,
-          esDeficiente: evalsFiltradas.length > 0 && promedioComponente < 7.0,
+          esDeficiente: evaluado && promedioComponente < 7.0,
           evaluaciones: evalsFiltradas,
+          evaluado,
         }
       })
 
       let notaFiltrada = est.notaFinalParcial
+      let sinEvaluaciones = est.sinEvaluaciones === true
       if (hayFiltroCurricular) {
         let sumaPesosActivos = 0
         let sumaAportes = 0
         for (const comp of componentesFiltrados) {
-          if (comp.evaluaciones.length > 0) {
+          if (comp.evaluado) {
             sumaPesosActivos += comp.ponderacion
             sumaAportes += comp.promedioComponente * comp.ponderacion
           }
         }
+        sinEvaluaciones = sumaPesosActivos === 0
         notaFiltrada = sumaPesosActivos > 0 ? redondear2(sumaAportes / sumaPesosActivos) : 0
       }
 
       const notaActividadAislada = actividadId !== null ? (detalleAislado?.nota ?? null) : null
+      const estadoActividadAislada =
+        actividadId !== null ? (detalleAislado?.estado ?? ESTADO_CALIFICACION.NoDeterminado) : null
+      const valorAislado =
+        actividadId !== null ? valorPromediable(notaActividadAislada, estadoActividadAislada) : null
       const entregoActividad = actividadId !== null ? notaActividadAislada !== null : true
-      const notaReferencia = actividadId !== null ? notaActividadAislada : notaFiltrada
+      const notaReferencia =
+        actividadId !== null ? notaActividadAislada : sinEvaluaciones ? null : notaFiltrada
+      // Al aislar una actividad, solo la entrega vencida (0) o una nota < 7 implican riesgo;
+      // pendiente de calificar o por entregar no son un riesgo todavía.
       const enRiesgoFiltrado =
         actividadId !== null
-          ? notaActividadAislada === null || notaActividadAislada < 7.0
-          : notaFiltrada < 7.0
+          ? valorAislado !== null && valorAislado < 7.0
+          : !sinEvaluaciones && notaFiltrada < 7.0
       const esCriticoFiltrado =
         actividadId !== null
-          ? notaActividadAislada !== null && notaActividadAislada < 4.0
-          : notaFiltrada < 4.0
+          ? valorAislado !== null && valorAislado < 4.0
+          : !sinEvaluaciones && notaFiltrada < 4.0
 
       return {
         estudiante: est,
         componentesFiltrados,
         notaFiltrada,
         notaActividadAislada,
+        estadoActividadAislada,
+        sinEvaluaciones,
         entregoActividad,
         enRiesgoFiltrado,
         esCriticoFiltrado,
@@ -224,24 +245,29 @@ export function calcularMetricasGrupo(
     }
   }
 
+  // Los promedios del grupo solo consideran estudiantes con ese componente evaluado.
   const avgComp = (tipo: 1 | 2 | 3) => {
-    const total = filas.reduce((acc, fila) => {
-      const comp = fila.componentesFiltrados.find((c) => c.tipo === tipo)
-      return acc + (comp ? comp.promedioComponente : 0)
-    }, 0)
-    return total / filas.length
+    const valores = filas
+      .map((fila) => fila.componentesFiltrados.find((c) => c.tipo === tipo))
+      .filter((comp): comp is ComponentePonderadoDto => comp !== undefined && comp.evaluado !== false)
+      .map((comp) => comp.promedioComponente)
+    return valores.length > 0 ? valores.reduce((a, b) => a + b, 0) / valores.length : 0
   }
+  const filasEvaluadas = filas.filter((f) => !f.sinEvaluaciones)
 
   const promTareas = avgComp(1)
   const promApe = avgComp(2)
   const promExamen = avgComp(3)
 
   const totalEnRiesgo = filas.filter((f) => f.enRiesgoFiltrado).length
-  const porcentajeAprobados = (((filas.length - totalEnRiesgo) / filas.length) * 100).toFixed(1)
+  const totalAprobados = filasEvaluadas.filter((f) => !f.enRiesgoFiltrado).length
+  const porcentajeAprobados = ((totalAprobados / filas.length) * 100).toFixed(1)
 
   let actividadStats: MetricasGrupoFiltrado['actividadAislada'] = null
   let promedioCursoValor =
-    filas.reduce((acc, f) => acc + f.notaFiltrada, 0) / filas.length
+    filasEvaluadas.length > 0
+      ? filasEvaluadas.reduce((acc, f) => acc + f.notaFiltrada, 0) / filasEvaluadas.length
+      : 0
 
   if (actividadSeleccionada) {
     const conNota = filas.filter(

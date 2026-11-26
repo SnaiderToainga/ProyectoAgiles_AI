@@ -42,3 +42,12 @@ public sealed record MoodleIntentoDto(MoodleEntregaDto? Submission, MoodleEntreg
 public sealed record MoodleEntregaDto(string Status, long Timemodified);
 public sealed record SincronizacionDto(int LogId, string Operacion, int Cursos, int Estudiantes,
     int Items, int Calificaciones, int EstadosNoDeterminados, DateTime FechaUtc);
+
+public sealed record MoodleSitioDto(string? Sitename, string? Username, string? Release, string? Siteurl);
+
+public sealed record EstadoMoodleDto(bool EnLinea, string BaseUrl, bool TokenConfigurado, string? Sitio,
+    string? Version, string? CuentaServicio, string? CodigoError, string? Error, int CursosVinculados,
+    int DocentesVinculados, DateTime? UltimaSincronizacionExitosa, DateTime ConsultadoEn);
+
+public sealed record LogSincronizacionDto(int Id, DateTime Fecha, string Operacion, string Estado, bool Exitoso,
+    int TotalRegistros, string? Curso, string? Docente, string? MensajeError);

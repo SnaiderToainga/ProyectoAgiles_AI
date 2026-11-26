@@ -1,149 +1,226 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import clienteAxios from '../api/clienteAxios'
+import { mensajeDeError } from '../api/usuariosService'
+import type { EstadoMoodleDto, LogSincronizacionDto, MateriaDto } from '../types/academico'
 
+const OPERACIONES: Record<string, string> = {
+  Cursos: 'Asignaturas del docente',
+  Notas: 'Calificaciones y actividades',
+}
+
+function formatearFecha(iso: string | null | undefined): string {
+  if (!iso) return 'Sin registro'
+  const fecha = new Date(iso)
+  return Number.isNaN(fecha.getTime())
+    ? 'Sin registro'
+    : fecha.toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function claseEstado(log: LogSincronizacionDto): string {
+  if (log.exitoso) return 'badge-clean ok'
+  return log.estado === 'Iniciado' ? 'badge-clean warn' : 'badge-clean bad'
+}
+
+/**
+ * Supervisión de la integración con Moodle para el administrador.
+ * Todo lo que se muestra proviene de una consulta real: el estado se verifica contra
+ * core_webservice_get_site_info y el historial sale de los registros de sincronización.
+ * El token vive solo en la configuración del servidor y nunca llega al navegador.
+ */
 export function AdminMoodlePage() {
-  const [sincronizando, setSincronizando] = useState(false)
-  const [mensaje, setMensaje] = useState<string | null>(null)
-  const [endpoint, setEndpoint] = useState('http://localhost:8080/webservice/rest/server.php')
-  const [token, setToken] = useState('e08c8e99254bf27f9a2a9b6704cc5c4c')
+  const [estado, setEstado] = useState<EstadoMoodleDto | null>(null)
+  const [logs, setLogs] = useState<LogSincronizacionDto[]>([])
+  const [materias, setMaterias] = useState<MateriaDto[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const sincronizarMoodle = async () => {
-    try {
-      setSincronizando(true)
-      setMensaje(null)
-      // Disparar sincronización de asignaturas y notas
-      await clienteAxios.post('/moodle/sync-cursos')
-      await clienteAxios.post('/moodle/sync-notas/1')
-      setMensaje('Sincronización manual ejecutada con éxito. Asignaturas, calificaciones e ítems de evaluación actualizados en el sistema.')
-    } catch {
-      setMensaje('Sincronización procesada. Verifica la conectividad con el aula virtual Moodle institucional.')
-    } finally {
-      setSincronizando(false)
-    }
+  const consultar = useCallback(
+    () =>
+      Promise.all([
+        clienteAxios.get<EstadoMoodleDto>('/moodle/estado', { timeout: 45000 }),
+        clienteAxios.get<LogSincronizacionDto[]>('/moodle/logs', { params: { limite: 30 } }),
+        clienteAxios.get<MateriaDto[]>('/academico/materias'),
+      ])
+        .then(([rEstado, rLogs, rMaterias]) => {
+          setEstado(rEstado.data)
+          setLogs(rLogs.data)
+          setMaterias(rMaterias.data)
+          setError(null)
+        })
+        .catch((e: unknown) => {
+          setError(mensajeDeError(e, 'No se pudo consultar el estado de la integración con Moodle.'))
+        })
+        .finally(() => setCargando(false)),
+    []
+  )
+
+  useEffect(() => {
+    // Carga inicial: el estado solo cambia cuando la petición se resuelve.
+    void consultar()
+  }, [consultar])
+
+  const cargar = () => {
+    setCargando(true)
+    void consultar()
   }
+
+  const vinculadas = materias.filter((m) => m.ultimaSincronizacion)
 
   return (
     <div className="space-y-5">
-      {mensaje && (
-        <div role="alert" className="p-3.5 bg-[#f8f9fb] border-l-4 border-[#15803d] text-xs text-[#15803d] font-medium">
-          {mensaje}
+      {error && (
+        <div role="alert" className="p-3.5 bg-[#f8f9fb] border-l-4 border-[#b91c1c] text-xs text-[#b91c1c] font-medium">
+          {error}
         </div>
       )}
 
-      {/* Franja de estado Moodle */}
-      <section className="stat-strip">
+      <section className="stat-strip" aria-busy={cargando}>
         <div className="stat-cell">
-          <span className="stat-k">Contenedor Moodle 4.x</span>
-          <span className="stat-v text-base text-[#15803d] pt-1">EN LÍNEA (200 OK)</span>
-          <div className="stat-note">moodle-fisei:4.5 | Puerto: 8080</div>
+          <span className="stat-k">Servicio web de Moodle</span>
+          {estado ? (
+            <span className={`stat-v text-base pt-1 ${estado.enLinea ? 'text-[#15803d]' : 'text-[#b91c1c]'}`}>
+              {estado.enLinea ? 'EN LÍNEA' : 'SIN CONEXIÓN'}
+            </span>
+          ) : (
+            <span className="stat-v text-base pt-1 text-[#52525b]">{cargando ? 'Verificando…' : 'Desconocido'}</span>
+          )}
+          <div className="stat-note">
+            {estado?.enLinea
+              ? `${estado.sitio ?? 'Moodle'} · versión ${estado.version ?? 's/d'}`
+              : (estado?.error ?? 'Sin respuesta del servidor')}
+          </div>
         </div>
 
         <div className="stat-cell">
-          <span className="stat-k">Base de Datos MariaDB</span>
-          <span className="stat-v text-base text-[#15803d] pt-1">CONECTADO</span>
-          <div className="stat-note">Volumen persistente: moodle_data</div>
-        </div>
-
-        <div className="stat-cell">
-          <span className="stat-k">Última Ingesta de Notas</span>
+          <span className="stat-k">Cuenta de servicio</span>
           <span className="stat-v text-base pt-1">
-            {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+            {estado?.cuentaServicio ?? (estado && !estado.tokenConfigurado ? 'Token no configurado' : '—')}
           </span>
-          <div className="stat-note">Sincronización activa bidireccional</div>
+          <div className="stat-note">{estado ? estado.baseUrl : 'Moodle:BaseUrl'}</div>
         </div>
 
         <div className="stat-cell">
-          <span className="stat-k">Asignaturas Piloto</span>
-          <span className="stat-v">2</span>
-          <div className="stat-note">Metodologías Ágiles / Estructuras</div>
+          <span className="stat-k">Última sincronización exitosa</span>
+          <span className="stat-v text-base pt-1">{formatearFecha(estado?.ultimaSincronizacionExitosa)}</span>
+          <div className="stat-note">Verificado {formatearFecha(estado?.consultadoEn)}</div>
+        </div>
+
+        <div className="stat-cell">
+          <span className="stat-k">Vinculación</span>
+          <span className="stat-v">{estado?.cursosVinculados ?? '—'}</span>
+          <div className="stat-note">
+            asignaturas · {estado?.docentesVinculados ?? '—'} docentes con usuario Moodle
+          </div>
         </div>
       </section>
 
-      {/* Parámetros de Conexión REST */}
       <div className="em-card">
         <div className="em-card-head">
           <div>
-            <h2 className="card-title">Parámetros de Conexión REST (Web Services)</h2>
-            <p className="card-sub">Configuración de enlace con el servidor Moodle institucional</p>
+            <h2 className="card-title">Conexión con Moodle (servicios web REST)</h2>
+            <p className="card-sub">
+              La URL y el token se definen en el servidor (variables MOODLE_BASE_URL y MOODLE_TOKEN) y no se
+              exponen en el navegador.
+            </p>
           </div>
           <div className="toolbar-group">
-            <button
-              type="button"
-              onClick={() => setMensaje('Parámetros de conexión validados y guardados.')}
-              className="btn-secondary"
-            >
-              Guardar Parámetros
-            </button>
-            <button
-              type="button"
-              onClick={sincronizarMoodle}
-              disabled={sincronizando}
-              className="btn-primary disabled:opacity-60"
-            >
-              {sincronizando ? 'Sincronizando...' : 'Sincronizar Ahora'}
+            <button type="button" onClick={cargar} disabled={cargando} className="btn-primary disabled:opacity-60">
+              {cargando ? 'Verificando…' : 'Probar conexión'}
             </button>
           </div>
         </div>
-
-        <div className="em-card-body equal-col">
-          <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-[#52525b] mb-1.5">
-              Endpoint Moodle Web Services
-            </label>
-            <input
-              type="text"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              className="w-full p-2.5 border border-[#e5e7eb] font-mono text-[11px] text-black bg-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-[#52525b] mb-1.5">
-              Token de Acceso Moodle (REST Protocol)
-            </label>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              className="w-full p-2.5 border border-[#e5e7eb] font-mono text-[11px] text-black bg-white"
-            />
-          </div>
+        <div className="em-card-body">
+          <p className="text-xs text-[#52525b] leading-relaxed">
+            Cada docente sincroniza sus asignaturas y calificaciones desde su propia sesión (Catálogo o Evaluaciones),
+            porque la sincronización se hace con su usuario Moodle vinculado. Desde aquí se supervisa que la integración
+            responda y que las ingestas se completen.
+          </p>
         </div>
       </div>
 
-      {/* Registro de Ingesta Académica */}
       <div className="table-card">
         <div className="table-toolbar">
-          <h3 className="card-title">Registro de Ingesta Académica Reciente</h3>
+          <h3 className="card-title">Vigencia de datos por asignatura</h3>
         </div>
-
         <table className="em-table">
           <thead>
             <tr>
-              <th>Fecha y Hora</th>
-              <th>Asignatura Piloto</th>
+              <th>Asignatura</th>
+              <th>Período</th>
+              <th className="text-right">Última ingesta de notas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {materias.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="text-[#52525b]">
+                  {cargando ? 'Cargando…' : 'No hay asignaturas registradas.'}
+                </td>
+              </tr>
+            ) : (
+              materias.map((m) => (
+                <tr key={m.id}>
+                  <td className="font-semibold text-black">
+                    {m.codigo} {m.nombre}
+                  </td>
+                  <td className="text-[#52525b]">{m.semestre}</td>
+                  <td className="text-right">
+                    {m.ultimaSincronizacion ? (
+                      formatearFecha(m.ultimaSincronizacion)
+                    ) : (
+                      <span className="badge-clean warn">Nunca sincronizada</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        {materias.length > 0 && (
+          <p className="px-4 py-2 text-[11px] text-[#52525b]">
+            {vinculadas.length} de {materias.length} asignaturas tienen al menos una ingesta de notas exitosa.
+          </p>
+        )}
+      </div>
+
+      <div className="table-card">
+        <div className="table-toolbar">
+          <h3 className="card-title">Registro de sincronizaciones</h3>
+        </div>
+        <table className="em-table">
+          <thead>
+            <tr>
+              <th>Fecha y hora</th>
+              <th>Operación</th>
+              <th>Asignatura</th>
+              <th>Docente</th>
               <th>Registros</th>
               <th className="text-right">Estado</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td className="text-[#52525b]">{new Date().toLocaleString()}</td>
-              <td className="font-semibold text-black">SOF-401 Metodologías Ágiles</td>
-              <td className="text-black">9 calificaciones sincronizadas</td>
-              <td className="text-right">
-                <span className="badge-clean ok">Exitoso (200)</span>
-              </td>
-            </tr>
-            <tr>
-              <td className="text-[#52525b]">{new Date(Date.now() - 3600000).toLocaleString()}</td>
-              <td className="font-semibold text-black">SOF-402 Estructuras de Datos</td>
-              <td className="text-black">9 calificaciones sincronizadas</td>
-              <td className="text-right">
-                <span className="badge-clean ok">Exitoso (200)</span>
-              </td>
-            </tr>
+            {logs.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-[#52525b]">
+                  {cargando ? 'Cargando…' : 'Todavía no se ha ejecutado ninguna sincronización.'}
+                </td>
+              </tr>
+            ) : (
+              logs.map((log) => (
+                <tr key={log.id}>
+                  <td className="text-[#52525b]">{formatearFecha(log.fecha)}</td>
+                  <td className="text-black">{OPERACIONES[log.operacion] ?? log.operacion}</td>
+                  <td className="text-black">{log.curso ?? 'Todas las del docente'}</td>
+                  <td className="text-[#52525b]">{log.docente ?? '—'}</td>
+                  <td className="text-black tabular-nums">{log.exitoso ? log.totalRegistros : '—'}</td>
+                  <td className="text-right">
+                    <span className={claseEstado(log)} title={log.mensajeError ?? undefined}>
+                      {log.exitoso ? 'Completado' : log.estado === 'Iniciado' ? 'En curso' : `Fallido (${log.mensajeError ?? 'error'})`}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

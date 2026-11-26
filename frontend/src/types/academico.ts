@@ -25,6 +25,7 @@ export interface MateriaDto {
   nombre: string
   semestre: string
   parciales: ParcialDto[]
+  ultimaSincronizacion?: string | null
 }
 
 export interface EvaluacionDto {
@@ -49,6 +50,8 @@ export interface EvaluacionDetalleDto {
   nota: number | null
   esDeficiente: boolean
   temas: TemaReferenciaDto[]
+  /** 0 sin dato, 1 entregado (con nota), 2 sin entrega, 3 pendiente de calificar, 4 por entregar. */
+  estado?: number
 }
 
 export interface ComponentePonderadoDto {
@@ -58,6 +61,8 @@ export interface ComponentePonderadoDto {
   aporteFinal: number
   esDeficiente: boolean
   evaluaciones: EvaluacionDetalleDto[]
+  /** false si no hay actividades evaluadas en este componente (no cuenta como 0). */
+  evaluado?: boolean
 }
 
 export interface TemaCriticoDto {
@@ -79,6 +84,11 @@ export interface ResumenAcademicoEstudianteDto {
   componentes: ComponentePonderadoDto[]
   temasDeficientes: TemaCriticoDto[]
   fotoUrl?: string | null
+  /** Sin ninguna actividad evaluada: la nota no es 0 ni implica riesgo. */
+  sinEvaluaciones?: boolean
+  /** Calculada solo con parte de la ponderación 30/30/40. */
+  calculoProvisional?: boolean
+  ponderacionEvaluada?: number
 }
 
 export interface SincronizacionDto {
@@ -201,6 +211,7 @@ export interface MembreteInstitucionalDto {
   docenteTitular: string
   docenteCorreo: string
   fechaEmisionUtc: string
+  ultimaSincronizacionUtc?: string | null
 }
 
 export interface FirmaDocenteDto {
@@ -259,6 +270,8 @@ export interface FilaMatrizConsolidadaDto {
   componentes: ComponentePonderadoDto[]
   temasDeficientes: TemaCriticoDto[]
   planRefuerzoVigente: PlanRefuerzoDto | null
+  sinEvaluaciones?: boolean
+  calculoProvisional?: boolean
 }
 
 export interface ReporteConsolidadoCursoDto {
@@ -282,4 +295,107 @@ export interface ReporteIndividualTutoriaDto {
   planRefuerzo: PlanRefuerzoDto | null
   bloqueFirma: FirmaDocenteDto
   piePagina: PiePaginaReporteDto
+}
+
+export interface EstadoMoodleDto {
+  enLinea: boolean
+  baseUrl: string
+  tokenConfigurado: boolean
+  sitio: string | null
+  version: string | null
+  cuentaServicio: string | null
+  codigoError: string | null
+  error: string | null
+  cursosVinculados: number
+  docentesVinculados: number
+  ultimaSincronizacionExitosa: string | null
+  consultadoEn: string
+}
+
+export interface LogSincronizacionDto {
+  id: number
+  fecha: string
+  operacion: string
+  estado: string
+  exitoso: boolean
+  totalRegistros: number
+  curso: string | null
+  docente: string | null
+  mensajeError: string | null
+}
+
+export interface PasoTrazaAgenteDto {
+  herramienta: string
+  parametros: string | null
+  resultado: string | null
+  exito: boolean
+  error: string | null
+  duracionMs: number
+}
+
+export interface TrazaAgenteDto {
+  id: number
+  fecha: string
+  usuarioId: number
+  usuario: string | null
+  curso: string | null
+  modo: string
+  consulta: string
+  modelo: string | null
+  esFallback: boolean
+  exitoso: boolean
+  error: string | null
+  duracionMs: number
+  pasos: PasoTrazaAgenteDto[]
+}
+
+export interface ConfiguracionAlertasDto {
+  rendimientoActivo: boolean
+  rendimientoUmbral: number
+  descensoActivo: boolean
+  descensoUltimas: number
+  descensoPuntos: number
+  atrasosActivo: boolean
+  atrasosMinimo: number
+  finalizacionActivo: boolean
+  finalizacionMinimaPct: number
+}
+
+export interface IndicadoresProgresoDto {
+  totalActividades: number
+  calificadas: number
+  sinEntrega: number
+  pendientesCalificar: number
+  pendientesEntrega: number
+  sinDato: number
+  completadas: number
+  exigibles: number
+  porcentajeFinalizacion: number | null
+}
+
+export interface AlertaAcademicaDto {
+  regla: 'rendimiento' | 'descenso' | 'atrasos' | 'finalizacion' | string
+  titulo: string
+  evidencia: string
+  actividades: string[]
+}
+
+export interface AlertasEstudianteDto {
+  estudianteId: number
+  nombres: string
+  apellidos: string
+  notaFinalParcial: number
+  sinEvaluaciones: boolean
+  indicadores: IndicadoresProgresoDto
+  alertas: AlertaAcademicaDto[]
+}
+
+export interface AlertasCursoDto {
+  cursoId: number
+  parcialId: number
+  configuracion: ConfiguracionAlertasDto
+  configuracionPersonalizada: boolean
+  progresoCurso: IndicadoresProgresoDto
+  estudiantesConAlertas: number
+  estudiantes: AlertasEstudianteDto[]
 }

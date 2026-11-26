@@ -62,6 +62,8 @@ public sealed class MoodleService(IHttpClientFactory factory, IOptions<MoodleOpt
         var args = Args("assignid", tareaId); args["userid"] = usuarioId.ToString(CultureInfo.InvariantCulture);
         return Call<MoodleEstadoEntregaDto>("mod_assign_get_submission_status", args, ct);
     }
+    public Task<MoodleSitioDto> ObtenerInfoSitio(CancellationToken ct = default) =>
+        Call<MoodleSitioDto>("core_webservice_get_site_info", new Dictionary<string,string>(), ct);
     private static Dictionary<string,string> Args(string name, int value)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value);

@@ -17,14 +17,35 @@ import {
   Copy,
   Check,
 } from 'lucide-react'
+import axios from 'axios'
 import clienteAxios from '../api/clienteAxios'
 import { useAuth } from '../context/AuthContext'
 import { crearAnonimizador } from '../utils/anonimizador'
-import {
-  NOMBRE_COMPONENTE,
-  type MateriaDto,
-  type ResumenAcademicoEstudianteDto,
-} from '../types/academico'
+import { type MateriaDto, type ResumenAcademicoEstudianteDto } from '../types/academico'
+import { estaEvaluado } from '../utils/estadoCalificacion'
+
+// Código seudónimo estable: el mismo que usa la API académica para el agente (EST-<id interno>).
+const codigoEstudiante = (estudianteId: number) => `EST-${String(estudianteId).padStart(3, '0')}`
+
+const NOMBRE_HERRAMIENTA: Record<string, string> = {
+  consultar_resumen_curso: 'resumen del curso',
+  listar_estudiantes_en_riesgo: 'estudiantes en riesgo',
+  analizar_temas_y_actividades: 'temas y actividades',
+  identificar_alertas: 'alertas académicas',
+  diagnosticar_estudiante: 'diagnóstico individual',
+}
+
+function mensajeErrorChat(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    if (error.code === 'ECONNABORTED') return 'El asistente tardó demasiado en responder.'
+    const detalle = (error.response?.data as { detail?: unknown } | undefined)?.detail
+    if (typeof detalle === 'string' && detalle.trim()) return detalle
+    if (error.response?.status === 401) return 'La sesión expiró; vuelve a iniciar sesión.'
+    if (!error.response) return 'No hay conexión con el servicio de IA.'
+    return `El servicio de IA respondió con un error (HTTP ${error.response.status}).`
+  }
+  return 'Error inesperado al consultar el asistente.'
+}
 
 export interface MensajeChatUi {
   id: string
@@ -32,6 +53,9 @@ export interface MensajeChatUi {
   texto: string
   hora: string
   esFallback?: boolean
+  // La consulta falló: el mensaje explica el motivo y no contiene ningún análisis.
+  esError?: boolean
+  herramientas?: string[]
   tiempoMs?: number
   modoMensaje?: 'curso' | 'estudiante'
   estudianteIdMensaje?: number | null
@@ -380,34 +404,10 @@ export function ChatIaWidget({
 
   const materiaActual = materias.find((m) => m.id === materiaId) || materias[0]
   const estudianteActual = estudiantes.find((e) => e.estudianteId === estudianteId) || null
-  const estudiantesEnRiesgoOrdenados = [...estudiantes]
+  const estudiantesEnRiesgoOrdenados = estudiantes
+    .filter(estaEvaluado)
     .filter((e) => e.enRiesgo || e.notaFinalParcial < 7)
     .sort((a, b) => a.notaFinalParcial - b.notaFinalParcial)
-
-  // Extraer componentes evaluativos reales con calificaciones efectivas (excluye ceros de componentes sin evaluar)
-  const componentesReales = (e: ResumenAcademicoEstudianteDto): Record<string, number> => {
-    if (!e.componentes) return {}
-    return Object.fromEntries(
-      e.componentes
-        .filter((c) => c.evaluaciones && c.evaluaciones.some((ev) => ev.nota !== null))
-        .map((c) => [NOMBRE_COMPONENTE[c.tipo] || String(c.tipo), Number(c.promedioComponente.toFixed(2))])
-    )
-  }
-
-  // Extraer actividades individuales con su nota y temas asociados para análisis granular (RNF-02 sin PII)
-  const evaluacionesDetalladas = (e: ResumenAcademicoEstudianteDto) => {
-    if (!e.componentes) return []
-    return e.componentes.flatMap((c) =>
-      (c.evaluaciones || [])
-        .filter((ev) => ev.nota !== null)
-        .map((ev) => ({
-          nombre: ev.nombre,
-          componente: NOMBRE_COMPONENTE[c.tipo] || String(c.tipo),
-          nota: Number((ev.nota ?? 0).toFixed(2)),
-          temas: (ev.temas || []).map((t) => t.nombre),
-        }))
-    )
-  }
 
   async function enviarMensaje(
     textoAEnviar?: string,
@@ -450,8 +450,8 @@ export function ChatIaWidget({
     setCargando(true)
 
     const mapaEfectivo = new Map<number, string>()
-    const listaAnon = estudiantesEfectivos.map((e, idx) => {
-      const cod = `EST-${String(idx + 1).padStart(3, '0')}`
+    const listaAnon = estudiantesEfectivos.map((e) => {
+      const cod = codigoEstudiante(e.estudianteId)
       mapaEfectivo.set(e.estudianteId, cod)
       return { nombres: e.nombres, apellidos: e.apellidos, codigo: cod }
     })
@@ -469,37 +469,6 @@ export function ChatIaWidget({
     const { anonimizar: anonMsg, desanonimizar: desanonMsg } = crearAnonimizador(listaAnon)
     const { anonimizar: anonHistorial } = crearAnonimizador(listaAnonGlobal)
 
-    const contextoCurso = materiaEfectiva
-      ? {
-          materia: materiaEfectiva.nombre,
-          codigo: materiaEfectiva.codigo,
-          semestre: materiaEfectiva.semestre,
-          promedioGeneral:
-            estudiantesEfectivos.length > 0
-              ? Number(
-                  (
-                    estudiantesEfectivos.reduce((acc, e) => acc + e.notaFinalParcial, 0) /
-                    estudiantesEfectivos.length
-                  ).toFixed(2)
-                )
-              : 0,
-          totalEstudiantes: estudiantesEfectivos.length,
-          estudiantesEnRiesgo: estudiantesEfectivos.filter((e) => e.enRiesgo).length,
-          aprobados: estudiantesEfectivos.filter((e) => !e.enRiesgo).length,
-        }
-      : null
-
-    const estudianteDto = estEfectivo
-      ? {
-          codigo: mapaEfectivo.get(estEfectivo.estudianteId) || 'EST-001',
-          notaFinal: estEfectivo.notaFinalParcial,
-          enRiesgo: estEfectivo.enRiesgo,
-          componentes: componentesReales(estEfectivo),
-          temasDeficientes: estEfectivo.temasDeficientes.map((t) => t.nombreTema),
-          evaluaciones: evaluacionesDetalladas(estEfectivo),
-        }
-      : null
-
     const textoAnonimizado = anonMsg(texto)
     const codigosDetectados = textoAnonimizado.match(/\bEST-\d+\b/g)
     let estMencionadoId: number | null = estEfectivo?.estudianteId ?? null
@@ -512,20 +481,39 @@ export function ChatIaWidget({
       }
     }
 
+    // El navegador ya no envía notas: el agente las obtiene de la API académica con sus herramientas,
+    // usando la sesión del docente. Solo viajan la pregunta anonimizada y qué curso y parcial se consultan.
+    const parcialId =
+      estudiantesEfectivos[0]?.parcialId ??
+      materiaEfectiva?.parciales.find((p) => p.numero === 1)?.id ??
+      materiaEfectiva?.parciales[0]?.id
+    const momento = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+    if (!materiaEfectiva || !parcialId) {
+      setMensajes((prev) => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          rol: 'assistant',
+          texto: 'Selecciona una asignatura con parciales sincronizados para consultar al asistente.',
+          hora: momento(),
+          esError: true,
+        },
+      ])
+      setCargando(false)
+      return
+    }
+
     const payload = {
       modo: modoEfectivo,
       mensaje: textoAnonimizado,
-      historial: mensajes.map((m) => ({ rol: m.rol, contenido: anonHistorial(m.texto) })),
-      contextoCurso,
-      estudianteSeleccionado: estudianteDto,
-      estudiantesCurso: estudiantesEfectivos.map((e, idx) => ({
-        codigo: mapaEfectivo.get(e.estudianteId) || `EST-${String(idx + 1).padStart(3, '0')}`,
-        notaFinal: e.notaFinalParcial,
-        enRiesgo: e.enRiesgo,
-        componentes: componentesReales(e),
-        temasDeficientes: e.temasDeficientes.map((t) => t.nombreTema),
-        evaluaciones: evaluacionesDetalladas(e),
-      })),
+      historial: mensajes
+        .filter((m) => !m.esError)
+        .slice(-20)
+        .map((m) => ({ rol: m.rol, contenido: anonHistorial(m.texto) })),
+      cursoId: materiaEfectiva.id,
+      parcialId,
+      estudianteCodigo: estEfectivo ? codigoEstudiante(estEfectivo.estudianteId) : null,
     }
 
     try {
@@ -537,58 +525,28 @@ export function ChatIaWidget({
         id: String(Date.now() + 1),
         rol: 'assistant',
         texto: desanonMsg(data.respuesta || 'Análisis completado.'),
-        hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        hora: momento(),
         esFallback: data.esFallback,
+        herramientas: Array.isArray(data.toolsEjecutadas) ? (data.toolsEjecutadas as string[]) : [],
         tiempoMs: data.tiempoRespuestaMs,
         modoMensaje: estMencionadoId ? 'estudiante' : modoEfectivo,
         estudianteIdMensaje: estMencionadoId,
-        materiaIdMensaje: materiaEfectiva?.id ?? null,
+        materiaIdMensaje: materiaEfectiva.id,
         sugerencias,
       }
       setMensajes((prev) => [...prev, respuestaIa])
-    } catch {
-      let respuestaLocal = ''
-      if (modoEfectivo === 'curso') {
-        const enRiesgo = estudiantesEfectivos.filter((e) => e.enRiesgo)
-        respuestaLocal = `Actualmente en ${materiaEfectiva?.nombre || 'el curso'}, hay ${enRiesgo.length} estudiante(s) en riesgo de un total de ${estudiantesEfectivos.length}. `
-        if (enRiesgo.length > 0) {
-          respuestaLocal += `Los estudiantes con promedio menor a 7.00 son:\n`
-          enRiesgo.forEach((e) => {
-            const temas = e.temasDeficientes.map((t) => t.nombreTema).join(', ')
-            respuestaLocal += `- ${e.apellidos} ${e.nombres}: ${e.notaFinalParcial.toFixed(2)} pts${
-              temas ? ` (Temas: ${temas})` : ''
-            }\n`
-          })
-        } else {
-          respuestaLocal += 'Todos los estudiantes registrados tienen promedio aprobatorio (>= 7.00).'
-        }
-      } else if (estEfectivo) {
-        respuestaLocal = `Diagnóstico de ${estEfectivo.apellidos} ${estEfectivo.nombres}:\n`
-        respuestaLocal += `- Nota actual: ${estEfectivo.notaFinalParcial.toFixed(2)} / 10.00 pts (${
-          estEfectivo.enRiesgo ? 'En Riesgo Académico' : 'Aprobado'
-        }).\n`
-        if (estEfectivo.temasDeficientes.length > 0) {
-          respuestaLocal += `- Temas críticos: ${estEfectivo.temasDeficientes
-            .map((t) => `${t.nombreTema}${t.notaObtenida !== null ? ` (${t.notaObtenida.toFixed(2)})` : ''}`)
-            .join(', ')}.\n`
-          respuestaLocal += `- Recomendación: Programar 4 horas de tutoría práctica enfocada en estos contenidos.`
-        } else {
-          respuestaLocal += '- No registra temas con deficiencias críticas identificadas.'
-        }
-      } else {
-        respuestaLocal = 'Por favor selecciona un estudiante del listado superior para ver su diagnóstico individual.'
-      }
-
-      const respuestaFallback: MensajeChatUi = {
-        id: String(Date.now() + 1),
-        rol: 'assistant',
-        texto: respuestaLocal,
-        hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        esFallback: true,
-        modoMensaje: modoEfectivo,
-        estudianteIdMensaje: estEfectivo?.estudianteId ?? null,
-      }
-      setMensajes((prev) => [...prev, respuestaFallback])
+    } catch (error) {
+      // Sin respuesta del agente no se fabrica un análisis local: se informa el fallo.
+      setMensajes((prev) => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          rol: 'assistant',
+          texto: `No se pudo completar la consulta: ${mensajeErrorChat(error)} No se generó ningún análisis; puedes intentarlo de nuevo.`,
+          hora: momento(),
+          esError: true,
+        },
+      ])
     } finally {
       setCargando(false)
     }
@@ -776,16 +734,27 @@ export function ChatIaWidget({
                       <span
                         className={`text-[9px] font-medium ${
                           m.rol === 'assistant' && m.id !== 'bienvenida' && m.id !== 'reinicio'
-                            ? m.esFallback
-                              ? 'text-amber-700'
-                              : 'text-emerald-700'
+                            ? m.esError
+                              ? 'text-[#b91c1c]'
+                              : m.esFallback
+                                ? 'text-amber-700'
+                                : 'text-emerald-700'
                             : 'text-[#71717a]'
                         }`}
+                        title={
+                          m.herramientas && m.herramientas.length > 0
+                            ? `Datos de la API académica: ${m.herramientas.map((h) => NOMBRE_HERRAMIENTA[h] ?? h).join(', ')}`
+                            : undefined
+                        }
                       >
                         {m.rol === 'assistant' && m.id !== 'bienvenida' && m.id !== 'reinicio'
-                          ? m.esFallback
-                            ? 'Motor Local (Respaldo)'
-                            : `✨ Gemini IA${m.tiempoMs ? ` · ${(m.tiempoMs / 1000).toFixed(1)}s` : ''}`
+                          ? m.esError
+                            ? 'Sin respuesta del asistente'
+                            : `${m.esFallback ? 'Motor local con datos reales' : '✨ Gemini IA'}${
+                                m.herramientas && m.herramientas.length > 0
+                                  ? ` · ${m.herramientas.length} consulta${m.herramientas.length === 1 ? '' : 's'} a la API`
+                                  : ''
+                              }${m.tiempoMs ? ` · ${(m.tiempoMs / 1000).toFixed(1)}s` : ''}`
                           : ''}
                       </span>
                       <div className="flex items-center gap-2 ml-auto">

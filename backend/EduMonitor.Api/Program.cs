@@ -6,6 +6,7 @@ using EduMonitor.Infrastructure.Data;
 using EduMonitor.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,8 @@ builder.Services.AddDbContext<AcademicoDbContext>(options =>
 
 // Servicios de Catálogo y Sincronización Moodle
 builder.Services.AddScoped<CatalogoService>();
+builder.Services.AddScoped<AgenteService>();
+builder.Services.AddScoped<AlertasService>();
 builder.Services.AddScoped<MoodleSyncService>();
 
 // Servicios de Estiven: Cálculo Ponderado e Inferencia IA
@@ -55,10 +58,13 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IIndicadoresService, IndicadoresService>();
 builder.Services.AddScoped<GestionUsuariosService>();
 
-// Autenticación JWT Bearer
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "EduMonitorAI_Secret_Key_FISEI_UTA_2026_SecureKey_MustBeLong!";
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+// Autenticación JWT Bearer: la clave es obligatoria y se valida al arrancar (sin valor por defecto).
+builder.Services.AddOptions<JwtOpciones>().BindConfiguration(JwtOpciones.Seccion)
+    .Validate(o => JwtOpciones.ClaveValida(o.Key), JwtOpciones.MensajeClaveInvalida)
+    .ValidateOnStart();
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IOptions<JwtOpciones>>((options, jwt) =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -66,9 +72,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "EduMonitorApi",
-            ValidAudience = builder.Configuration["Jwt:Audience"] ?? "EduMonitorClient",
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+            ValidIssuer = jwt.Value.Issuer,
+            ValidAudience = jwt.Value.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Value.Key))
         };
     });
 
@@ -83,7 +89,8 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new EduMonitor.Api.UtcDateTimeJsonConverter()));
 
 var app = builder.Build();
 
@@ -95,25 +102,33 @@ using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<AcademicoDbContext>().Database.Migrate();
 }
 
-// Inicializador de contraseñas reales con Salt PBKDF2
-if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Development:ResetExamplePasswords"))
+// Entorno de demostración: restablece las cuentas de ejemplo con la contraseña de Development:ExamplePassword
+// (variable DEMO_PASSWORD en Docker). Sin esa contraseña no se toca ninguna cuenta.
+var passwordEjemplo = builder.Configuration["Development:ExamplePassword"];
+if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Development:ResetExamplePasswords")
+    && string.IsNullOrWhiteSpace(passwordEjemplo))
+{
+    app.Logger.LogWarning("Development:ResetExamplePasswords está activo pero Development:ExamplePassword está vacío; no se restablecen cuentas.");
+}
+if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Development:ResetExamplePasswords")
+    && !string.IsNullOrWhiteSpace(passwordEjemplo))
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<EduMonitorDbContext>();
     var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
 
     var proano = context.Usuarios.FirstOrDefault(u => u.Email == "d.proano@uta.edu.ec");
-    if (proano != null && !hasher.VerifyPassword("Admin123!", proano.PasswordHash))
+    if (proano != null && !hasher.VerifyPassword(passwordEjemplo, proano.PasswordHash))
     {
-        proano.PasswordHash = hasher.HashPassword("Admin123!");
+        proano.PasswordHash = hasher.HashPassword(passwordEjemplo);
         proano.Status = 1;
         proano.IntentosFallidos = 0;
     }
 
     var snaider = context.Usuarios.FirstOrDefault(u => u.Email == "s.toainga@uta.edu.ec");
-    if (snaider != null && !hasher.VerifyPassword("Admin123!", snaider.PasswordHash))
+    if (snaider != null && !hasher.VerifyPassword(passwordEjemplo, snaider.PasswordHash))
     {
-        snaider.PasswordHash = hasher.HashPassword("Admin123!");
+        snaider.PasswordHash = hasher.HashPassword(passwordEjemplo);
         snaider.Status = 1;
         snaider.IntentosFallidos = 0;
     }

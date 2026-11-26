@@ -1,444 +1,297 @@
-from types import SimpleNamespace
+"""Agente conversacional: herramientas reales contra la API académica, function calling y traza (sección 7)."""
+import json
 from unittest.mock import MagicMock
+
+import httpx
+import pytest
 from fastapi.testclient import TestClient
-from app.main import app
-from app.schemas import (
-    ContextoCursoChat,
-    EstudianteChatDto,
-    MensajeChat,
-    SolicitudChat,
-)
+
+import app.main as main
+from app.schemas import ContextoCursoChat, EstudianteChatDto, SolicitudChat
+from app.services.backend_client import BackendAcademico, BackendError
 from app.services.chat_service import ChatService
 from app.services.chat_tools import ChatTools
+from tests.fakes import CONTEXTO, ESTUDIANTES, BackendFalso, respuesta_llamadas, respuesta_texto
 
-client = TestClient(app)
+client = TestClient(main.app)
+CABECERA = {"Authorization": "Bearer token-docente"}
 
-ESTUDIANTES_PRUEBA = [
-    EstudianteChatDto(
-        codigo="EST-001",
-        notaFinal=5.40,
-        enRiesgo=True,
-        componentes={"Tareas": 6.0, "APE": 4.5, "Examen": 5.75},
-        temasDeficientes=["Historias de Usuario e INVEST"],
-    ),
-    EstudianteChatDto(
-        codigo="EST-002",
-        notaFinal=8.90,
-        enRiesgo=False,
-        componentes={"Tareas": 9.0, "APE": 8.5, "Examen": 9.2},
-        temasDeficientes=[],
-    ),
-    EstudianteChatDto(
-        codigo="EST-003",
-        notaFinal=6.80,
-        enRiesgo=True,
-        componentes={"Tareas": 7.0, "APE": 6.5, "Examen": 7.0},
-        temasDeficientes=["Diagramas de Secuencia"],
-    ),
-    EstudianteChatDto(
-        codigo="EST-004",
-        notaFinal=7.50,
-        enRiesgo=False,
-        componentes={"Tareas": 8.0, "APE": 7.0, "Examen": 7.5},
-        temasDeficientes=[],
-    ),
-]
 
-CONTEXTO_PRUEBA = ContextoCursoChat(
-    materia="Metodologias Agiles",
-    codigo="SOF-401",
-    semestre="Cuarto B",
-    promedioGeneral=7.15,
-    totalEstudiantes=4,
-    estudiantesEnRiesgo=2,
-    aprobados=2,
-    componentesPromedios={"Tareas": 7.50, "APE": 6.62, "Examen": 7.36},
-)
+def _solicitud(**kwargs) -> SolicitudChat:
+    datos = {"modo": "curso", "mensaje": "¿Quiénes están en riesgo?", "cursoId": 1, "parcialId": 10}
+    datos.update(kwargs)
+    return SolicitudChat(**datos)
 
+
+def _servicio_local() -> ChatService:
+    service = ChatService()
+    service.client = None
+    service.api_key = ""
+    return service
+
+
+def _servicio_con_modelo(*respuestas) -> tuple:
+    service = ChatService()
+    service.api_key = "fake-key"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.side_effect = list(respuestas)
+    service.client = fake_client
+    return service, fake_client
+
+
+@pytest.fixture
+def backend_en_endpoint(monkeypatch):
+    """Sustituye el cliente HTTP del endpoint por la API en memoria y fuerza el motor local."""
+    backend = BackendFalso()
+    tokens = []
+
+    def fabrica(token, *args, **kwargs):
+        tokens.append(token)
+        return backend
+
+    monkeypatch.setattr(main, "BackendAcademico", fabrica)
+    monkeypatch.setattr(main.chat_service, "client", None)
+    monkeypatch.setattr(main.chat_service, "api_key", "")
+    backend.tokens = tokens
+    return backend
+
+
+# -- Cálculos deterministas ------------------------------------------------------------------------
 
 def test_tool_resumen_curso():
-    resumen = ChatTools.tool_resumen_curso(CONTEXTO_PRUEBA, ESTUDIANTES_PRUEBA)
+    estudiantes = [EstudianteChatDto(**e) for e in ESTUDIANTES]
+    resumen = ChatTools.tool_resumen_curso(ContextoCursoChat(**CONTEXTO), estudiantes)
     assert resumen["totalEstudiantes"] == 4
     assert resumen["estudiantesEnRiesgo"] == 2
-    assert resumen["aprobados"] == 2
     assert resumen["tasaAprobacionPct"] == 50.0
-
-    rangos = resumen["distribucionRangos"]
-    assert rangos["critico"]["cantidad"] == 0
-    assert rangos["enRiesgo"]["cantidad"] == 2
-    assert rangos["regular"]["cantidad"] == 1
-    assert rangos["sobresaliente"]["cantidad"] == 1
+    assert resumen["distribucionRangos"]["sobresaliente"]["cantidad"] == 1
 
 
-def test_tool_estudiantes_en_riesgo():
-    resultado = ChatTools.tool_estudiantes_en_riesgo(ESTUDIANTES_PRUEBA, umbral=7.0)
-    assert resultado["totalEnRiesgo"] == 2
-    # Debe ordenar de menor a mayor: primero 5.40 y luego 6.80
-    assert resultado["estudiantes"][0]["notaFinal"] == 5.40
-    assert resultado["estudiantes"][0]["codigo"] == "EST-001"
-    assert resultado["estudiantes"][1]["notaFinal"] == 6.80
-    assert resultado["estudiantes"][1]["codigo"] == "EST-003"
+def test_tool_estudiantes_en_riesgo_ordena_de_menor_a_mayor():
+    resultado = ChatTools.tool_estudiantes_en_riesgo([EstudianteChatDto(**e) for e in ESTUDIANTES])
+    assert [e["codigo"] for e in resultado["estudiantes"]] == ["EST-001", "EST-003"]
 
 
-def test_tool_diagnostico_estudiante():
-    diag = ChatTools.tool_diagnostico_estudiante(ESTUDIANTES_PRUEBA[0])
-    assert diag["codigo"] == "EST-001"
+def test_tool_diagnostico_estudiante_incluye_actividad_sin_entrega():
+    diag = ChatTools.tool_diagnostico_estudiante(EstudianteChatDto(**ESTUDIANTES[0]))
     assert diag["nivelRiesgo"] == "Alto"
-    assert diag["horasTutoriaSugeridas"] == 4
-    assert "Historias de Usuario e INVEST" in diag["temasDeficientes"]
+    assert {"nombre": "APE 1", "componente": "APE", "nota": 0.0, "temas": ["Planning Poker"]} in diag["actividadesDeficientes"]
 
 
-def test_endpoint_chat_modo_curso():
+# -- Contrato del endpoint -------------------------------------------------------------------------
+
+def test_endpoint_sin_token_responde_401():
+    respuesta = client.post("/api/agent/chat", json={"mensaje": "Hola", "cursoId": 1, "parcialId": 10})
+    assert respuesta.status_code == 401
+
+
+def test_endpoint_rechaza_notas_o_nombres_enviados_desde_el_navegador():
     payload = {
-        "modo": "curso",
-        "mensaje": "¿Cuáles son los estudiantes que tienen promedio menor a 7.00?",
-        "historial": [],
-        "contextoCurso": CONTEXTO_PRUEBA.model_dump(),
-        "estudiantesCurso": [e.model_dump() for e in ESTUDIANTES_PRUEBA],
+        "mensaje": "Resumen",
+        "cursoId": 1,
+        "parcialId": 10,
+        "estudiantesCurso": [{"codigo": "EST-001", "notaFinal": 5.0, "nombres": "Juan", "apellidos": "Pérez"}],
     }
-
-    response = client.post("/api/agent/chat", json=payload)
-    assert response.status_code == 200
-
-    data = response.json()
-    assert "respuesta" in data and len(data["respuesta"]) > 0
-    assert "advertenciaEtica" in data
-    assert "RNF-08" in data["advertenciaEtica"]
-    assert data["modo"] == "curso"
-    assert isinstance(data["toolsEjecutadas"], list)
+    assert client.post("/api/agent/chat", json=payload, headers=CABECERA).status_code == 422
 
 
-def test_endpoint_chat_modo_estudiante():
-    payload = {
-        "modo": "estudiante",
-        "mensaje": "¿Qué plan de refuerzo recomiendas para este alumno?",
-        "historial": [],
-        "contextoCurso": CONTEXTO_PRUEBA.model_dump(),
-        "estudianteSeleccionado": ESTUDIANTES_PRUEBA[0].model_dump(),
-        "estudiantesCurso": [e.model_dump() for e in ESTUDIANTES_PRUEBA],
-    }
-
-    response = client.post("/api/agent/chat", json=payload)
-    assert response.status_code == 200
-
-    data = response.json()
-    assert data["modo"] == "estudiante"
-    # Debe responder con el código del alumno y su calificación real (sin nombres personales)
-    assert "EST-001" in data["respuesta"]
-    assert "5.40" in data["respuesta"]
+def test_endpoint_rechaza_codigo_de_estudiante_mal_formado():
+    payload = {"mensaje": "Diagnóstico", "cursoId": 1, "parcialId": 10, "estudianteCodigo": "Juan Pérez"}
+    assert client.post("/api/agent/chat", json=payload, headers=CABECERA).status_code == 422
 
 
-def test_gemini_chat_con_mock():
-    service = ChatService()
-    service.api_key = "fake-key"
-    fake_client = MagicMock()
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text="Resumen pedagógico oficial: 2 estudiantes requieren tutoría prioritaria."
+def test_endpoint_usa_el_jwt_del_docente_y_registra_la_traza(backend_en_endpoint):
+    respuesta = client.post(
+        "/api/agent/chat",
+        json={"mensaje": "¿Quiénes están en riesgo?", "cursoId": 1, "parcialId": 10},
+        headers=CABECERA,
     )
-    service.client = fake_client
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert backend_en_endpoint.tokens == ["token-docente"]
+    assert cuerpo["esFallback"] is True
+    assert cuerpo["trazaId"] == 1
+    # Mínimo tres herramientas reales invocadas contra la API académica (sección 7).
+    assert len(cuerpo["toolsEjecutadas"]) >= 3
+    assert backend_en_endpoint.llamadas.count("datos:1:10") >= 3
 
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="Dame un resumen general",
-        contextoCurso=CONTEXTO_PRUEBA,
-        estudiantesCurso=ESTUDIANTES_PRUEBA,
+    traza = backend_en_endpoint.trazas[0]
+    assert traza["exitoso"] is True and traza["consulta"] == "¿Quiénes están en riesgo?"
+    assert [p["herramienta"] for p in traza["pasos"]] == cuerpo["toolsEjecutadas"]
+    assert json.loads(traza["pasos"][0]["parametros"]) == {"cursoId": 1, "parcialId": 10}
+    assert all(p["exito"] for p in traza["pasos"])
+
+
+def test_endpoint_si_la_api_falla_devuelve_error_explicito_sin_inventar(backend_en_endpoint):
+    backend_en_endpoint.fallo = BackendError("No se pudo conectar con la API académica.", 503)
+    respuesta = client.post(
+        "/api/agent/chat", json={"mensaje": "Resumen", "cursoId": 1, "parcialId": 10}, headers=CABECERA
     )
+    assert respuesta.status_code == 502
+    assert respuesta.json()["detail"] == "No se pudo conectar con la API académica."
+    traza = backend_en_endpoint.trazas[-1]
+    assert traza["exitoso"] is False
+    assert traza["pasos"][0]["exito"] is False and traza["pasos"][0]["error"]
 
-    respuesta = service.procesar_chat(solicitud)
-    assert respuesta.esFallback is False
-    assert "2 estudiantes" in respuesta.respuesta
-    assert "RNF-08" in respuesta.advertenciaEtica
 
-
-# ---------------------------------------------------------------------------
-# Pruebas Nuevas Exigidas por el DoD / Code Review de Privacidad y Calidad
-# ---------------------------------------------------------------------------
-
-def test_sin_componentes_no_inventa_notas():
-    """Verifica que sin componentes reales no devuelva valores quemados (como 5.80 en APE)."""
-    estudiantes_sin_comp = [
-        EstudianteChatDto(codigo="EST-010", notaFinal=6.0, enRiesgo=True, componentes={}),
-    ]
-    res = ChatTools.tool_analisis_componentes(None, estudiantes_sin_comp)
-    assert res["disponible"] is False
-    assert res["componentes"] == {}
-    assert res["componenteCritico"] is None
-    assert res["promedioComponenteCritico"] is None
-    assert "No hay notas" in res["motivo"]
-
-    # En el servicio determinista / fallback, no debe contener '5.80' ni 'APE' inventado
-    service = ChatService()
-    service.client = None
-    service.api_key = ""
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="¿Cuál es el componente más bajo?",
-        estudiantesCurso=estudiantes_sin_comp,
+def test_endpoint_propaga_permiso_denegado(backend_en_endpoint):
+    backend_en_endpoint.fallo = BackendError("Sin permiso.", 403)
+    respuesta = client.post(
+        "/api/agent/chat", json={"mensaje": "Resumen", "cursoId": 99, "parcialId": 10}, headers=CABECERA
     )
-    resp = service.procesar_chat(solicitud)
-    assert "5.80" not in resp.respuesta
-    assert "no hay notas por componente" in resp.respuesta.lower()
+    assert respuesta.status_code == 403
 
 
-def test_con_componentes_reales_detecta_mas_bajo():
-    """Verifica que con componentes reales detecte el componente con promedio más bajo."""
-    estudiantes = [
-        EstudianteChatDto(
-            codigo="EST-001",
-            notaFinal=6.5,
-            componentes={"Tareas": 8.0, "APE": 5.0, "Examen": 7.0},
-        ),
-        EstudianteChatDto(
-            codigo="EST-002",
-            notaFinal=7.5,
-            componentes={"Tareas": 8.5, "APE": 5.5, "Examen": 8.0},
-        ),
-    ]
-    res = ChatTools.tool_analisis_componentes(None, estudiantes)
-    assert res["disponible"] is True
-    assert res["componenteCritico"] == "APE"
-    assert res["promedioComponenteCritico"] == 5.25
+# -- Function calling ------------------------------------------------------------------------------
 
-
-def test_componente_sin_notas_no_cuenta_como_cero():
-    """Un estudiante sin componentes o componente sin notas no penaliza a 0."""
-    estudiantes = [
-        EstudianteChatDto(
-            codigo="EST-001",
-            notaFinal=8.0,
-            componentes={"Tareas": 8.0, "APE": 7.0},
-        ),
-        EstudianteChatDto(
-            codigo="EST-002",
-            notaFinal=8.0,
-            componentes=None,
-        ),
-    ]
-    res = ChatTools.tool_analisis_componentes(None, estudiantes)
-    assert res["disponible"] is True
-    assert res["componentes"]["Tareas"] == 8.0
-    assert res["componentes"]["APE"] == 7.0
-
-
-def test_gemini_mock_no_contiene_datos_personales():
-    """Valida que el prompt generado para Gemini no contenga nombres, apellidos ni emails."""
-    service = ChatService()
-    service.api_key = "fake-key"
-    fake_client = MagicMock()
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text="Respuesta válida del modelo."
+def test_el_modelo_decide_las_herramientas_y_recibe_sus_resultados():
+    service, fake = _servicio_con_modelo(
+        respuesta_llamadas(("listar_estudiantes_en_riesgo", {})),
+        respuesta_texto("Hechos verificados:\n• EST-001: 5.40\nSUGERENCIAS: ¿Qué tema reforzar? | Plan grupal"),
     )
-    service.client = fake_client
+    backend = BackendFalso()
+    resp = service.procesar_chat(_solicitud(), backend)
 
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="¿Qué estudiantes necesitan refuerzo?",
-        contextoCurso=CONTEXTO_PRUEBA,
-        estudiantesCurso=ESTUDIANTES_PRUEBA,
-    )
-
-    service.procesar_chat(solicitud)
-    assert fake_client.models.generate_content.called
-    call_args = fake_client.models.generate_content.call_args
-    prompt_enviado = call_args.kwargs.get("contents", "")
-
-    # Verificar que NO viajen datos personales de los integrantes
-    for nombre_prohibido in ["Carrasco", "Chiluisa", "Sivinta", "Toainga", "carlos.docente", "@uta.edu.ec"]:
-        assert nombre_prohibido not in prompt_enviado
-
-    # Verificar que viaje el código anónimo
-    assert "EST-001" in prompt_enviado
-
-
-def test_peticion_con_nombres_devuelve_422():
-    """Garantiza el cumplimiento de RNF-02 mediante Pydantic extra='forbid': rechaza nombres/apellidos."""
-    payload_invalido = {
-        "modo": "curso",
-        "mensaje": "Consulta general",
-        "estudiantesCurso": [
-            {
-                "codigo": "EST-001",
-                "nombres": "Cesar",
-                "apellidos": "Carrasco",
-                "notaFinal": 5.4,
-            }
-        ],
-    }
-
-    response = client.post("/api/agent/chat", json=payload_invalido)
-    assert response.status_code == 422
-    # El error de validación debe indicar que los campos adicionales están prohibidos
-    errores = response.json()["detail"]
-    assert any("extra_forbidden" in str(err) for err in errores)
-
-
-def test_anonimizacion_texto_libre_e_historial_sin_fugas():
-    """
-    RNF-02: Valida que ninguna variante de nombres ('Cesar', 'Carrasco', 'Cesar Steven Carrasco Manotoa')
-    aparezca en el mensaje ni en el historial enviado a Gemini.
-    """
-    service = ChatService()
-    service.api_key = "fake-key"
-    fake_client = MagicMock()
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text="Diagnóstico orientado para los alumnos en consulta."
-    )
-    service.client = fake_client
-
-    # Simulación de mensaje e historial enviados por el frontend tras anonimización
-    # "¿Cómo va Cesar? ¿Y Carrasco? ¿Qué tal Cesar Steven Carrasco Manotoa?" -> "¿Cómo va EST-001? ¿Y EST-001? ¿Qué tal EST-001?"
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="¿Cómo va EST-001? ¿Y EST-001? ¿Qué tal EST-001?",
-        historial=[
-            MensajeChat(rol="user", contenido="¿Qué componentes debe recuperar EST-001?"),
-            MensajeChat(rol="assistant", contenido="EST-001 debe reforzar el componente APE."),
-        ],
-        contextoCurso=CONTEXTO_PRUEBA,
-        estudiantesCurso=ESTUDIANTES_PRUEBA,
-    )
-
-    service.procesar_chat(solicitud)
-    assert fake_client.models.generate_content.called
-    call_args = fake_client.models.generate_content.call_args
-    prompt_enviado = call_args.kwargs.get("contents", "")
-
-    # Afirmar categóricamente que ni 'Cesar', ni 'Carrasco', ni la combinación completa figuren en el prompt
-    for fuga in ["Cesar", "Carrasco", "Cesar Steven Carrasco Manotoa", "Steven", "Manotoa"]:
-        assert fuga not in prompt_enviado
-
-    assert "EST-001" in prompt_enviado
-
-
-def test_chat_detalle_por_actividad_y_tema_en_modo_estudiante():
-    payload = {
-        "modo": "estudiante",
-        "mensaje": "¿En qué tema y actividad específica está mal este estudiante?",
-        "contextoCurso": CONTEXTO_PRUEBA.model_dump(),
-        "estudianteSeleccionado": {
-            "codigo": "EST-010",
-            "notaFinal": 5.60,
-            "enRiesgo": True,
-            "componentes": {"Tareas": 5.65, "APE": 5.80, "Examen": 5.40},
-            "temasDeficientes": ["Fundamentos y roles Scrum"],
-            "evaluaciones": [
-                {
-                    "nombre": "Evaluación 1.1: Manifiesto Ágil",
-                    "componente": "Tareas",
-                    "nota": 5.50,
-                    "temas": ["Fundamentos y roles Scrum"],
-                },
-                {
-                    "nombre": "Taller APE 1: Planning Poker",
-                    "componente": "APE",
-                    "nota": 7.50,
-                    "temas": ["Historias de usuario y estimación"],
-                },
-            ],
-        },
-        "estudiantesCurso": [],
-    }
-    response = client.post("/api/agent/chat", json=payload)
-    assert response.status_code == 200
-    body = response.json()
-    assert "tool_diagnostico_estudiante" in body["toolsEjecutadas"]
-    assert "Evaluación 1.1: Manifiesto Ágil" in body["respuesta"]
-    assert "Fundamentos y roles Scrum" in body["respuesta"]
-
-
-def test_chat_gemini_desactiva_thinking_y_amplia_tokens_para_no_truncar(monkeypatch):
-    service = ChatService()
-    service.api_key = "fake-key"
-    fake_client = MagicMock()
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text="Hechos verificados:\n- Datos completos.\n\nInferencias:\n- Confianza alta.\n\nRecomendaciones:\n- Refuerzo."
-    )
-    service.client = fake_client
-
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="¿Qué temas tienen mayor dificultad en el curso?",
-        contextoCurso=CONTEXTO_PRUEBA,
-        estudiantesCurso=ESTUDIANTES_PRUEBA,
-    )
-
-    # 1. En modelos estándar (no-lite), debe desactivar thinking (thinking_budget == 0)
-    monkeypatch.setattr("app.services.chat_service.settings.GEMINI_MODEL", "gemini-3.5-flash")
-    resp = service.procesar_chat(solicitud)
-    assert "tool_analisis_temas" in resp.toolsEjecutadas
-    cfg = fake_client.models.generate_content.call_args.kwargs["config"]
-    assert cfg.max_output_tokens >= 2048
-    assert cfg.thinking_config.thinking_budget == 0
-
-    # 2. En modelos -lite (como gemini-3.5-flash-lite), debe omitir thinking_config para evitar 400 INVALID_ARGUMENT
-    monkeypatch.setattr("app.services.chat_service.settings.GEMINI_MODEL", "gemini-3.5-flash-lite")
-    service.procesar_chat(solicitud)
-    cfg_lite = fake_client.models.generate_content.call_args.kwargs["config"]
-    assert cfg_lite.max_output_tokens >= 2048
-    assert cfg_lite.thinking_config is None
-
-
-def test_chat_unificado_detecta_estudiante_mencionado_sin_cambiar_modo():
-    service = ChatService()
-    service.api_key = "fake-key"
-    fake_client = MagicMock()
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text="EST-001 tiene 5.40 y presenta dificultad en Historias de Usuario e INVEST."
-    )
-    service.client = fake_client
-
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="¿Cómo va EST-001 y qué actividades debería reforzar?",
-        contextoCurso=CONTEXTO_PRUEBA,
-        estudiantesCurso=ESTUDIANTES_PRUEBA,
-    )
-    resp = service.procesar_chat(solicitud)
     assert resp.esFallback is False
-    prompt_enviado = fake_client.models.generate_content.call_args.kwargs["contents"]
-    assert "estudiantes_mencionados" in prompt_enviado
-    assert "EST-001" in prompt_enviado
-    assert "Historias de Usuario e INVEST" in prompt_enviado
+    assert resp.toolsEjecutadas == ["listar_estudiantes_en_riesgo"]
+    assert resp.sugerenciasSeguimiento == ["¿Qué tema reforzar?", "Plan grupal"]
+    assert backend.llamadas == ["datos:1:10"]
 
-
-def test_extraer_sugerencias_contextuales_desde_respuesta_gemini():
-    service = ChatService()
-    service.api_key = "fake-key"
-    fake_client = MagicMock()
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text=(
-            "EST-001 requiere refuerzo en Historias de Usuario.\n"
-            "SUGERENCIAS: Crea 2 ejercicios prácticos de INVEST para EST-001 | Agenda tutoría semanal"
-        )
-    )
-    service.client = fake_client
-
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="¿Cómo va EST-001?",
-        contextoCurso=CONTEXTO_PRUEBA,
-        estudiantesCurso=ESTUDIANTES_PRUEBA,
-    )
-    resp = service.procesar_chat(solicitud)
-    assert "SUGERENCIAS:" not in resp.respuesta
-    assert resp.sugerenciasSeguimiento == [
-        "Crea 2 ejercicios prácticos de INVEST para EST-001",
-        "Agenda tutoría semanal",
+    primera, segunda = fake.models.generate_content.call_args_list
+    cfg = primera.kwargs["config"]
+    assert [d.name for d in cfg.tools[0].function_declarations] == [
+        "consultar_resumen_curso",
+        "listar_estudiantes_en_riesgo",
+        "analizar_temas_y_actividades",
+        "identificar_alertas",
+        "diagnosticar_estudiante",
     ]
+    assert cfg.tool_config.function_calling_config.mode == "ANY"
+    assert cfg.automatic_function_calling.disable is True
+    devuelto = segunda.kwargs["contents"][-1].parts[0].function_response
+    assert devuelto.name == "listar_estudiantes_en_riesgo"
+    assert devuelto.response["resultado"]["totalEnRiesgo"] == 2
+    assert backend.trazas[0]["modelo"] == resp.modelo
 
 
-def test_ambiguedad_marcador_estudiante_no_atribuye_notas_erroneas():
-    service = ChatService()
-    service.client = None
-    service.api_key = ""
-
-    solicitud = SolicitudChat(
-        modo="curso",
-        mensaje="¿Cómo va [ESTUDIANTE] en este parcial?",
-        contextoCurso=CONTEXTO_PRUEBA,
-        estudiantesCurso=ESTUDIANTES_PRUEBA,
+def test_codigo_inexistente_se_informa_al_modelo_y_queda_en_la_traza():
+    service, fake = _servicio_con_modelo(
+        respuesta_llamadas(("diagnosticar_estudiante", {"codigo": "EST-999"})),
+        respuesta_texto("No dispongo de ese dato para EST-999."),
     )
-    resp = service.procesar_chat(solicitud)
-    assert "múltiples estudiantes" in resp.respuesta
-    assert "nombre y apellido completo" in resp.respuesta
-    assert "EST-001: 5.40" not in resp.respuesta
+    backend = BackendFalso()
+    resp = service.procesar_chat(_solicitud(mensaje="¿Cómo va EST-999?"), backend)
+
+    assert resp.respuesta.startswith("No dispongo")
+    devuelto = fake.models.generate_content.call_args_list[1].kwargs["contents"][-1].parts[0].function_response
+    assert "error" in devuelto.response["resultado"]
+    paso = backend.trazas[0]["pasos"][0]
+    assert paso["herramienta"] == "diagnosticar_estudiante" and paso["exito"] is False
+
+
+def test_si_el_modelo_falla_se_usa_el_motor_local_con_datos_reales():
+    service, _ = _servicio_con_modelo(*[RuntimeError("503 UNAVAILABLE")] * 10)
+    backend = BackendFalso()
+    resp = service.procesar_chat(_solicitud(), backend)
+
+    assert resp.esFallback is True and resp.modelo is None
+    assert "EST-001: 5.40 pts" in resp.respuesta
+    assert len(resp.toolsEjecutadas) >= 3
+
+
+def test_modelos_estandar_desactivan_thinking_y_lite_lo_omiten(monkeypatch):
+    for modelo, esperado in (("gemini-3.5-flash", 0), ("gemini-3.5-flash-lite", None)):
+        monkeypatch.setattr("app.services.chat_service.settings.GEMINI_MODEL", modelo)
+        service, fake = _servicio_con_modelo(respuesta_texto("Respuesta."))
+        service.procesar_chat(_solicitud(), BackendFalso())
+        cfg = fake.models.generate_content.call_args.kwargs["config"]
+        assert cfg.max_output_tokens >= 2048
+        presupuesto = cfg.thinking_config.thinking_budget if cfg.thinking_config else None
+        assert presupuesto == esperado
+
+
+# -- Motor local -----------------------------------------------------------------------------------
+
+def test_motor_local_modo_estudiante_usa_el_diagnostico_del_backend():
+    backend = BackendFalso()
+    resp = _servicio_local().procesar_chat(
+        _solicitud(modo="estudiante", mensaje="Diagnóstico", estudianteCodigo="EST-001"), backend
+    )
+    assert resp.toolsEjecutadas == ["diagnosticar_estudiante"]
+    assert backend.llamadas == ["estudiante:EST-001"]
+    assert "EST-001" in resp.respuesta and "APE 1" in resp.respuesta
+
+
+def test_motor_local_detecta_un_codigo_mencionado_en_modo_curso():
+    backend = BackendFalso()
+    resp = _servicio_local().procesar_chat(_solicitud(mensaje="¿Qué le pasa a EST-003?"), backend)
+    assert "diagnosticar_estudiante" in resp.toolsEjecutadas
+    assert "estudiante:EST-003" in backend.llamadas
+
+
+# -- Cliente HTTP ----------------------------------------------------------------------------------
+
+def test_cliente_envia_bearer_y_clasifica_errores():
+    vistas = []
+
+    def manejador(request: httpx.Request) -> httpx.Response:
+        vistas.append(request)
+        if request.url.path.endswith("/EST-404"):
+            return httpx.Response(404, json={"title": "No hay un estudiante con ese código.", "code": "agente_estudiante_no_encontrado"})
+        if "/materias/3/" in request.url.path:
+            return httpx.Response(404, json={"title": "Materia inexistente.", "code": "academic_validation"})
+        if request.url.path.endswith("/trazas"):
+            return httpx.Response(201, json={"id": 7})
+        if "/materias/2/" in request.url.path:
+            return httpx.Response(403)
+        return httpx.Response(200, json={"contexto": CONTEXTO, "estudiantes": []})
+
+    backend = BackendAcademico("abc", base_url="http://api", transport=httpx.MockTransport(manejador))
+    assert backend.datos_curso(1, 10)["contexto"]["codigo"] == "SOF-401"
+    assert vistas[0].headers["Authorization"] == "Bearer abc"
+    assert vistas[0].url.path == "/api/academico/agente/materias/1/parciales/10/estudiantes"
+
+    with pytest.raises(BackendError) as no_encontrado:
+        backend.estudiante(1, 10, "EST-404")
+    assert no_encontrado.value.recuperable and no_encontrado.value.status == 404
+
+    with pytest.raises(BackendError) as materia_inexistente:
+        backend.datos_curso(3, 10)
+    assert not materia_inexistente.value.recuperable and materia_inexistente.value.status == 404
+
+    with pytest.raises(BackendError) as prohibido:
+        backend.datos_curso(2, 10)
+    assert not prohibido.value.recuperable and prohibido.value.status == 403
+
+    assert backend.registrar_traza({"modo": "curso"}) == 7
+
+
+def test_cliente_sin_conexion_no_es_recuperable():
+    def caido(request):
+        raise httpx.ConnectError("sin red", request=request)
+
+    backend = BackendAcademico("abc", base_url="http://api", transport=httpx.MockTransport(caido))
+    with pytest.raises(BackendError) as error:
+        backend.datos_curso(1, 10)
+    assert error.value.status == 503 and not error.value.recuperable
+
+
+def test_identificar_alertas_entrega_la_evidencia_de_las_reglas_al_modelo():
+    service, fake = _servicio_con_modelo(
+        respuesta_llamadas(("identificar_alertas", {})),
+        respuesta_texto("EST-001 tiene 2 actividades vencidas sin entrega."),
+    )
+    backend = BackendFalso()
+    resp = service.procesar_chat(_solicitud(mensaje="¿Qué alertas hay en el curso?"), backend)
+
+    assert resp.toolsEjecutadas == ["identificar_alertas"]
+    assert backend.llamadas == ["alertas:1:10"]
+    devuelto = fake.models.generate_content.call_args_list[1].kwargs["contents"][-1].parts[0].function_response
+    alerta = devuelto.response["resultado"]["estudiantes"][0]["alertas"][0]
+    assert alerta["regla"] == "atrasos" and "vencieron sin entrega" in alerta["evidencia"]
+
+
+def test_motor_local_incluye_las_alertas_con_su_evidencia():
+    resp = _servicio_local().procesar_chat(_solicitud(mensaje="Resumen del curso"), BackendFalso())
+    assert "identificar_alertas" in resp.toolsEjecutadas
+    assert "EST-001: Actividades vencidas sin entrega" in resp.respuesta
