@@ -66,6 +66,7 @@ Asegúrate de contar con las siguientes herramientas instaladas en tu estación 
 Los archivos `appsettings.json` versionados **no contienen secretos**: la clave JWT y el token de Moodle están vacíos y la API y el Gateway se niegan a arrancar sin una clave JWT propia (32 caracteres o más; la clave publicada en versiones anteriores se rechaza).
 
 - **Con Docker Compose:** complete `.env` a partir de `.env.example` (`JWT_KEY`, `MSSQL_SA_PASSWORD`, `DEMO_PASSWORD`, `MOODLE_TOKEN`).
+- **Con `start-dev.ps1`:** el script lee `JWT_KEY`, `MOODLE_TOKEN` y `MOODLE_BASE_URL` del mismo `.env` de la raíz y se detiene con un aviso si falta la clave. Compruébelo sin arrancar nada con `.\start-dev.ps1 -SoloValidar`.
 - **Sin Docker:** `Start-Local.ps1` genera la clave JWT en `.local/jwt-key.txt` y toma el token de `.local/moodle-connection.json`. Si ejecuta `dotnet run` directamente, defina las variables de entorno:
 
 ```powershell
@@ -135,7 +136,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 *Documentación interactiva Swagger de la IA disponible en: `http://localhost:8000/docs`.*
 
 ### Paso 4: Iniciar la API Backend de Microservicios (.NET Core)
-En una nueva terminal:
+En una nueva terminal, defina antes `$env:Jwt__Key` (y el token de Moodle) como se indica en *Configuración de Variables de Entorno*; sin la clave la API no arranca:
 ```powershell
 cd backend/EduMonitor.Api
 dotnet run --launch-profile "http"
@@ -143,7 +144,7 @@ dotnet run --launch-profile "http"
 *Servicio disponible en `http://localhost:5102`.*
 
 ### Paso 5: Iniciar el API Gateway YARP
-En una nueva terminal:
+En una nueva terminal, defina antes `$env:Jwt__Key` con **la misma clave** que usó para la API:
 ```powershell
 cd backend/EduMonitor.Gateway
 dotnet run --launch-profile "http"
