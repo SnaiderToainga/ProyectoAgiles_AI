@@ -62,24 +62,20 @@ Asegúrate de contar con las siguientes herramientas instaladas en tu estación 
 
 ## 🔐 Configuración de Variables de Entorno
 
-### 1. Variables de Backend API (`backend/EduMonitor.Api/appsettings.json`)
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost\\SQLEXPRESS;Database=EduMonitorDB;Trusted_Connection=True;TrustServerCertificate=True;",
-    "AcademicoConnection": "Server=localhost\\SQLEXPRESS;Database=AcademicoDB;Trusted_Connection=True;TrustServerCertificate=True;"
-  },
-  "Jwt": {
-    "Key": "EduMonitorAI_Secret_Key_FISEI_UTA_2026_SecureKey_MustBeLong!",
-    "Issuer": "EduMonitorApi",
-    "Audience": "EduMonitorClient"
-  },
-  "Moodle": {
-    "BaseUrl": "http://localhost:8080",
-    "Token": "tu_token_de_servicio_moodle"
-  }
-}
+### 1. Variables de Backend API y Gateway
+Los archivos `appsettings.json` versionados **no contienen secretos**: la clave JWT y el token de Moodle están vacíos y la API y el Gateway se niegan a arrancar sin una clave JWT propia (32 caracteres o más; la clave publicada en versiones anteriores se rechaza).
+
+- **Con Docker Compose:** complete `.env` a partir de `.env.example` (`JWT_KEY`, `MSSQL_SA_PASSWORD`, `DEMO_PASSWORD`, `MOODLE_TOKEN`).
+- **Sin Docker:** `Start-Local.ps1` genera la clave JWT en `.local/jwt-key.txt` y toma el token de `.local/moodle-connection.json`. Si ejecuta `dotnet run` directamente, defina las variables de entorno:
+
+```powershell
+$env:Jwt__Key = "<clave propia de 32+ caracteres>"      # la misma para API y Gateway
+$env:Moodle__MoodleToken = "<moodleToken de docker/moodle/.local/moodle-connection.json>"
+$env:ConnectionStrings__DefaultConnection = "Server=(localdb)\MSSQLLocalDB;Database=EduMonitorDB;Trusted_Connection=True;TrustServerCertificate=True"
+$env:ConnectionStrings__AcademicoConnection = "Server=(localdb)\MSSQLLocalDB;Database=AcademicoDB;Trusted_Connection=True;TrustServerCertificate=True"
 ```
+
+Genere una clave con `[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))`.
 
 ### 2. Variables del Microservicio de IA (`ai-service/.env`)
 Crear el archivo `ai-service/.env` a partir de `ai-service/.env.example`:
@@ -87,8 +83,8 @@ Crear el archivo `ai-service/.env` a partir de `ai-service/.env.example`:
 # Clave de API de Google Gemini (Dejar vacía para activar automáticamente el motor de contingencia local)
 GEMINI_API_KEY=tu_api_key_de_google_gemini
 
-# Modelo LLM oficial (respaldo unificado: gemini-3.1-flash-lite)
-GEMINI_MODEL=gemini-2.5-flash
+# Modelo LLM (los respaldos se prueban automáticamente si este no responde)
+GEMINI_MODEL=gemini-3.5-flash-lite
 
 # Timeout límite en segundos (presupuesto global del servicio: 28 segundos)
 GEMINI_TIMEOUT_SECONDS=15

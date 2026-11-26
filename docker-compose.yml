@@ -40,9 +40,10 @@ services:
       Moodle__BaseUrl: ${MOODLE_BASE_URL:-http://host.docker.internal:8080}
       Moodle__MoodleToken: ${MOODLE_TOKEN:-}
       Database__MigrateOnStartup: "true"
-      # Entorno de demostracion: restablece las cuentas de ejemplo (Admin123!). No usar en produccion.
+      # Entorno de demostracion: restablece las cuentas de ejemplo con DEMO_PASSWORD (si esta vacia, no las toca).
       ASPNETCORE_ENVIRONMENT: Development
       Development__ResetExamplePasswords: "true"
+      Development__ExamplePassword: ${DEMO_PASSWORD:-}
       Development__MoodleDocenteId: ${MOODLE_DOCENTE_ID:-3}
     extra_hosts:
       - "host.docker.internal:host-gateway"
